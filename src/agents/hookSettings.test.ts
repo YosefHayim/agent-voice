@@ -14,7 +14,7 @@ import {
 
 const command = replyHookCommand({
   nodePath: "/usr/local/bin/node",
-  scriptArguments: ["/Users/me/Code/voxkey/dist/src/cli/main.js"],
+  scriptArguments: ["/Users/me/Code/agent-voice/dist/src/cli/main.js"],
   agent: "codex",
 });
 
@@ -42,15 +42,15 @@ const claudeSettings = `{
 `;
 
 describe("replyHookCommand", () => {
-  it("quotes paths and ends with the agent, which is how voxkey finds its own entry", () => {
-    expect(command).toBe("'/usr/local/bin/node' '/Users/me/Code/voxkey/dist/src/cli/main.js' reply --agent codex");
+  it("quotes paths and ends with the agent, which is how agent-voice finds its own entry", () => {
+    expect(command).toBe("'/usr/local/bin/node' '/Users/me/Code/agent-voice/dist/src/cli/main.js' reply --agent codex");
     expect(isReplyHookCommand(command, "codex")).toBe(true);
     expect(isReplyHookCommand(command, "grok")).toBe(false);
     expect(isReplyHookCommand("notify-send done", "codex")).toBe(false);
   });
 
   it("passes paths to the shell literally, even with quotes, spaces, and command substitution", () => {
-    const script = "/Users/o'neil/My Code/$(echo injected)/voxkey/src/cli/main.ts";
+    const script = "/Users/o'neil/My Code/$(echo injected)/agent-voice/src/cli/main.ts";
     const hook = replyHookCommand({
       nodePath: "/bin/echo",
       scriptArguments: ["--import", "tsx", script],
@@ -62,9 +62,9 @@ describe("replyHookCommand", () => {
     expect(isReplyHookCommand(hook, "grok")).toBe(true);
   });
 
-  it("never claims another tool's Stop hook that only mentions voxkey or the same arguments", () => {
-    expect(isReplyHookCommand("notify-send voxkey reply --agent codex", "codex")).toBe(false);
-    expect(isReplyHookCommand("/opt/voxkey-wrapper.sh reply --agent codex", "codex")).toBe(false);
+  it("never claims another tool's Stop hook that only mentions agent-voice or the same arguments", () => {
+    expect(isReplyHookCommand("notify-send agent-voice reply --agent codex", "codex")).toBe(false);
+    expect(isReplyHookCommand("/opt/agent-voice-wrapper.sh reply --agent codex", "codex")).toBe(false);
     expect(isReplyHookCommand("'/usr/bin/node' '/opt/other-tool/index.js' reply --agent codex", "codex")).toBe(false);
   });
 });
@@ -110,31 +110,32 @@ describe("addReplyHook and removeReplyHook", () => {
     expect(isEmptySettings(removed(fresh.source).source)).toBe(true);
   });
 
-  it("does nothing when the same command is already there, and replaces an entry from an older voxkey path", () => {
+  it("does nothing when the same command is already there, and replaces an entry from an older agent-voice path", () => {
     const once = added(claudeSettings).source;
     expect(added(once)).toEqual({ source: once, changed: false });
 
-    const moved = command.replace("/Users/me/Code/voxkey", "/opt/voxkey");
+    const moved = command.replace("/Users/me/Code/agent-voice", "/opt/agent-voice");
     const updated = added(once, moved);
     expect(updated.changed).toBe(true);
     expect(stopCommands(updated.source)).toEqual(["notify-send done", moved]);
   });
 
-  it("removes only voxkey's hook when the user moved it into a group with other hooks", () => {
+  it("removes only agent-voice's hook when the user moved it into a group with other hooks", () => {
     const shared = `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"notify"},{"type":"command","command":${JSON.stringify(command)}}]}]}}`;
-    const withoutVoxkey = removed(shared);
+    const withoutAgentVoice = removed(shared);
 
-    expect(withoutVoxkey.changed).toBe(true);
-    expect(parse(withoutVoxkey.source)).toEqual({
+    expect(withoutAgentVoice.changed).toBe(true);
+    expect(parse(withoutAgentVoice.source)).toEqual({
       hooks: { Stop: [{ hooks: [{ type: "command", command: "notify" }] }] },
     });
   });
 
-  it("keeps another tool's Stop hook that mentions voxkey when removing", () => {
-    const foreign = '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"say voxkey reply --agent codex"}]}]}}';
+  it("keeps another tool's Stop hook that mentions agent-voice when removing", () => {
+    const foreign =
+      '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"say agent-voice reply --agent codex"}]}]}}';
 
     expect(removed(foreign)).toEqual({ source: foreign, changed: false });
-    expect(stopCommands(added(foreign).source)).toEqual(["say voxkey reply --agent codex", command]);
+    expect(stopCommands(added(foreign).source)).toEqual(["say agent-voice reply --agent codex", command]);
   });
 
   it("treats a file as empty only when nothing but {} and whitespace is left, so a comment keeps it", () => {
@@ -143,7 +144,7 @@ describe("addReplyHook and removeReplyHook", () => {
     expect(isEmptySettings('{"model": "opus"}')).toBe(false);
   });
 
-  it("leaves a file without voxkey's entry unchanged and refuses a file that is not a JSON object", () => {
+  it("leaves a file without agent-voice's entry unchanged and refuses a file that is not a JSON object", () => {
     const arraySettings = addReplyHook({ source: "[1, 2]", command, agent: "codex" });
     const objectStop = addReplyHook({ source: '{"hooks": {"Stop": {}}}', command, agent: "codex" });
 

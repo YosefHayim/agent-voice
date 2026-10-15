@@ -1,6 +1,6 @@
 import { Option, Schema } from "effect";
 import { readJsonFile, writeJsonAtomically } from "../files/stateFiles.js";
-import { stateFile } from "../settings/voxkeyHome.js";
+import { stateFile } from "../settings/agentVoiceHome.js";
 
 const dictationStageSchema = Schema.Literal(
   "starting",
@@ -14,10 +14,10 @@ const dictationStageSchema = Schema.Literal(
 
 type DictationStage = Schema.Schema.Type<typeof dictationStageSchema>;
 
-// status.json is read by the pill every 80 ms and by `voxkey status`.
+// status.json is read by the pill every 80 ms and by `agent-voice status`.
 const workerStatusSchema = Schema.Struct({
   stage: dictationStageSchema,
-  detail: Schema.String.annotations({ description: "Short text for the pill and `voxkey status`." }),
+  detail: Schema.String.annotations({ description: "Short text for the pill and `agent-voice status`." }),
   preview: Schema.String.annotations({ description: "Live caption while Shift is held; never typed." }),
   recording: Schema.Boolean.annotations({
     description: "True while the mic captures a confirmed hold, through its release tail; speech waits.",

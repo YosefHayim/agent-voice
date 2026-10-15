@@ -340,7 +340,7 @@ const ACCEPTED: ReadonlyArray<SingleFileCase> = [
   {
     name: "an interface in a declaration file",
     path: "src/types/environment.d.ts",
-    source: "declare global { interface ProcessEnv { VOXKEY_HOME?: string } }\nexport {};\n",
+    source: "declare global { interface ProcessEnv { AGENT_VOICE_HOME?: string } }\nexport {};\n",
   },
   { name: "directive-looking string content", source: 'export const copy = "@ts-ignore";\n' },
   {

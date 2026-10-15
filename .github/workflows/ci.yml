@@ -1,7 +1,7 @@
 name: CI
 
 # One install and one `pnpm verify` run cover formatting, types, the code-style
-# and style-guide contracts, tests, and the build. voxkey is macOS-only, so CI
+# and style-guide contracts, tests, and the build. agent-voice is macOS-only, so CI
 # runs on macOS; tests that need Whisper or Supertonic models skip when the
 # models are not present.
 

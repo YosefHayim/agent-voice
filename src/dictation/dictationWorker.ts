@@ -1,5 +1,5 @@
-// The dictation worker (`voxkey worker dictation`): Whisper loads once, the mic stays open, Shift is polled every
-// 8 ms, the pill shows, and the speech worker starts. It runs until `voxkey off` or `voxkey reset`.
+// The dictation worker (`agent-voice worker dictation`): Whisper loads once, the mic stays open, Shift is polled every
+// 8 ms, the pill shows, and the speech worker starts. It runs until `agent-voice off` or `agent-voice reset`.
 
 import { Effect, Schedule } from "effect";
 
@@ -60,7 +60,7 @@ const runWorker = Effect.gen(function* () {
 
   const caption = makeLiveCaption();
   const queue = yield* startDictationQueue({ transcriber, keyboard, status });
-  if (environment.VOXKEY_DICTATION_LIVE_PREVIEW) {
+  if (environment.AGENT_VOICE_DICTATION_LIVE_PREVIEW) {
     yield* captionLoop({ clip, transcriber, caption, status }).pipe(Effect.forkScoped);
   }
   const controller = makeHoldController({ keyboard, clip, caption, status, queue });
@@ -69,7 +69,7 @@ const runWorker = Effect.gen(function* () {
   yield* Effect.raceFirst(waitForStop, microphone.failure);
 });
 
-// A failure goes to status.json for `voxkey on` and `voxkey status`, and the next agent turn (or `voxkey on`)
+// A failure goes to status.json for `agent-voice on` and `agent-voice status`, and the next agent turn (or `agent-voice on`)
 // starts a fresh worker.
 export const runDictationWorker = Effect.gen(function* () {
   const claimed = yield* claimWorkerLock("dictation");

@@ -8,7 +8,7 @@ const writeLine = (message: string) => display(`${message}\n`);
 
 export const isInteractiveTerminal = Effect.flatMap(Terminal.Terminal, (terminal) => terminal.isTTY);
 
-export const intro = (title: string) => writeLine(`\n  voxkey · ${title}\n`);
+export const intro = (title: string) => writeLine(`\n  agent-voice · ${title}\n`);
 
 export const outro = (message: string) => writeLine(`\n  ${message}\n`);
 

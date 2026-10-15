@@ -2,9 +2,9 @@ import { Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 
 import { registeredAgents } from "../agents/hookRegistration.js";
+import { agentVoiceHome, configFilePath } from "../settings/agentVoiceHome.js";
 import { readConfigOrDefaults } from "../settings/configFile.js";
 import type { Config } from "../settings/configSchema.js";
-import { configFilePath, voxkeyHome } from "../settings/voxkeyHome.js";
 import { isWorkerRunning, readPid } from "../workers/workerProcesses.js";
 import { readWorkerStatus } from "../workers/workerStatus.js";
 import * as TerminalUI from "./TerminalUI.js";
@@ -36,7 +36,7 @@ const dictationStatus = (config: Config) => {
 const currentStatus = Effect.gen(function* () {
   const config = yield* readConfigOrDefaults;
   return {
-    home: voxkeyHome(),
+    home: agentVoiceHome(),
     configFile: configFilePath(),
     dictation: dictationStatus(config),
     speech: {
@@ -55,9 +55,9 @@ const currentStatus = Effect.gen(function* () {
   };
 });
 
-type VoxkeyStatus = Effect.Effect.Success<typeof currentStatus>;
+type AgentVoiceStatus = Effect.Effect.Success<typeof currentStatus>;
 
-const speechState = (speech: VoxkeyStatus["speech"]): string => {
+const speechState = (speech: AgentVoiceStatus["speech"]): string => {
   if (speech.running) {
     return "on";
   }
@@ -65,7 +65,7 @@ const speechState = (speech: VoxkeyStatus["speech"]): string => {
   return "off";
 };
 
-const dictationLine = (dictation: VoxkeyStatus["dictation"]): string => {
+const dictationLine = (dictation: AgentVoiceStatus["dictation"]): string => {
   if (!dictation.running) {
     return "off";
   }
@@ -78,12 +78,12 @@ const dictationLine = (dictation: VoxkeyStatus["dictation"]): string => {
   return `${line} · ${dictation.detail}`;
 };
 
-const modelLine = (dictation: VoxkeyStatus["dictation"]): string => {
+const modelLine = (dictation: AgentVoiceStatus["dictation"]): string => {
   const model = dictation.model || "(not loaded)";
   return `${model} ${dictation.backend} · language ${dictation.language}`;
 };
 
-const speechLine = (speech: VoxkeyStatus["speech"]): string => {
+const speechLine = (speech: AgentVoiceStatus["speech"]): string => {
   const line = `${speechState(speech)} · mode ${speech.mode} · voice ${speech.voice}`;
   if (speech.muted) {
     return `${line} · muted`;
@@ -92,7 +92,7 @@ const speechLine = (speech: VoxkeyStatus["speech"]): string => {
   return line;
 };
 
-const refineLine = (refine: VoxkeyStatus["refine"]): string => {
+const refineLine = (refine: AgentVoiceStatus["refine"]): string => {
   if (refine.mode === "off") {
     return "off";
   }
@@ -103,13 +103,13 @@ const refineLine = (refine: VoxkeyStatus["refine"]): string => {
 
 const hooksLine = (hooks: ReadonlyArray<string>): string => {
   if (hooks.length === 0) {
-    return "none (run voxkey on)";
+    return "none (run agent-voice on)";
   }
 
   return hooks.join(", ");
 };
 
-const statusText = (status: VoxkeyStatus): string =>
+const statusText = (status: AgentVoiceStatus): string =>
   [
     `dictation   ${dictationLine(status.dictation)}`,
     `model       ${modelLine(status.dictation)}`,
@@ -129,6 +129,6 @@ export const statusCommand = Command.make("status", { json: jsonOption }, (args)
     }
 
     const text = statusText(status);
-    yield* TerminalUI.note("voxkey status", text);
+    yield* TerminalUI.note("agent-voice status", text);
   }),
 ).pipe(Command.withDescription("Show the workers, the dictation stage, the agent hooks, and the main settings"));

@@ -6,7 +6,7 @@ import {
   writeFileAtomically,
   writeJsonAtomically,
 } from "../files/stateFiles.js";
-import { stateFile } from "../settings/voxkeyHome.js";
+import { stateFile } from "../settings/agentVoiceHome.js";
 import { nonBlankLines } from "./agentCli.js";
 
 export const DEFAULT_REFINE_MODEL = "gpt-5.3-codex-spark";

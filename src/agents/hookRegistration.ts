@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { Effect, Either, Option, Schema } from "effect";
 import { makePrivateFolder, readJsonFile, readTextIfPresent, writeJsonAtomically } from "../files/stateFiles.js";
-import { stateFile, stateFolder } from "../settings/voxkeyHome.js";
-import { voxkeyInvocation } from "../workers/workerProcesses.js";
+import { stateFile, stateFolder } from "../settings/agentVoiceHome.js";
+import { agentVoiceInvocation } from "../workers/workerProcesses.js";
 import { type AgentHookTarget, agentHookTargets, agentIdSchema } from "./agentCatalog.js";
 import { addReplyHook, HookSettingsIssue, isEmptySettings, removeReplyHook, replyHookCommand } from "./hookSettings.js";
 
@@ -33,7 +33,7 @@ const isAgentInstalled = (target: AgentHookTarget): boolean => {
 };
 
 const backupFile = (target: AgentHookTarget): string => {
-  // Agent settings can hold tokens, so their copies are private like the rest of voxkey's state.
+  // Agent settings can hold tokens, so their copies are private like the rest of agent-voice's state.
   const folder = stateFolder("backups");
   makePrivateFolder(folder);
   const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
@@ -58,12 +58,12 @@ const writeSettings = (target: AgentHookTarget, text: string): void => {
   const mode = fileMode(file);
   const folder = path.dirname(file);
   mkdirSync(folder, { recursive: true });
-  const staging = `${file}.voxkey-partial`;
+  const staging = `${file}.agent-voice-partial`;
   writeFileSync(staging, text, { mode });
   renameSync(staging, file);
 };
 
-// Settings files voxkey created, so `voxkey off` can delete one it leaves empty and keep any file that existed before.
+// Settings files agent-voice created, so `agent-voice off` can delete one it leaves empty and keep any file that existed before.
 const createdFiles = (): ReadonlyArray<string> => {
   const createdPath = stateFile("created-hook-files.json");
   return readJsonFile({ path: createdPath, schema: Schema.Array(Schema.String) }).pipe(Option.getOrElse(() => []));
@@ -87,7 +87,7 @@ const changeFor = (target: AgentHookTarget, change: HookChange["change"]): HookC
   change,
 });
 
-// A settings file voxkey cannot read or parse is reported and left exactly as it is.
+// A settings file agent-voice cannot read or parse is reported and left exactly as it is.
 const failedChange = (target: AgentHookTarget, issue: HookSettingsIssue): HookChange => ({
   ...changeFor(target, "failed"),
   issue: issue.message,
@@ -102,8 +102,8 @@ const readSettings = (target: AgentHookTarget): Either.Either<Option.Option<stri
   });
 };
 
-const voxkeyReplyCommand = (target: AgentHookTarget): string => {
-  const invocation = voxkeyInvocation();
+const agentVoiceReplyCommand = (target: AgentHookTarget): string => {
+  const invocation = agentVoiceInvocation();
   return replyHookCommand({
     nodePath: invocation.executable,
     scriptArguments: invocation.scriptArguments,
@@ -111,11 +111,11 @@ const voxkeyReplyCommand = (target: AgentHookTarget): string => {
   });
 };
 
-// A settings file voxkey created is deleted once its entry was the only thing in it.
+// A settings file agent-voice created is deleted once its entry was the only thing in it.
 const saveRemoval = (target: AgentHookTarget, source: string): void => {
   const file = settingsPath(target);
-  const isCreatedByVoxkey = target.ownFile || createdFiles().includes(file);
-  if (isCreatedByVoxkey && isEmptySettings(source)) {
+  const isCreatedByAgentVoice = target.ownFile || createdFiles().includes(file);
+  if (isCreatedByAgentVoice && isEmptySettings(source)) {
     rmSync(file, { force: true });
     return;
   }
@@ -135,7 +135,7 @@ const registerOne = (target: AgentHookTarget): HookChange => {
 
   const current = read.right;
   const source = Option.getOrElse(current, () => "");
-  const command = voxkeyReplyCommand(target);
+  const command = agentVoiceReplyCommand(target);
   const edit = addReplyHook({ source, command, agent: target.agent });
   if (Either.isLeft(edit)) {
     return failedChange(target, edit.left);

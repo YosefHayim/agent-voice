@@ -16,10 +16,10 @@ const started: Array<ChildProcess> = [];
 
 beforeEach(() => {
   home = makeTestFolder("workers");
-  vi.stubEnv("VOXKEY_HOME", home);
+  vi.stubEnv("AGENT_VOICE_HOME", home);
 });
 
-// Only processes this test started are ever signalled, here or by voxkey.
+// Only processes this test started are ever signalled, here or by agent-voice.
 afterEach(() => {
   for (const child of started.splice(0)) {
     child.kill("SIGKILL");
@@ -121,7 +121,7 @@ const startStarter = (request: { readonly go: string; readonly holdMs: number })
       ...["--import", "tsx", "--input-type=module", "-e", STARTER],
       ...[workerProcessesModule, request.go, String(request.holdMs), "worker", "dictation"],
     ],
-    { cwd: repositoryRoot, env: { ...process.env, VOXKEY_HOME: home }, stdio: ["ignore", "pipe", "inherit"] },
+    { cwd: repositoryRoot, env: { ...process.env, AGENT_VOICE_HOME: home }, stdio: ["ignore", "pipe", "inherit"] },
   );
   started.push(child);
   let output = "";

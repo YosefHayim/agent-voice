@@ -25,8 +25,8 @@ beforeEach(() => {
   writeFileSync(cmuxPath, `#!/bin/sh\necho "$@" >> '${cmuxLog}'\necho '{"surface_id":"s1"}'\n`);
   chmodSync(cmuxPath, 0o755);
   vi.stubEnv("PATH", `${bin}:/usr/bin:/bin`);
-  vi.stubEnv("VOXKEY_HOME", home);
-  vi.stubEnv("VOXKEY_CONFIG_FILE", undefined);
+  vi.stubEnv("AGENT_VOICE_HOME", home);
+  vi.stubEnv("AGENT_VOICE_CONFIG_FILE", undefined);
   writeFileSync(configPath, config);
 });
 

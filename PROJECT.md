@@ -10,8 +10,8 @@ Talk to coding agents and listen to them, on a Mac, without sending audio anywhe
 
 ## In scope
 
-- macOS (Apple Silicon first), Node 22+, one `voxkey` command.
-- Agents with a Stop hook voxkey can register: Claude Code, Codex, Grok. Devin through its ATIF export.
+- macOS (Apple Silicon first), Node 22+, one `agent-voice` command.
+- Agents with a Stop hook agent-voice can register: Claude Code, Codex, Grok. Devin through its ATIF export.
 - Local models: Whisper (whisper.cpp) for dictation, Supertonic 3 for speech.
 - Refine through agent CLIs: codex, claude, gemini, grok, ollama, opencode, pi.
 

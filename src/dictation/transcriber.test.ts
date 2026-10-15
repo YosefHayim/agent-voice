@@ -12,9 +12,9 @@ import { samplesFromPcm } from "./clipAudio.js";
 import { formatDictation } from "./dictationFormat.js";
 import { loadTranscriber } from "./transcriber.js";
 
-// Smoke tests only read a Whisper model already in ~/.voxkey/models and never download one.
+// Smoke tests only read a Whisper model already in ~/.agent-voice/models and never download one.
 const userHome = homedir();
-const modelsFolder = path.join(userHome, ".voxkey", "models");
+const modelsFolder = path.join(userHome, ".agent-voice", "models");
 
 const installedModel = (): string | undefined => {
   if (!existsSync(modelsFolder)) {

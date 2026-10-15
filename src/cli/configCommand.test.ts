@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { runVoxkey } from "../scripts/runVoxkey.js";
+import { runAgentVoice } from "../scripts/runAgentVoice.js";
 import { makeTestFolder } from "../scripts/testFolder.js";
 
 let home = "";
@@ -21,14 +21,17 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-const voxkey = (args: ReadonlyArray<string>) => {
-  const { VOXKEY_CONFIG_FILE: _ignored, ...environment } = process.env;
-  return runVoxkey({ args, environment: { ...environment, HOME: home, VOXKEY_HOME: path.join(home, ".voxkey") } });
+const agentVoice = (args: ReadonlyArray<string>) => {
+  const { AGENT_VOICE_CONFIG_FILE: _ignored, ...environment } = process.env;
+  return runAgentVoice({
+    args,
+    environment: { ...environment, HOME: home, AGENT_VOICE_HOME: path.join(home, ".agent-voice") },
+  });
 };
 
-describe("voxkey config errors", () => {
+describe("agent-voice config errors", () => {
   it("go to stderr, so stdout carries only the command's own output", async () => {
-    const get = await voxkey(["config", "get", "no-such-setting"]);
+    const get = await agentVoice(["config", "get", "no-such-setting"]);
 
     expect(get.status).toBe(2);
     expect(get.stdout).toBe("");
@@ -41,10 +44,10 @@ const startStandInSpeechWorker = async (marker: string) => {
   const listener = `process.on("SIGUSR2", () => { require("node:fs").writeFileSync(process.argv[1], "stopped"); process.exit(0); }); setInterval(() => {}, 1 << 30);`;
   sleeper = spawn(process.execPath, ["-e", listener, marker, "worker", "speech"], { stdio: "ignore" });
   await new Promise((resolve) => sleeper?.once("spawn", resolve));
-  const voxkeyFolder = path.join(home, ".voxkey");
-  const pidFile = path.join(voxkeyFolder, "speech.pid");
+  const agentVoiceFolder = path.join(home, ".agent-voice");
+  const pidFile = path.join(agentVoiceFolder, "speech.pid");
   const pid = String(sleeper.pid);
-  mkdirSync(voxkeyFolder, { recursive: true });
+  mkdirSync(agentVoiceFolder, { recursive: true });
   writeFileSync(pidFile, pid);
 };
 
@@ -57,16 +60,16 @@ const speechStopped = async (marker: string) => {
 };
 
 const speechMuted = async () => {
-  const statusRun = await voxkey(["status", "--json"]);
+  const statusRun = await agentVoice(["status", "--json"]);
   return JSON.parse(statusRun.stdout).speech.muted;
 };
 
-describe("voxkey config set speech-mode off", () => {
+describe("agent-voice config set speech-mode off", () => {
   it("stops the reply being read now instead of after it ends", async () => {
     const marker = path.join(home, "stopped");
     await startStandInSpeechWorker(marker);
 
-    const set = await voxkey(["config", "set", "speech-mode", "off"]);
+    const set = await agentVoice(["config", "set", "speech-mode", "off"]);
 
     expect(set.status).toBe(0);
     expect(set.stdout).toContain("Speech stops");
@@ -74,11 +77,11 @@ describe("voxkey config set speech-mode off", () => {
   });
 });
 
-describe("voxkey speech-muted", () => {
+describe("agent-voice speech-muted", () => {
   it("starts muted, and config set speech-muted false unmutes", async () => {
     expect(await speechMuted()).toBe(true);
 
-    const set = await voxkey(["config", "set", "speech-muted", "false"]);
+    const set = await agentVoice(["config", "set", "speech-muted", "false"]);
 
     expect(set.status).toBe(0);
     expect(set.stdout).toContain("speech-muted = false");
@@ -88,11 +91,11 @@ describe("voxkey speech-muted", () => {
   it("stops the reply being read now when muted again", async () => {
     const marker = path.join(home, "stopped");
     await startStandInSpeechWorker(marker);
-    const configFile = path.join(home, ".voxkey", "config.json");
+    const configFile = path.join(home, ".agent-voice", "config.json");
     const configText = JSON.stringify({ speechMuted: false });
     writeFileSync(configFile, configText);
 
-    const set = await voxkey(["config", "set", "speech-muted", "true"]);
+    const set = await agentVoice(["config", "set", "speech-muted", "true"]);
 
     expect(set.status).toBe(0);
     expect(set.stdout).toContain("Speech muted");

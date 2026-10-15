@@ -34,9 +34,9 @@ const problem = (request: {
   readonly fix: string;
 }): DoctorCheck => request;
 
-const REINSTALL = "Reinstall voxkey: pnpm install";
+const REINSTALL = "Reinstall agent-voice: pnpm install";
 const PRIVACY_PANE = "System Settings → Privacy & Security →";
-const ALLOW_TERMINAL = "allow your terminal app (or the app that runs voxkey).";
+const ALLOW_TERMINAL = "allow your terminal app (or the app that runs agent-voice).";
 const MICROPHONE_FIX = `${PRIVACY_PANE} Microphone: ${ALLOW_TERMINAL}`;
 
 // AVCaptureDevice through JXA: 3 is authorized, 0 not asked yet, 1 restricted, 2 denied.
@@ -61,7 +61,7 @@ const SYSTEM_TOOLS = [
 const platformCheck = (): DoctorCheck => {
   const isMac = process.platform === "darwin";
   if (!isMac) {
-    return problem({ name: "macOS", status: "fail", detail: process.platform, fix: "voxkey runs only on macOS." });
+    return problem({ name: "macOS", status: "fail", detail: process.platform, fix: "agent-voice runs only on macOS." });
   }
 
   return ok("macOS", `${process.platform} ${process.arch}`);
@@ -103,7 +103,7 @@ const accessibilityCheck = (keyboard: Keyboard): DoctorCheck => {
     return problem({ name: "Accessibility", status: "fail", detail: "not allowed", fix });
   }
 
-  return ok("Accessibility", "voxkey can type at the caret");
+  return ok("Accessibility", "agent-voice can type at the caret");
 };
 
 const inputMonitoringCheck = (keyboard: Keyboard): DoctorCheck => {
@@ -113,7 +113,7 @@ const inputMonitoringCheck = (keyboard: Keyboard): DoctorCheck => {
     return problem({ name: "Input Monitoring", status: "warn", detail: "not allowed", fix });
   }
 
-  return ok("Input Monitoring", "voxkey can read Shift");
+  return ok("Input Monitoring", "agent-voice can read Shift");
 };
 
 const keyboardChecks = loadKeyboard.pipe(
@@ -129,7 +129,7 @@ const microphoneCheckFor = (authorization: string): DoctorCheck => {
   }
 
   if (authorization === "0") {
-    const fix = "Run voxkey on and accept the prompt.";
+    const fix = "Run agent-voice on and accept the prompt.";
     return problem({ name: "Microphone", status: "warn", detail: "not asked yet", fix });
   }
 
@@ -165,7 +165,7 @@ const hookChecks = (): ReadonlyArray<DoctorCheck> => {
       return ok(name, "agent not installed");
     }
 
-    return problem({ name, status: "warn", detail: "not registered", fix: "voxkey on" });
+    return problem({ name, status: "warn", detail: "not registered", fix: "agent-voice on" });
   });
 };
 
@@ -177,7 +177,7 @@ const whisperCheck = (config: Config): DoctorCheck => {
       name: "Whisper model",
       status: "warn",
       detail: `${model.label} not downloaded`,
-      fix: "voxkey on",
+      fix: "agent-voice on",
     });
   }
 
@@ -197,7 +197,7 @@ const supertonicCheck = (config: Config): DoctorCheck => {
   }
 
   const detail = `${String(missing.length)} files missing`;
-  return problem({ name: "Supertonic voices", status: "warn", detail, fix: "voxkey on" });
+  return problem({ name: "Supertonic voices", status: "warn", detail, fix: "agent-voice on" });
 };
 
 const providersCheck = (providers: ReadonlyArray<DiscoveredProvider>): DoctorCheck => {
@@ -245,7 +245,7 @@ const settingChecks = (config: Config) =>
   });
 
 const configFailedChecks = (error: Error) => {
-  const fix = "Fix the file, or reset a setting: voxkey config unset <name>";
+  const fix = "Fix the file, or reset a setting: agent-voice config unset <name>";
   return Effect.succeed([problem({ name: "Config", status: "fail", detail: error.message, fix })]);
 };
 

@@ -14,7 +14,7 @@ import path from "node:path";
 
 import { Option, Schema } from "effect";
 
-import { voxkeyHome } from "../settings/voxkeyHome.js";
+import { agentVoiceHome } from "../settings/agentVoiceHome.js";
 
 // Dictated, refined, and reply text is readable by the user alone: its files are 0600 and its folders 0700.
 const PRIVATE_FILE_MODE = 0o600;
@@ -27,10 +27,10 @@ export const makePrivateFolder = (folder: string): void => {
   chmodSync(folder, PRIVATE_FOLDER_MODE);
 };
 
-// Folders under voxkey's home are tightened; a folder the user picked (say, for VOXKEY_CONFIG_FILE) keeps its mode.
+// Folders under agent-voice's home are tightened; a folder the user picked (say, for AGENT_VOICE_CONFIG_FILE) keeps its mode.
 const makeFolderFor = (filePath: string): void => {
   const folder = path.dirname(filePath);
-  const home = voxkeyHome();
+  const home = agentVoiceHome();
   const relative = path.relative(home, folder);
   const isOutsideHome = relative.startsWith("..") || path.isAbsolute(relative);
   if (isOutsideHome) {
@@ -100,7 +100,7 @@ export const readTextIfPresent = (filePath: string): Option.Option<string> => {
   }
 };
 
-// For files voxkey only reads, never writes back.
+// For files agent-voice only reads, never writes back.
 export const readTextIfReadable = (filePath: string): Option.Option<string> => {
   try {
     return readTextIfPresent(filePath);

@@ -83,7 +83,7 @@ const refineModeSchema = Schema.Literal("off", "clipboard", "dictation", "both")
 const refineSendToSchema = Schema.Literal("caret", "cmux-new", "cmux-resume");
 
 // Every setting carries its CLI label (title) and meaning (description) on its property signature,
-// so `voxkey config list`, `voxkey config set`, and the README all read one declaration.
+// so `agent-voice config list`, `agent-voice config set`, and the README all read one declaration.
 export const configSchema = Schema.Struct({
   speechMode: withDefault(speechModeSchema, "auto").annotations({
     title: "speech mode",
@@ -131,7 +131,7 @@ export const configSchema = Schema.Struct({
   refineProvider: withDefault(refineProviderSchema, "codex").annotations({
     title: "refine provider",
     description:
-      "Agent CLI that refines: codex | auto | grok | ollama | opencode | claude | gemini | pi. `voxkey config pick-refine` lists only the CLIs found on this Mac.",
+      "Agent CLI that refines: codex | auto | grok | ollama | opencode | claude | gemini | pi. `agent-voice config pick-refine` lists only the CLIs found on this Mac.",
   }),
   refineModel: Schema.optionalWith(Schema.NonEmptyTrimmedString, { exact: true }).annotations({
     title: "refine model",

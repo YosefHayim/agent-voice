@@ -13,9 +13,9 @@ import { renderMarkdownToWav } from "./speechPlayer.js";
 import { loadSupertonic } from "./supertonic.js";
 import { decodeWav } from "./wavFile.js";
 
-// Smoke tests only read the models already in ~/.voxkey/models and never download them.
+// Smoke tests only read the models already in ~/.agent-voice/models and never download them.
 const home = homedir();
-const modelsFolder = path.join(home, ".voxkey", "models");
+const modelsFolder = path.join(home, ".agent-voice", "models");
 const supertonicModelFolder = path.join(modelsFolder, "supertonic-3");
 const vocoderFile = path.join(supertonicModelFolder, "onnx", "vocoder.onnx");
 const hasSupertonic = existsSync(vocoderFile);

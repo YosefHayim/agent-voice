@@ -11,7 +11,7 @@ let home = "";
 
 beforeEach(() => {
   home = makeTestFolder("devin");
-  vi.stubEnv("VOXKEY_HOME", home);
+  vi.stubEnv("AGENT_VOICE_HOME", home);
 });
 
 afterEach(() => {

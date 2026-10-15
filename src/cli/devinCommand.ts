@@ -6,7 +6,7 @@ import { Effect, Schema } from "effect";
 
 import { watchDevinSession } from "../agents/devinWatcher.js";
 import { makePrivateFolder } from "../files/stateFiles.js";
-import { stateFolder } from "../settings/voxkeyHome.js";
+import { stateFolder } from "../settings/agentVoiceHome.js";
 import { startWorkers } from "../workers/workerProcesses.js";
 import * as TerminalUI from "./TerminalUI.js";
 

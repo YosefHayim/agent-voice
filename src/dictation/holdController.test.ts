@@ -29,8 +29,8 @@ const writeConfig = (config: { readonly speechMuted: boolean }) => {
 
 beforeEach(() => {
   home = makeTestFolder("hold");
-  vi.stubEnv("VOXKEY_HOME", home);
-  vi.stubEnv("VOXKEY_CONFIG_FILE", undefined);
+  vi.stubEnv("AGENT_VOICE_HOME", home);
+  vi.stubEnv("AGENT_VOICE_CONFIG_FILE", undefined);
   vi.mocked(stopSpeech).mockClear();
 });
 

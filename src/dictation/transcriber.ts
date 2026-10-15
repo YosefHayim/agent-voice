@@ -68,7 +68,7 @@ export const WHISPER_PACKAGE = "@fugood/whisper.node";
 
 const importWhisper = async (): Promise<WhisperModule> => {
   const loaded: unknown = await import(WHISPER_PACKAGE);
-  // The package ships no declarations (external type); whisperNode.d.ts describes the part voxkey calls.
+  // The package ships no declarations (external type); whisperNode.d.ts describes the part agent-voice calls.
   return loaded as WhisperModule;
 };
 

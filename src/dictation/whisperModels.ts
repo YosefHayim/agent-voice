@@ -5,9 +5,9 @@ import path from "node:path";
 
 import { Effect, Schema } from "effect";
 import { downloadFile, type ModelDownloadError } from "../files/modelDownload.js";
+import { stateFolder } from "../settings/agentVoiceHome.js";
 import type { Config } from "../settings/configSchema.js";
-import type { VoxkeyEnvironment } from "../settings/environmentVariables.js";
-import { stateFolder } from "../settings/voxkeyHome.js";
+import type { AgentVoiceEnvironment } from "../settings/environmentVariables.js";
 
 export const whisperModelSchema = Schema.Struct({
   key: Schema.Literal("tiny", "base", "small", "turbo-q5", "turbo-q8", "turbo", "ivrit"),
@@ -98,12 +98,12 @@ const MODEL_ALIASES: Readonly<Record<string, WhisperModel["key"]>> = {
 const modelFor = (key: WhisperModel["key"]): WhisperModel =>
   whisperModels.find((model) => model.key === key) || whisperModels[3];
 
-// VOXKEY_DICTATION_MODEL wins, and an unknown name means turbo-q5; otherwise Hebrew picks ivrit.ai and English turbo-q5.
+// AGENT_VOICE_DICTATION_MODEL wins, and an unknown name means turbo-q5; otherwise Hebrew picks ivrit.ai and English turbo-q5.
 export const selectWhisperModel = (request: {
-  readonly environment: VoxkeyEnvironment;
+  readonly environment: AgentVoiceEnvironment;
   readonly config: Config;
 }): WhisperModel => {
-  const forced = request.environment.VOXKEY_DICTATION_MODEL.toLowerCase();
+  const forced = request.environment.AGENT_VOICE_DICTATION_MODEL.toLowerCase();
   if (forced !== "") {
     return modelFor(MODEL_ALIASES[forced] || "turbo-q5");
   }

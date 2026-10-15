@@ -45,4 +45,6 @@ export const hotkeyCheckCommand = Command.make("hotkey-check", { seconds: second
 
     yield* TerminalUI.success("Shift detection works.");
   }),
-).pipe(Command.withDescription("Print Shift presses for a few seconds, to check that voxkey can see the keyboard"));
+).pipe(
+  Command.withDescription("Print Shift presses for a few seconds, to check that agent-voice can see the keyboard"),
+);

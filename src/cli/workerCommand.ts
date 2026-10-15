@@ -25,4 +25,4 @@ export const workerCommand = Command.make(
         return runSpeechWorker;
     }
   },
-).pipe(Command.withDescription("Internal: run a background worker in this process (voxkey on starts them)"));
+).pipe(Command.withDescription("Internal: run a background worker in this process (agent-voice on starts them)"));

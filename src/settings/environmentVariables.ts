@@ -19,21 +19,21 @@ const textVariable = Schema.optionalWith(Schema.Trim, { default: () => "" });
 const switchVariable = Schema.optionalWith(switchSchema, { default: () => true });
 
 const environmentSchema = Schema.Struct({
-  VOXKEY_HOME: textVariable.annotations({
-    description: "Folder for voxkey's config, state, models, and logs. Default: ~/.voxkey.",
+  AGENT_VOICE_HOME: textVariable.annotations({
+    description: "Folder for agent-voice's config, state, models, and logs. Default: ~/.agent-voice.",
   }),
-  VOXKEY_CONFIG_FILE: textVariable.annotations({
+  AGENT_VOICE_CONFIG_FILE: textVariable.annotations({
     description:
-      "Path to the config file. When set, it is the only config file read. Default: $VOXKEY_HOME/config.json.",
+      "Path to the config file. When set, it is the only config file read. Default: $AGENT_VOICE_HOME/config.json.",
   }),
-  VOXKEY_DICTATION_MODEL: textVariable.annotations({
+  AGENT_VOICE_DICTATION_MODEL: textVariable.annotations({
     description:
       "Forces the Whisper model: turbo-q5, turbo-q8, turbo, small, base, tiny, or ivrit. Default: dictation-language picks turbo-q5 or ivrit.",
   }),
-  VOXKEY_DICTATION_LIVE_PREVIEW: switchVariable.annotations({
+  AGENT_VOICE_DICTATION_LIVE_PREVIEW: switchVariable.annotations({
     description: "Set to off (or 0, false, no) to stop the live caption while Shift is held. Default: on.",
   }),
-  VOXKEY_REFINE_PICKER: switchVariable.annotations({
+  AGENT_VOICE_REFINE_PICKER: switchVariable.annotations({
     description:
       "Set to off (or 0, false, no) so a failed refine never opens the macOS model picker (CI, headless Macs). Default: on.",
   }),
@@ -42,18 +42,18 @@ const environmentSchema = Schema.Struct({
   }),
 });
 
-export type VoxkeyEnvironment = Schema.Schema.Type<typeof environmentSchema>;
+export type AgentVoiceEnvironment = Schema.Schema.Type<typeof environmentSchema>;
 
 const decodeEnvironment = Schema.decodeUnknownSync(environmentSchema);
 
-export const readEnvironment = (): VoxkeyEnvironment => decodeEnvironment(process.env);
+export const readEnvironment = (): AgentVoiceEnvironment => decodeEnvironment(process.env);
 
 const environmentTypeAst = SchemaAST.typeAST(environmentSchema.ast);
 
-// README and .env.example list exactly these: voxkey's own variables, not CI.
-export const voxkeyVariables = SchemaAST.getPropertySignatures(environmentTypeAst)
+// README and .env.example list exactly these: agent-voice's own variables, not CI.
+export const agentVoiceVariables = SchemaAST.getPropertySignatures(environmentTypeAst)
   .map((field) => ({
     name: String(field.name),
     description: SchemaAST.getDescriptionAnnotation(field).pipe(Option.getOrElse(() => "")),
   }))
-  .filter((variable) => variable.name.startsWith("VOXKEY_"));
+  .filter((variable) => variable.name.startsWith("AGENT_VOICE_"));

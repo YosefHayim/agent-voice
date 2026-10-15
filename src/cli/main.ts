@@ -4,6 +4,7 @@ import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Effect, ParseResult } from "effect";
 
 import { runReplyHookFromArguments } from "../agents/replyHook.js";
+import { agentVoiceVersion } from "./agentVoiceVersion.js";
 import { CliUsageError } from "./cliUsageError.js";
 import { configCommand } from "./configCommand.js";
 import { devinCommand } from "./devinCommand.js";
@@ -18,10 +19,9 @@ import { resetCommand } from "./resetCommand.js";
 import { speakCommand } from "./speakCommand.js";
 import { statusCommand } from "./statusCommand.js";
 import * as TerminalUI from "./TerminalUI.js";
-import { voxkeyVersion } from "./voxkeyVersion.js";
 import { workerCommand } from "./workerCommand.js";
 
-const voxkey = Command.make("voxkey").pipe(
+const agentVoice = Command.make("agent-voice").pipe(
   Command.withDescription("Hold Shift to dictate into any text field and hear coding-agent replies read aloud."),
   Command.withSubcommands([
     onCommand,
@@ -40,7 +40,7 @@ const voxkey = Command.make("voxkey").pipe(
   ]),
 );
 
-const runVoxkey = Command.run(voxkey, { name: "voxkey", version: voxkeyVersion });
+const runAgentVoice = Command.run(agentVoice, { name: "agent-voice", version: agentVoiceVersion });
 
 const cliConfig = CliConfig.layer({ showBuiltIns: false });
 
@@ -66,7 +66,7 @@ const reportFailure = (error: unknown) =>
   });
 
 const runCommandLine = (commandLine: ReadonlyArray<string>) =>
-  runVoxkey(commandLine).pipe(
+  runAgentVoice(commandLine).pipe(
     Effect.catchAll(reportFailure),
     Effect.provide(NodeContext.layer),
     Effect.provide(cliConfig),
@@ -81,7 +81,7 @@ const programFor = (commandLine: ReadonlyArray<string>): Effect.Effect<void> => 
   }
 
   if (commandName === undefined) {
-    return runCommandLine(["node", "voxkey", "--help"]);
+    return runCommandLine(["node", "agent-voice", "--help"]);
   }
 
   return runCommandLine(commandLine);

@@ -14,13 +14,14 @@ const agentHookTargetSchema = Schema.Struct({
     description: "HOME-relative JSON file holding the agent's hooks in the Claude-style hooks.Stop format.",
   }),
   ownFile: Schema.Boolean.annotations({
-    description: "True when the whole file belongs to voxkey, so `voxkey off` may delete it once it is empty.",
+    description:
+      "True when the whole file belongs to agent-voice, so `agent-voice off` may delete it once it is empty.",
   }),
 });
 
 export type AgentHookTarget = Schema.Schema.Type<typeof agentHookTargetSchema>;
 
-// Grok reads every file in ~/.grok/hooks/, so voxkey writes its own file there and never touches another tool's.
+// Grok reads every file in ~/.grok/hooks/, so agent-voice writes its own file there and never touches another tool's.
 export const agentHookTargets: ReadonlyArray<AgentHookTarget> = Schema.decodeUnknownSync(
   Schema.Array(agentHookTargetSchema),
 )([
@@ -32,5 +33,11 @@ export const agentHookTargets: ReadonlyArray<AgentHookTarget> = Schema.decodeUnk
     ownFile: false,
   },
   { agent: "codex", displayName: "Codex", homeFolder: ".codex", settingsFile: ".codex/hooks.json", ownFile: false },
-  { agent: "grok", displayName: "Grok", homeFolder: ".grok", settingsFile: ".grok/hooks/voxkey.json", ownFile: true },
+  {
+    agent: "grok",
+    displayName: "Grok",
+    homeFolder: ".grok",
+    settingsFile: ".grok/hooks/agent-voice.json",
+    ownFile: true,
+  },
 ]);

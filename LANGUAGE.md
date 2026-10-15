@@ -1,4 +1,4 @@
-# LANGUAGE.md — voxkey
+# LANGUAGE.md — agent-voice
 
 Names only: use these words in code, comments, commits, and docs, and avoid the listed aliases. One word per idea.
 
@@ -49,7 +49,7 @@ The small status panel at the bottom of the screen.
 _Avoid_: "HUD", "overlay".
 
 **worker**
-A background voxkey process: the dictation worker or the speech worker.
+A background agent-voice process: the dictation worker or the speech worker.
 _Avoid_: "daemon", "service".
 
 **inbox**
@@ -61,10 +61,10 @@ An agent CLI that can refine (codex, claude, gemini, grok, ollama, opencode, pi)
 _Avoid_: "backend".
 
 **Stop hook**
-The agent's end-of-turn hook; voxkey's entry runs `voxkey reply --agent <id>`.
+The agent's end-of-turn hook; agent-voice's entry runs `agent-voice reply --agent <id>`.
 
 **setting**
-One key in `~/.voxkey/config.json`; the CLI name is its kebab-case form.
+One key in `~/.agent-voice/config.json`; the CLI name is its kebab-case form.
 _Avoid_: "option", "flag" (those are CLI arguments).
 
 **fail-open**
