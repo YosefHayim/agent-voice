@@ -1,22 +1,18 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { rmSync } from "node:fs";
 
 import { Effect, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { makeTestFolder } from "../scripts/testFolder.js";
 import { makeStatusWriter } from "../workers/workerStatus.js";
 import { captionLoop, makeLiveCaption } from "./livePreview.js";
 import { makeClipBuffer } from "./microphone.js";
 import type { Transcriber } from "./transcriber.js";
 
-const scratchRoot = fileURLToPath(new URL("../../.scratch/", import.meta.url));
-
 let home = "";
 
 beforeEach(() => {
-  mkdirSync(scratchRoot, { recursive: true });
-  home = mkdtempSync(path.join(scratchRoot, "caption-"));
+  home = makeTestFolder("caption");
   vi.stubEnv("VOXKEY_HOME", home);
   vi.stubEnv("VOXKEY_CONFIG_FILE", undefined);
 });
@@ -30,9 +26,10 @@ describe("live caption", () => {
   it("drops a caption pass that finishes after its hold ended and a new hold began", async () => {
     const clip = makeClipBuffer();
     const caption = makeLiveCaption();
+    const frames = Array.from({ length: 20 }, () => new Int16Array(512).fill(1_000));
     clip.begin();
-    for (let frame = 0; frame < 20; frame += 1) {
-      clip.append(new Int16Array(512).fill(1_000));
+    for (const frame of frames) {
+      clip.append(frame);
     }
     let passes = 0;
     // While Whisper is busy with the first hold's tail, Shift is released and pressed again.
@@ -50,10 +47,12 @@ describe("live caption", () => {
       release: Effect.void,
     };
     const status = makeStatusWriter({ model: "fake", backend: "none", recording: clip.isConfirmedHold });
-
-    await Effect.runPromise(
-      Effect.ignore(Effect.timeout(captionLoop({ clip, transcriber, caption, status }), "300 millis")),
+    const captions = captionLoop({ clip, transcriber, caption, status }).pipe(
+      Effect.timeout("300 millis"),
+      Effect.ignore,
     );
+
+    await Effect.runPromise(captions);
 
     expect(passes).toBe(1);
     expect(caption.take()).toBe("");

@@ -1,11 +1,9 @@
-/**
- * The microphone stays open for the dictation worker's lifetime (PvRecorder, 16 kHz mono), so Shift
- * only flips a recording flag and the first word is never clipped by device start-up.
- */
+// The microphone stays open for the dictation worker's lifetime (PvRecorder, 16 kHz mono), so Shift only flips a
+// recording flag and the first word is never clipped by device start-up.
 
 import { Effect, Fiber, Schema } from "effect";
 
-import { SAMPLE_RATE, samplesFromPcm } from "./speechDetection.js";
+import { SAMPLE_RATE, samplesFromPcm } from "./clipAudio.js";
 
 export class MicrophoneError extends Schema.TaggedError<MicrophoneError>()("MicrophoneError", {
   issue: Schema.String,
@@ -15,20 +13,32 @@ export class MicrophoneError extends Schema.TaggedError<MicrophoneError>()("Micr
   }
 }
 
-const microphoneError = (error: unknown) =>
-  new MicrophoneError({ issue: error instanceof Error ? error.message : String(error) });
+const microphoneError = (error: unknown): MicrophoneError => {
+  if (error instanceof Error) {
+    return new MicrophoneError({ issue: error.message });
+  }
 
-/** 32 ms frames at 16 kHz. */
+  return new MicrophoneError({ issue: String(error) });
+};
+
 const FRAME_SAMPLES = 512;
-/** PvRecorder's own buffer: about 3 s of frames, so a busy event loop never drops audio. */
+// PvRecorder's own buffer: about 3 s of frames, so a busy event loop never drops audio.
 const BUFFERED_FRAMES = 100;
 const DEFAULT_DEVICE = -1;
 
-/**
- * The audio of the current hold; frames arriving while not recording are dropped. Shift down begins a clip that
- * may still be a capital letter; `confirm` marks it a hold, which owns the audio until it ends or is cancelled.
- * Every begin starts a new clip number, so work started for an earlier clip can tell it is late.
- */
+const joined = (frames: ReadonlyArray<Int16Array>): Float32Array => {
+  const length = frames.reduce((total, frame) => total + frame.length, 0);
+  const pcm = new Int16Array(length);
+  let offset = 0;
+  for (const frame of frames) {
+    pcm.set(frame, offset);
+    offset += frame.length;
+  }
+  return samplesFromPcm(pcm);
+};
+
+// Frames arriving while not recording are dropped. Shift down begins a clip that may still be a capital letter, and
+// `confirm` marks it a hold. Every begin starts a new clip number, so work started for an earlier clip can tell it is late.
 export const makeClipBuffer = () => {
   let frames: Array<Int16Array> = [];
   let recording = false;
@@ -48,16 +58,6 @@ export const makeClipBuffer = () => {
     }
   };
 
-  const joined = (selected: ReadonlyArray<Int16Array>): Float32Array => {
-    const pcm = new Int16Array(selected.reduce((total, frame) => total + frame.length, 0));
-    let offset = 0;
-    for (const frame of selected) {
-      pcm.set(frame, offset);
-      offset += frame.length;
-    }
-    return samplesFromPcm(pcm);
-  };
-
   const end = (): Float32Array => {
     recording = false;
     confirmed = false;
@@ -72,9 +72,13 @@ export const makeClipBuffer = () => {
     frames = [];
   };
 
-  /** The last `seconds` of the current capture, for the live caption. */
-  const tail = (seconds: number): Float32Array =>
-    joined(frames.slice(-Math.max(Math.ceil((seconds * SAMPLE_RATE) / FRAME_SAMPLES), 1)));
+  // At least one frame, because slice(-0) would return the whole clip.
+  const tail = (seconds: number): Float32Array => {
+    const wanted = Math.ceil((seconds * SAMPLE_RATE) / FRAME_SAMPLES);
+    const frameCount = Math.max(wanted, 1);
+    const tailFrames = frames.slice(-frameCount);
+    return joined(tailFrames);
+  };
 
   return {
     begin,
@@ -94,34 +98,32 @@ export const makeClipBuffer = () => {
 
 export type ClipBuffer = ReturnType<typeof makeClipBuffer>;
 
-/**
- * Open the default input and feed every frame to `clip` until the scope closes. `failure` fails when a read
- * fails, so the worker ends (and is started fresh) instead of recording silence from then on.
- */
+// `failure` fails when a read fails, so the worker ends (and is started fresh) instead of recording silence.
 export const openMicrophone = (clip: ClipBuffer) =>
   Effect.gen(function* () {
     const { PvRecorder } = yield* Effect.tryPromise({
       try: () => import("@picovoice/pvrecorder-node"),
       catch: microphoneError,
     });
-    const recorder = yield* Effect.acquireRelease(
-      Effect.try({
-        try: () => {
-          const opened = new PvRecorder(FRAME_SAMPLES, DEFAULT_DEVICE, BUFFERED_FRAMES);
-          opened.start();
-          return opened;
-        },
-        catch: microphoneError,
+    const startRecorder = Effect.try({
+      try: () => {
+        const opened = new PvRecorder(FRAME_SAMPLES, DEFAULT_DEVICE, BUFFERED_FRAMES);
+        opened.start();
+        return opened;
+      },
+      catch: microphoneError,
+    });
+    const recorder = yield* Effect.acquireRelease(startRecorder, (opened) =>
+      Effect.sync(() => {
+        opened.stop();
+        opened.release();
       }),
-      (opened) =>
-        Effect.sync(() => {
-          opened.stop();
-          opened.release();
-        }),
     );
     const readFrame = Effect.tryPromise({ try: () => recorder.read(), catch: microphoneError });
-    const reader = yield* Effect.forkScoped(
-      Effect.forever(Effect.flatMap(readFrame, (frame) => Effect.sync(() => clip.append(frame)))),
+    const reader = yield* readFrame.pipe(
+      Effect.flatMap((frame) => Effect.sync(() => clip.append(frame))),
+      Effect.forever,
+      Effect.forkScoped,
     );
     return { device: recorder.getSelectedDevice(), failure: Fiber.join(reader) };
   });

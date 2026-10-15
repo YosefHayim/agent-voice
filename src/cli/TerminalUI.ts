@@ -1,5 +1,3 @@
-/** The CLI's only presentation layer: every line printed and every prompt asked goes through here. */
-
 import { Prompt } from "@effect/cli";
 import { Terminal } from "@effect/platform";
 import { Console, Effect } from "effect";
@@ -24,63 +22,50 @@ export const fail = (message: string) => writeLine(`  ✗ ${message}`);
 
 export const detail = (message: string) => writeLine(`  · ${message}`);
 
-export const json = (document: unknown) => writeLine(JSON.stringify(document));
+export const json = (document: unknown) => {
+  const documentText = JSON.stringify(document);
+  return writeLine(documentText);
+};
 
-/** Exactly this text and a newline, for output other programs read (a refined prompt, rendered speech). */
+// Exactly this text and a newline, for output another program reads (a refined prompt, rendered speech).
 export const text = (message: string) => writeLine(message);
 
-export const note = (message: string, title?: string) =>
+const underline = (title: string): string => {
+  const width = Math.min(title.length, 40);
+  return "─".repeat(width);
+};
+
+export const note = (title: string, message: string) =>
   Effect.gen(function* () {
-    if (title !== undefined) {
-      yield* writeLine(`\n  ${title}`);
-      yield* writeLine(`  ${"─".repeat(Math.min(title.length, 40))}`);
-    }
+    yield* writeLine(`\n  ${title}`);
+    yield* writeLine(`  ${underline(title)}`);
     for (const line of message.split("\n")) {
       yield* writeLine(`  ${line}`);
     }
   });
 
-/** The one line for a failed command, on stderr, so `--json` output on stdout stays one parseable document. */
-export const showError = (error: unknown) =>
-  Console.error(`  ✗ ${error instanceof Error ? error.message : String(error)}`);
+const errorText = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
 
-// Every prompt answers with its fallback when there is no terminal, so non-TTY runs never block.
-export const confirm = (input: { message: string; initialValue: boolean }) =>
-  Effect.gen(function* () {
-    if (!(yield* isInteractiveTerminal)) {
-      return input.initialValue;
-    }
+  return String(error);
+};
 
-    return yield* Prompt.run(Prompt.confirm({ message: input.message, initial: input.initialValue }));
-  });
+// stderr, so `--json` output on stdout stays one parseable document.
+export const showError = (error: unknown) => {
+  const message = errorText(error);
+  return Console.error(`  ✗ ${message}`);
+};
 
+// Prompt.select has no initial choice, so the initial one is listed first and highlighted.
 export const selectOne = <Value>(input: {
-  message: string;
-  choices: ReadonlyArray<{ title: string; value: Value; description?: string }>;
-  initial?: Value;
-}) =>
-  Effect.gen(function* () {
-    if (yield* isInteractiveTerminal) {
-      // Prompt.select has no initial choice, so the initial one is listed first and highlighted.
-      const initial = input.choices.filter((choice) => choice.value === input.initial);
-      const others = input.choices.filter((choice) => choice.value !== input.initial);
-      return yield* Prompt.run(Prompt.select({ message: input.message, choices: [...initial, ...others] }));
-    }
-
-    const fallback = input.initial === undefined ? input.choices.at(0)?.value : input.initial;
-    if (fallback === undefined) {
-      return yield* Effect.fail(new Error("No choices available for non-interactive select."));
-    }
-
-    return fallback;
-  });
-
-export const optionalText = (input: { message: string; fallback: string }) =>
-  Effect.gen(function* () {
-    if (!(yield* isInteractiveTerminal)) {
-      return input.fallback;
-    }
-
-    const value = (yield* Prompt.run(Prompt.text({ message: input.message, default: input.fallback }))).trim();
-    return value === "" ? input.fallback : value;
-  });
+  readonly message: string;
+  readonly choices: ReadonlyArray<{ title: string; value: Value; description?: string }>;
+  readonly initial?: Value;
+}) => {
+  const initial = input.choices.filter((choice) => choice.value === input.initial);
+  const others = input.choices.filter((choice) => choice.value !== input.initial);
+  const prompt = Prompt.select({ message: input.message, choices: [...initial, ...others] });
+  return Prompt.run(prompt);
+};

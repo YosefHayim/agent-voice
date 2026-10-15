@@ -1,5 +1,3 @@
-/** Which Cmux surface is in front of the user, asked over the socket a Cmux reply records. */
-
 import { createConnection } from "node:net";
 
 import { Effect, Option, Schema } from "effect";
@@ -26,13 +24,19 @@ const identitySchema = Schema.Struct({
 
 const SOCKET_TIMEOUT_MS = 500;
 
-/**
- * One JSON-lines request; the `result` of an `ok` reply, or none when Cmux does not answer, fails, or closes
- * the connection without a reply line (the idle timeout does not fire after the peer has closed).
- */
+const answerFrom = (line: string): Option.Option<unknown> => {
+  const reply = Schema.decodeUnknownOption(rpcReplySchema)(line);
+  return reply.pipe(
+    Option.filter((answer) => answer.ok),
+    Option.map((answer) => answer.result),
+  );
+};
+
+// A close without a reply line must also finish: the idle timeout never fires after the peer has closed.
 const askCmux = (request: { readonly socketPath: string; readonly method: string }) =>
   Effect.async<Option.Option<unknown>>((resume) => {
     const socket = createConnection(request.socketPath);
+    const noAnswer = Option.none();
     let received = "";
     let answered = false;
     const finish = (answer: Option.Option<unknown>) => {
@@ -42,14 +46,19 @@ const askCmux = (request: { readonly socketPath: string; readonly method: string
 
       answered = true;
       socket.destroy();
-      resume(Effect.succeed(answer));
+      const answerEffect = Effect.succeed(answer);
+      resume(answerEffect);
     };
-    socket.setTimeout(SOCKET_TIMEOUT_MS, () => finish(Option.none()));
-    socket.on("error", () => finish(Option.none()));
-    socket.on("close", () => finish(Option.none()));
-    socket.on("connect", () =>
-      socket.write(`${JSON.stringify({ id: "voxkey", method: request.method, params: {} })}\n`),
-    );
+
+    const giveUp = () => finish(noAnswer);
+
+    socket.setTimeout(SOCKET_TIMEOUT_MS, giveUp);
+    socket.on("error", giveUp);
+    socket.on("close", giveUp);
+    socket.on("connect", () => {
+      const requestLine = JSON.stringify({ id: "voxkey", method: request.method, params: {} });
+      socket.write(`${requestLine}\n`);
+    });
     socket.on("data", (chunk) => {
       received += chunk.toString("utf8");
       const newline = received.indexOf("\n");
@@ -57,30 +66,33 @@ const askCmux = (request: { readonly socketPath: string; readonly method: string
         return;
       }
 
-      const reply = Schema.decodeUnknownOption(rpcReplySchema)(received.slice(0, newline));
-      finish(Option.flatMap(reply, (answer) => (answer.ok ? Option.some(answer.result) : Option.none())));
+      const replyLine = received.slice(0, newline);
+      const answer = answerFrom(replyLine);
+      finish(answer);
     });
     return Effect.sync(() => socket.destroy());
   });
 
-/** A Cmux window is `key` only while Cmux is the frontmost app. */
+// A Cmux window is `key` only while Cmux is the frontmost app.
 export const focusFrom = (windows: unknown, identity: unknown): CmuxFocus => {
   const windowList = Schema.decodeUnknownOption(windowListSchema)(windows);
-  const focused = Option.flatMap(Schema.decodeUnknownOption(identitySchema)(identity), (decoded) =>
-    Option.fromNullable(decoded.focused),
+  const decodedIdentity = Schema.decodeUnknownOption(identitySchema)(identity);
+  const focused = Option.flatMapNullable(decodedIdentity, (decoded) => decoded.focused);
+  const isFrontmost = Option.exists(windowList, (list) => list.windows.some((window) => window.key === true));
+  const workspace = focused.pipe(
+    Option.flatMapNullable((ids) => ids.workspace_id),
+    Option.getOrElse(() => ""),
   );
-  const frontmost = Option.exists(windowList, (list) => list.windows.some((window) => window.key === true));
-  const workspace = Option.getOrElse(
-    Option.flatMapNullable(focused, (ids) => ids.workspace_id),
-    () => "",
+  const surface = focused.pipe(
+    Option.flatMapNullable((ids) => ids.surface_id),
+    Option.getOrElse(() => ""),
   );
-  const surface = Option.getOrElse(
-    Option.flatMapNullable(focused, (ids) => ids.surface_id),
-    () => "",
-  );
-  return frontmost && workspace !== "" && surface !== ""
-    ? { kind: "surface", surface: `${workspace}:${surface}` }
-    : { kind: "away" };
+  const isFocusedSurface = isFrontmost && workspace !== "" && surface !== "";
+  if (!isFocusedSurface) {
+    return { kind: "away" };
+  }
+
+  return { kind: "surface", surface: `${workspace}:${surface}` };
 };
 
 export const cmuxFocus = (socketPath: string): Effect.Effect<CmuxFocus> =>

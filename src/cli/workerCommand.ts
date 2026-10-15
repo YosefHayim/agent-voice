@@ -1,5 +1,3 @@
-/** `voxkey worker dictation|speech`: the background workers' entry point; `voxkey on` starts them. */
-
 import { Args, Command } from "@effect/cli";
 import type { Effect } from "effect";
 
@@ -8,17 +6,17 @@ import { runSpeechWorker } from "../speech/speechWorker.js";
 
 type WorkerFailure = Effect.Effect.Error<typeof runDictationWorker> | Effect.Effect.Error<typeof runSpeechWorker>;
 
+const kindArgument = Args.choice(
+  [
+    ["dictation", "dictation"],
+    ["speech", "speech"],
+  ] as const,
+  { name: "kind" },
+);
+
 export const workerCommand = Command.make(
   "worker",
-  {
-    kind: Args.choice(
-      [
-        ["dictation", "dictation"],
-        ["speech", "speech"],
-      ] as const,
-      { name: "kind" },
-    ),
-  },
+  { kind: kindArgument },
   (args): Effect.Effect<void, WorkerFailure> => {
     switch (args.kind) {
       case "dictation":

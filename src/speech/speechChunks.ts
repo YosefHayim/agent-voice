@@ -1,22 +1,29 @@
-/**
- * Speech text for Supertonic: short chunks so the first words play while the rest renders, and the
- * same text clean-up the Supertonic package does before it maps characters to model IDs.
- */
-
-/** Short chunks so the first words are heard sooner. */
+// Short chunks, so the first words play while the rest still renders.
 export const SPEECH_CHUNK_CHARACTERS = 280;
 
-/** Split at the last sentence end that fits, else the last space, else hard at the limit. */
+const SENTENCE_END = /[.!?](?:\s|$)/gu;
+
+// The last sentence end that fits, else the last space, else a hard cut at the limit.
+const chunkEnd = (remaining: string, maxCharacters: number): number => {
+  const window = remaining.slice(0, maxCharacters + 1);
+  const sentenceEnds = [...window.matchAll(SENTENCE_END)].map((match) => match.index + match[0].length);
+  const splitAt = sentenceEnds.at(-1) || window.lastIndexOf(" ") + 1;
+  const fits = splitAt > 0 && splitAt <= maxCharacters;
+  if (!fits) {
+    return maxCharacters;
+  }
+
+  return splitAt;
+};
+
 export const chunkSpeech = (text: string, maxCharacters: number): ReadonlyArray<string> => {
   const chunks: Array<string> = [];
   let remaining = text;
   while (remaining.length > maxCharacters) {
-    const window = remaining.slice(0, maxCharacters + 1);
-    const sentenceEnds = [...window.matchAll(/[.!?](?:\s|$)/gu)].map((match) => match.index + match[0].length);
-    const splitAt = sentenceEnds.at(-1) || window.lastIndexOf(" ") + 1;
-    const cut = splitAt <= 0 || splitAt > maxCharacters ? maxCharacters : splitAt;
-    chunks.push(remaining.slice(0, cut));
-    remaining = remaining.slice(cut);
+    const end = chunkEnd(remaining, maxCharacters);
+    const chunk = remaining.slice(0, end);
+    chunks.push(chunk);
+    remaining = remaining.slice(end);
   }
   chunks.push(remaining);
   return chunks.map((chunk) => chunk.trim()).filter((chunk) => chunk !== "");
@@ -51,25 +58,38 @@ const SYMBOL_REPLACEMENTS: ReadonlyArray<readonly [string, string]> = [
 
 const replaceAll = (text: string, [from, to]: readonly [string, string]) => text.split(from).join(to);
 
-/** The text Supertonic 3 reads, wrapped in its English language tags: `<en>Hello.</en>`. */
+// The same clean-up the Supertonic package does before it maps characters to model IDs.
 export const supertonicText = (text: string): string => {
-  const cleaned = SYMBOL_REPLACEMENTS.reduce(replaceAll, text.normalize("NFKD").replace(EMOJI, ""))
+  const withoutEmoji = text.normalize("NFKD").replace(EMOJI, "");
+  const cleaned = SYMBOL_REPLACEMENTS.reduce(replaceAll, withoutEmoji)
     .replace(/[♥☆♡©\\]/gu, "")
     .replace(/ ([,.!?;:'])/gu, "$1")
     .replace(/(["'`])\1+/gu, "$1")
     .replace(/\s+/gu, " ")
     .trim();
-  const ended = /[.!?;:,'")\]}…。」』】〉》›»]$/u.test(cleaned) ? cleaned : `${cleaned}.`;
-  return `<en>${ended}</en>`;
+  const isEnded = /[.!?;:,'")\]}…。」』】〉》›»]$/u.test(cleaned);
+  if (isEnded) {
+    return `<en>${cleaned}</en>`;
+  }
+
+  return `<en>${cleaned}.</en>`;
 };
 
-/** Model character IDs; characters the model has no ID for are dropped instead of failing the reply. */
+// A character the model has no ID for is dropped instead of failing the reply.
 export const characterIds = (text: string, indexer: ReadonlyArray<number>): ReadonlyArray<number> =>
   [...text].flatMap((character) => {
-    const id = indexer[character.codePointAt(0) || 0];
-    return id === undefined || id < 0 ? [] : [id];
+    const codePoint = character.codePointAt(0) || 0;
+    const id = indexer[codePoint];
+    if (id === undefined || id < 0) {
+      return [];
+    }
+
+    return [id];
   });
 
-/** Words per minute → Supertonic speed (200 wpm is 1.0x), clamped to the model's 0.7–2.0x. */
-export const speedForWordsPerMinute = (wordsPerMinute: number): number =>
-  Math.min(Math.max(wordsPerMinute / 200, 0.7), 2);
+// 200 wpm is Supertonic's 1.0x, and the model only takes 0.7x to 2.0x.
+export const speedForWordsPerMinute = (wordsPerMinute: number): number => {
+  const speed = wordsPerMinute / 200;
+  const notTooSlow = Math.max(speed, 0.7);
+  return Math.min(notTooSlow, 2);
+};

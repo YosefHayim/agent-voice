@@ -1,25 +1,29 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { makeTestFolder } from "../scripts/testFolder.js";
 import { cmuxFocus } from "./cmuxFocus.js";
-
-const scratchRoot = fileURLToPath(new URL("../../.scratch/", import.meta.url));
 
 let folder = "";
 let server: Server | undefined;
 
 beforeEach(() => {
-  mkdirSync(scratchRoot, { recursive: true });
-  folder = mkdtempSync(path.join(scratchRoot, "cmux-"));
+  folder = makeTestFolder("cmux");
 });
 
 afterEach(async () => {
-  await new Promise((resolve) => (server === undefined ? resolve(undefined) : server.close(resolve)));
+  await new Promise((resolve) => {
+    if (server === undefined) {
+      resolve(undefined);
+      return;
+    }
+
+    server.close(resolve);
+  });
   server = undefined;
   rmSync(folder, { recursive: true, force: true });
 });
@@ -31,7 +35,8 @@ describe("cmuxFocus", () => {
     server = createServer((connection) => connection.resume().end());
     await new Promise((resolve) => server?.listen(socketPath, () => resolve(undefined)));
 
-    const focus = await Effect.runPromise(Effect.timeout(cmuxFocus(socketPath), "2 seconds"));
+    const askFocus = cmuxFocus(socketPath).pipe(Effect.timeout("2 seconds"));
+    const focus = await Effect.runPromise(askFocus);
 
     expect(focus).toEqual({ kind: "unknown" });
   });

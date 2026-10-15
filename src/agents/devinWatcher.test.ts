@@ -1,19 +1,16 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { makeTestFolder } from "../scripts/testFolder.js";
 import { latestDevinTurn, watchDevinSession } from "./devinWatcher.js";
-
-const scratchRoot = fileURLToPath(new URL("../../.scratch/", import.meta.url));
 
 let home = "";
 
 beforeEach(() => {
-  mkdirSync(scratchRoot, { recursive: true });
-  home = mkdtempSync(path.join(scratchRoot, "devin-"));
+  home = makeTestFolder("devin");
   vi.stubEnv("VOXKEY_HOME", home);
 });
 
@@ -50,22 +47,28 @@ describe("latestDevinTurn", () => {
 describe("watchDevinSession", () => {
   const exportFile = () => path.join(home, "session.atif.json");
 
-  const writeTurn = (turnId: string, message: string) =>
-    writeFileSync(
-      exportFile(),
-      JSON.stringify({
-        steps: [
-          { step_id: `${turnId}-user`, source: "user", message: "Question" },
-          { step_id: turnId, source: "agent", message },
-        ],
-      }),
-    );
+  const writeTurn = (turnId: string, message: string) => {
+    const atifText = JSON.stringify({
+      steps: [
+        { step_id: `${turnId}-user`, source: "user", message: "Question" },
+        { step_id: turnId, source: "agent", message },
+      ],
+    });
+    const atifPath = exportFile();
+    writeFileSync(atifPath, atifText);
+  };
 
   const queuedMarkdown = (): ReadonlyArray<string> => {
     const inbox = path.join(home, "inbox");
-    return existsSync(inbox)
-      ? readdirSync(inbox).map((name) => JSON.parse(readFileSync(path.join(inbox, name), "utf8")).markdown)
-      : [];
+    if (!existsSync(inbox)) {
+      return [];
+    }
+
+    return readdirSync(inbox).map((name) => {
+      const replyPath = path.join(inbox, name);
+      const replyText = readFileSync(replyPath, "utf8");
+      return JSON.parse(replyText).markdown;
+    });
   };
 
   it("keeps reading turns after a turn fails to queue, and queues the turn written as Devin exits", async () => {
@@ -80,15 +83,18 @@ describe("watchDevinSession", () => {
       return 0;
     });
 
-    expect(await Effect.runPromise(watchDevinSession({ exportFile: exportFile(), session }))).toBe(0);
+    const watchedSession = watchDevinSession({ exportFile: exportFile(), session });
+
+    expect(await Effect.runPromise(watchedSession)).toBe(0);
     expect(queuedMarkdown()).toEqual(["Second answer"]);
   });
 
   it("stops watching when Devin fails to start, even while the caller keeps running", async () => {
     const program = Effect.gen(function* () {
-      const failure = yield* Effect.flip(
-        watchDevinSession({ exportFile: exportFile(), session: Effect.fail("devin was not found" as const) }),
-      );
+      const failure = yield* watchDevinSession({
+        exportFile: exportFile(),
+        session: Effect.fail("devin was not found" as const),
+      }).pipe(Effect.flip);
       // A watcher left running would by now have read the empty export, so it would take this turn for a new one.
       yield* Effect.sleep("400 millis");
       writeTurn("late-turn", "A turn no watcher should read");

@@ -1,19 +1,18 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
+import { makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
+
 const mainScript = path.join(repositoryRoot, "src", "cli", "main.ts");
 
 let home = "";
 let sleeper: ChildProcess | undefined;
 
 beforeEach(() => {
-  mkdirSync(path.join(repositoryRoot, ".scratch"), { recursive: true });
-  home = mkdtempSync(path.join(repositoryRoot, ".scratch", "config-cli-"));
+  home = makeTestFolder("config-cli");
 });
 
 // The only process signalled is the stand-in speech worker this test started.
@@ -47,8 +46,11 @@ const startStandInSpeechWorker = async (marker: string) => {
   const listener = `process.on("SIGUSR2", () => { require("node:fs").writeFileSync(process.argv[1], "stopped"); process.exit(0); }); setInterval(() => {}, 1 << 30);`;
   sleeper = spawn(process.execPath, ["-e", listener, marker, "worker", "speech"], { stdio: "ignore" });
   await new Promise((resolve) => sleeper?.once("spawn", resolve));
-  mkdirSync(path.join(home, ".voxkey"), { recursive: true });
-  writeFileSync(path.join(home, ".voxkey", "speech.pid"), String(sleeper.pid));
+  const voxkeyFolder = path.join(home, ".voxkey");
+  const pidFile = path.join(voxkeyFolder, "speech.pid");
+  const pid = String(sleeper.pid);
+  mkdirSync(voxkeyFolder, { recursive: true });
+  writeFileSync(pidFile, pid);
 };
 
 const speechStopped = async (marker: string) => {
@@ -59,7 +61,10 @@ const speechStopped = async (marker: string) => {
   return existsSync(marker) && readFileSync(marker, "utf8") === "stopped";
 };
 
-const speechMuted = () => JSON.parse(voxkey(["status", "--json"]).stdout).speech.muted;
+const speechMuted = () => {
+  const statusRun = voxkey(["status", "--json"]);
+  return JSON.parse(statusRun.stdout).speech.muted;
+};
 
 describe("voxkey config set speech-mode off", () => {
   it("stops the reply being read now instead of after it ends", async () => {
@@ -88,7 +93,9 @@ describe("voxkey speech-muted", () => {
   it("stops the reply being read now when muted again", async () => {
     const marker = path.join(home, "stopped");
     await startStandInSpeechWorker(marker);
-    writeFileSync(path.join(home, ".voxkey", "config.json"), JSON.stringify({ speechMuted: false }));
+    const configFile = path.join(home, ".voxkey", "config.json");
+    const configText = JSON.stringify({ speechMuted: false });
+    writeFileSync(configFile, configText);
 
     const set = voxkey(["config", "set", "speech-muted", "true"]);
 

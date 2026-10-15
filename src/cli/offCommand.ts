@@ -1,5 +1,3 @@
-/** `voxkey off`: stop every voxkey process and remove only voxkey's entries from the agent settings. */
-
 import { Command } from "@effect/cli";
 import { Effect } from "effect";
 
@@ -13,7 +11,8 @@ export const offCommand = Command.make("off", {}, () =>
     yield* TerminalUI.intro("off");
     // Hooks first, so an agent turn that ends meanwhile cannot start a worker after the workers are stopped.
     yield* TerminalUI.step("Removing voxkey's Stop hook from the agent settings");
-    yield* showHookChanges(yield* unregisterReplyHooks);
+    const changes = yield* unregisterReplyHooks;
+    yield* showHookChanges(changes);
     yield* TerminalUI.step("Stopping the workers and the pill");
     yield* resetWorkers;
     yield* TerminalUI.outro("voxkey is off. Your config and models stay in ~/.voxkey.");

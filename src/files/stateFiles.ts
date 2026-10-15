@@ -1,5 +1,3 @@
-/** Small state files: written through a temporary sibling and a rename, so readers never see half a file. */
-
 import { randomUUID } from "node:crypto";
 import {
   chmodSync,
@@ -23,7 +21,7 @@ const PRIVATE_FILE_MODE = 0o600;
 
 const PRIVATE_FOLDER_MODE = 0o700;
 
-/** Create a private folder, or tighten one an older build (or the user's umask) left readable by others. */
+// chmod also tightens a folder an older build (or the user's umask) left readable by others.
 export const makePrivateFolder = (folder: string): void => {
   mkdirSync(folder, { recursive: true, mode: PRIVATE_FOLDER_MODE });
   chmodSync(folder, PRIVATE_FOLDER_MODE);
@@ -32,8 +30,10 @@ export const makePrivateFolder = (folder: string): void => {
 // Folders under voxkey's home are tightened; a folder the user picked (say, for VOXKEY_CONFIG_FILE) keeps its mode.
 const makeFolderFor = (filePath: string): void => {
   const folder = path.dirname(filePath);
-  const relative = path.relative(voxkeyHome(), folder);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+  const home = voxkeyHome();
+  const relative = path.relative(home, folder);
+  const isOutsideHome = relative.startsWith("..") || path.isAbsolute(relative);
+  if (isOutsideHome) {
     mkdirSync(folder, { recursive: true, mode: PRIVATE_FOLDER_MODE });
     return;
   }
@@ -41,12 +41,10 @@ const makeFolderFor = (filePath: string): void => {
   makePrivateFolder(folder);
 };
 
-/**
- * Open a file in a private folder to replace ("w") or append to ("a"). A new file is created 0600, and one created
- * looser before is tightened before anything is written, so its earlier lines become private too.
- */
+// A file created looser before is tightened before anything is written, so its earlier lines become private too.
 export const openPrivateFile = (request: { readonly path: string; readonly flags: "a" | "w" }): number => {
-  makePrivateFolder(path.dirname(request.path));
+  const folder = path.dirname(request.path);
+  makePrivateFolder(folder);
   const descriptor = openSync(request.path, request.flags, PRIVATE_FILE_MODE);
   try {
     fchmodSync(descriptor, PRIVATE_FILE_MODE);
@@ -57,7 +55,6 @@ export const openPrivateFile = (request: { readonly path: string; readonly flags
   return descriptor;
 };
 
-/** Replace or append to a private file (see openPrivateFile) with text or audio. */
 export const writePrivateFile = (request: {
   readonly path: string;
   readonly flags: "a" | "w";
@@ -71,25 +68,29 @@ export const writePrivateFile = (request: {
   }
 };
 
+// Written through a temporary sibling and a rename, so readers never see half a file.
 export const writeFileAtomically = (request: { readonly path: string; readonly text: string }): void => {
   makeFolderFor(request.path);
-  const staging = path.join(path.dirname(request.path), `.${path.basename(request.path)}.${randomUUID()}.partial`);
+  const folder = path.dirname(request.path);
+  const fileName = path.basename(request.path);
+  const staging = path.join(folder, `.${fileName}.${randomUUID()}.partial`);
   writeFileSync(staging, request.text, { encoding: "utf8", mode: PRIVATE_FILE_MODE });
   renameSync(staging, request.path);
 };
 
-export const writeJsonAtomically = (request: { readonly path: string; readonly value: unknown }): void =>
-  writeFileAtomically({ path: request.path, text: `${JSON.stringify(request.value)}\n` });
+export const writeJsonAtomically = (request: { readonly path: string; readonly value: unknown }): void => {
+  const json = JSON.stringify(request.value);
+  writeFileAtomically({ path: request.path, text: `${json}\n` });
+};
 
 const isMissingFile = Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }));
 
-/**
- * The file's text, or none when it does not exist. Any other read failure is thrown: a caller that writes the
- * file back must never mistake an unreadable file for a missing one.
- */
+// Only a missing file is none; any other read failure is thrown, so a caller that writes the file back never
+// mistakes an unreadable file for a missing one.
 export const readTextIfPresent = (filePath: string): Option.Option<string> => {
   try {
-    return Option.some(readFileSync(filePath, "utf8"));
+    const text = readFileSync(filePath, "utf8");
+    return Option.some(text);
   } catch (error) {
     if (isMissingFile(error)) {
       return Option.none();
@@ -99,7 +100,7 @@ export const readTextIfPresent = (filePath: string): Option.Option<string> => {
   }
 };
 
-/** The file's text, or none when it is missing or cannot be read: for files voxkey only reads, never writes back. */
+// For files voxkey only reads, never writes back.
 export const readTextIfReadable = (filePath: string): Option.Option<string> => {
   try {
     return readTextIfPresent(filePath);
@@ -108,12 +109,13 @@ export const readTextIfReadable = (filePath: string): Option.Option<string> => {
   }
 };
 
-/** The decoded JSON file, or none when it is missing, unreadable, not JSON, or the wrong shape. */
 export const readJsonFile = <Value, Encoded>(request: {
   readonly path: string;
   readonly schema: Schema.Schema<Value, Encoded>;
-}): Option.Option<Value> =>
-  Option.flatMap(readTextIfReadable(request.path), Schema.decodeUnknownOption(Schema.parseJson(request.schema)));
+}): Option.Option<Value> => {
+  const decodeJson = Schema.decodeUnknownOption(Schema.parseJson(request.schema));
+  return readTextIfReadable(request.path).pipe(Option.flatMap(decodeJson));
+};
 
 export const removeIfPresent = (filePath: string): void => rmSync(filePath, { force: true });
 

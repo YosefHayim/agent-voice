@@ -1,12 +1,17 @@
-/** Every VOXKEY_* environment variable, decoded once from process.env. */
-
-import { Schema } from "effect";
+import { Option, Schema, SchemaAST } from "effect";
 
 // "off", "0", "false", and "no" switch a feature off; anything else (or unset) leaves it on.
+const OFF_WORDS = ["0", "false", "off", "no"];
+
+const isSwitchOn = (text: string): boolean => {
+  const word = text.trim().toLowerCase();
+  return !OFF_WORDS.includes(word);
+};
+
 const switchSchema = Schema.transform(Schema.String, Schema.Boolean, {
   strict: true,
-  decode: (text) => !["0", "false", "off", "no"].includes(text.trim().toLowerCase()),
-  encode: (enabled) => (enabled ? "on" : "off"),
+  decode: isSwitchOn,
+  encode: String,
 });
 
 const textVariable = Schema.optionalWith(Schema.Trim, { default: () => "" });
@@ -39,9 +44,16 @@ const environmentSchema = Schema.Struct({
 
 export type VoxkeyEnvironment = Schema.Schema.Type<typeof environmentSchema>;
 
-export const readEnvironment = (): VoxkeyEnvironment => Schema.decodeUnknownSync(environmentSchema)(process.env);
+const decodeEnvironment = Schema.decodeUnknownSync(environmentSchema);
 
-// The README lists exactly these names; voxkey's own variables only, not CI.
-export const environmentVariableNames = Object.keys(environmentSchema.fields).filter((name) =>
-  name.startsWith("VOXKEY_"),
-);
+export const readEnvironment = (): VoxkeyEnvironment => decodeEnvironment(process.env);
+
+const environmentTypeAst = SchemaAST.typeAST(environmentSchema.ast);
+
+// README and .env.example list exactly these: voxkey's own variables, not CI.
+export const voxkeyVariables = SchemaAST.getPropertySignatures(environmentTypeAst)
+  .map((field) => ({
+    name: String(field.name),
+    description: SchemaAST.getDescriptionAnnotation(field).pipe(Option.getOrElse(() => "")),
+  }))
+  .filter((variable) => variable.name.startsWith("VOXKEY_"));

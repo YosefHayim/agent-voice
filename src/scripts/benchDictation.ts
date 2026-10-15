@@ -1,13 +1,11 @@
-/**
- * `pnpm bench [--models tiny,base,small,turbo-q5] [--seconds 1,2,4] [--runs 3]`: Whisper load and warm
- * decode times on synthetic speech (no mic, no typing). Downloads a missing model first.
- */
+// `pnpm bench [--models tiny,base,small,turbo-q5] [--seconds 1,2,4] [--runs 3]`: Whisper load and warm decode times
+// on synthetic speech (no mic, no typing). Downloads a missing model first.
 
 import { parseArgs } from "node:util";
 
 import { Effect, Schema } from "effect";
 
-import { SAMPLE_RATE, syntheticSpeech } from "../dictation/speechDetection.js";
+import { SAMPLE_RATE, syntheticSpeech } from "../dictation/clipAudio.js";
 import { loadTranscriber, whisperBackend } from "../dictation/transcriber.js";
 import { ensureWhisperModel, whisperModels } from "../dictation/whisperModels.js";
 
@@ -19,7 +17,7 @@ const { values } = parseArgs({
   },
 });
 
-const list = (text: string) =>
+const commaList = (text: string) =>
   text
     .split(",")
     .map((item) => item.trim())
@@ -31,6 +29,10 @@ const round = (value: number) => Math.round(value * 10) / 10;
 const durationsSchema = Schema.Array(Schema.NumberFromString.pipe(Schema.finite(), Schema.positive()));
 
 const runsSchema = Schema.NumberFromString.pipe(Schema.int(), Schema.positive());
+
+const decodeDurations = Schema.decodeUnknownSync(durationsSchema);
+
+const decodeRuns = Schema.decodeUnknownSync(runsSchema);
 
 const benchModel = (request: {
   readonly key: string;
@@ -50,48 +52,55 @@ const benchModel = (request: {
     const warmStarted = performance.now();
     yield* transcriber.warm;
     const warmMs = performance.now() - warmStarted;
-    const clips = yield* Effect.forEach(request.seconds, (seconds) => {
-      // syntheticSpeech pads very short requests, so the clip's own length is the audio that was decoded.
-      const samples = syntheticSpeech(seconds);
-      const audioSeconds = samples.length / SAMPLE_RATE;
-      return Effect.map(
-        Effect.forEach(Array.from({ length: request.runs }), () =>
+    const clips = yield* Effect.forEach(request.seconds, (seconds) =>
+      Effect.gen(function* () {
+        // syntheticSpeech pads very short requests, so the clip's own length is the audio that was decoded.
+        const samples = syntheticSpeech(seconds);
+        const audioSeconds = samples.length / SAMPLE_RATE;
+        const attempts = Array.from({ length: request.runs });
+        const timings = yield* Effect.forEach(attempts, () =>
           transcriber.transcribe({ samples, language: "en", prompt: "" }),
-        ),
-        (timings) => {
-          const decodes = timings.map((timing) => timing.decodeMs);
-          const mean = decodes.reduce((total, decode) => total + decode, 0) / decodes.length;
-          return {
-            audioSeconds,
-            runs: request.runs,
-            decodeMsMean: round(mean),
-            decodeMsMin: round(Math.min(...decodes)),
-            decodeMsMax: round(Math.max(...decodes)),
-            realtimeFactor: round(audioSeconds / (mean / 1_000)),
-          };
-        },
-      );
-    });
+        );
+        const decodes = timings.map((timing) => timing.decodeMs);
+        const mean = decodes.reduce((total, decode) => total + decode, 0) / decodes.length;
+        const fastest = Math.min(...decodes);
+        const slowest = Math.max(...decodes);
+        return {
+          audioSeconds,
+          runs: request.runs,
+          decodeMsMean: round(mean),
+          decodeMsMin: round(fastest),
+          decodeMsMax: round(slowest),
+          realtimeFactor: round(audioSeconds / (mean / 1_000)),
+        };
+      }),
+    );
     yield* transcriber.release;
     return { model: model.file, label: model.label, loadMs: round(loadMs), warmMs: round(warmMs), clips };
   });
 
-const seconds = Schema.decodeUnknownSync(durationsSchema)(list(values.seconds));
+const secondsList = commaList(values.seconds);
 
-const runs = Schema.decodeUnknownSync(runsSchema)(values.runs.trim());
+const seconds = decodeDurations(secondsList);
 
-const report = await Effect.runPromise(
-  Effect.forEach(list(values.models), (key) => benchModel({ key, seconds, runs })),
+const runsText = values.runs.trim();
+
+const runs = decodeRuns(runsText);
+
+const modelKeys = commaList(values.models);
+
+const models = await Effect.forEach(modelKeys, (key) => benchModel({ key, seconds, runs })).pipe(Effect.runPromise);
+
+const backend = whisperBackend();
+
+const reportJson = JSON.stringify(
+  {
+    backend,
+    note: "decodeMs is VAD + Whisper on synthetic speech-like audio with a warm model; loadMs is the one-time cold start.",
+    models,
+  },
+  null,
+  2,
 );
 
-process.stdout.write(
-  `${JSON.stringify(
-    {
-      backend: whisperBackend(),
-      note: "decodeMs is VAD + Whisper on synthetic speech-like audio with a warm model; loadMs is the one-time cold start.",
-      models: report,
-    },
-    null,
-    2,
-  )}\n`,
-);
+process.stdout.write(`${reportJson}\n`);

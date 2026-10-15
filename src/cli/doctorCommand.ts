@@ -5,11 +5,11 @@ import { Command, Options } from "@effect/cli";
 import { Effect, Option, Schema } from "effect";
 import { agentHookTargets } from "../agents/agentCatalog.js";
 import { registeredAgents } from "../agents/hookRegistration.js";
-import { loadKeyboard } from "../dictation/keyboard.js";
+import { type Keyboard, loadKeyboard } from "../dictation/keyboard.js";
 import { WHISPER_PACKAGE } from "../dictation/transcriber.js";
 import { isWhisperModelPresent, selectWhisperModel, whisperModelPath } from "../dictation/whisperModels.js";
 import { findCli, runCli } from "../refine/agentCli.js";
-import { discoverProviders } from "../refine/providerModels.js";
+import { type DiscoveredProvider, discoverProviders } from "../refine/providerModels.js";
 import { readConfig } from "../settings/configFile.js";
 import type { Config } from "../settings/configSchema.js";
 import { readEnvironment } from "../settings/environmentVariables.js";
@@ -34,214 +34,251 @@ const problem = (request: {
   readonly fix: string;
 }): DoctorCheck => request;
 
-const platformCheck = (): DoctorCheck =>
-  process.platform === "darwin"
-    ? ok("macOS", `${process.platform} ${process.arch}`)
-    : problem({ name: "macOS", status: "fail", detail: process.platform, fix: "voxkey runs only on macOS." });
-
-const nodeCheck = (): DoctorCheck => {
-  const major = Number(process.versions.node.split(".")[0]);
-  return major >= 22
-    ? ok("Node.js", process.versions.node)
-    : problem({
-        name: "Node.js",
-        status: "fail",
-        detail: process.versions.node,
-        fix: "Install Node 22 or newer: brew install node",
-      });
-};
-
-// Each native module ships a prebuilt darwin-arm64 binary; loading it proves the install is complete.
-const nativeModuleCheck = (request: { readonly name: string; readonly load: () => Promise<unknown> }) =>
-  Effect.tryPromise(request.load).pipe(
-    Effect.as(ok(request.name, "loads")),
-    Effect.catchAll((error) =>
-      Effect.succeed(
-        problem({ name: request.name, status: "fail", detail: String(error), fix: "Reinstall voxkey: pnpm install" }),
-      ),
-    ),
-  );
-
-const SYSTEM_TOOLS: ReadonlyArray<readonly [string, string]> = [
-  ["osascript", "the pill, ⌘V paste, and the refine picker"],
-  ["afplay", "speech playback"],
-  ["pbcopy", "clipboard refine and long pastes"],
-  ["pbpaste", "clipboard refine and long pastes"],
-];
-
-const toolChecks = (): ReadonlyArray<DoctorCheck> =>
-  SYSTEM_TOOLS.map(([tool, purpose]) =>
-    Option.isSome(findCli(tool))
-      ? ok(tool, purpose)
-      : problem({
-          name: tool,
-          status: "fail",
-          detail: `missing (${purpose})`,
-          fix: "It ships with macOS; check PATH.",
-        }),
-  );
-
-const modelChecks = (config: Config): ReadonlyArray<DoctorCheck> => {
-  const model = selectWhisperModel({ environment: readEnvironment(), config });
-  const whisper = isWhisperModelPresent(model)
-    ? ok("Whisper model", whisperModelPath(model))
-    : problem({ name: "Whisper model", status: "warn", detail: `${model.label} not downloaded`, fix: "voxkey on" });
-  const missing = missingSupertonicFiles();
-  const isSpeechOff = config.speechMode === "off";
-  const supertonic =
-    missing.length === 0 || isSpeechOff
-      ? ok("Supertonic voices", missing.length === 0 ? supertonicFolder() : "not needed (speech is off)")
-      : problem({
-          name: "Supertonic voices",
-          status: "warn",
-          detail: `${String(missing.length)} files missing`,
-          fix: "voxkey on",
-        });
-  return [whisper, supertonic];
-};
-
+const REINSTALL = "Reinstall voxkey: pnpm install";
 const PRIVACY_PANE = "System Settings → Privacy & Security →";
-
 const ALLOW_TERMINAL = "allow your terminal app (or the app that runs voxkey).";
-
-const keyboardPermissionChecks = Effect.map(
-  loadKeyboard,
-  (keyboard): ReadonlyArray<DoctorCheck> => [
-    keyboard.accessibilityAllowed() && keyboard.postingAllowed()
-      ? ok("Accessibility", "voxkey can type at the caret")
-      : problem({
-          name: "Accessibility",
-          status: "fail",
-          detail: "not allowed",
-          fix: `${PRIVACY_PANE} Accessibility: ${ALLOW_TERMINAL}`,
-        }),
-    keyboard.inputMonitoringAllowed()
-      ? ok("Input Monitoring", "voxkey can read Shift")
-      : problem({
-          name: "Input Monitoring",
-          status: "warn",
-          detail: "not allowed",
-          fix: `${PRIVACY_PANE} Input Monitoring: ${ALLOW_TERMINAL}`,
-        }),
-  ],
-).pipe(
-  Effect.catchAll((error) =>
-    Effect.succeed([
-      problem({
-        name: "Keyboard access",
-        status: "fail",
-        detail: error.message,
-        fix: "Reinstall voxkey: pnpm install",
-      }),
-    ]),
-  ),
-);
+const MICROPHONE_FIX = `${PRIVACY_PANE} Microphone: ${ALLOW_TERMINAL}`;
 
 // AVCaptureDevice through JXA: 3 is authorized, 0 not asked yet, 1 restricted, 2 denied.
 const MICROPHONE_STATUS_SCRIPT =
   '$.NSBundle.bundleWithPath("/System/Library/Frameworks/AVFoundation.framework").load; $.NSClassFromString("AVCaptureDevice").authorizationStatusForMediaType("soun")';
 
-const microphoneFix = `${PRIVACY_PANE} Microphone: ${ALLOW_TERMINAL}`;
+// Each native module ships a prebuilt darwin-arm64 binary; loading it proves the install is complete.
+const NATIVE_MODULES = [
+  { name: "koffi (keyboard)", load: () => import("koffi") },
+  { name: "PvRecorder (microphone)", load: () => import("@picovoice/pvrecorder-node") },
+  { name: "whisper.node (dictation)", load: () => import(WHISPER_PACKAGE) },
+  { name: "onnxruntime-node (speech)", load: () => import("onnxruntime-node") },
+];
+
+const SYSTEM_TOOLS = [
+  { tool: "osascript", purpose: "the pill, ⌘V paste, and the refine picker" },
+  { tool: "afplay", purpose: "speech playback" },
+  { tool: "pbcopy", purpose: "clipboard refine and long pastes" },
+  { tool: "pbpaste", purpose: "clipboard refine and long pastes" },
+];
+
+const platformCheck = (): DoctorCheck => {
+  const isMac = process.platform === "darwin";
+  if (!isMac) {
+    return problem({ name: "macOS", status: "fail", detail: process.platform, fix: "voxkey runs only on macOS." });
+  }
+
+  return ok("macOS", `${process.platform} ${process.arch}`);
+};
+
+const nodeCheck = (): DoctorCheck => {
+  const [major] = process.versions.node.split(".");
+  const isSupported = Number(major) >= 22;
+  if (!isSupported) {
+    const fix = "Install Node 22 or newer: brew install node";
+    return problem({ name: "Node.js", status: "fail", detail: process.versions.node, fix });
+  }
+
+  return ok("Node.js", process.versions.node);
+};
+
+const nativeModuleCheck = (module: (typeof NATIVE_MODULES)[number]) =>
+  Effect.tryPromise({ try: module.load, catch: String }).pipe(
+    Effect.match({
+      onSuccess: () => ok(module.name, "loads"),
+      onFailure: (issue) => problem({ name: module.name, status: "fail", detail: issue, fix: REINSTALL }),
+    }),
+  );
+
+const toolCheck = (systemTool: (typeof SYSTEM_TOOLS)[number]): DoctorCheck => {
+  const toolPath = findCli(systemTool.tool);
+  if (Option.isNone(toolPath)) {
+    const detail = `missing (${systemTool.purpose})`;
+    return problem({ name: systemTool.tool, status: "fail", detail, fix: "It ships with macOS; check PATH." });
+  }
+
+  return ok(systemTool.tool, systemTool.purpose);
+};
+
+const accessibilityCheck = (keyboard: Keyboard): DoctorCheck => {
+  const canType = keyboard.accessibilityAllowed() && keyboard.postingAllowed();
+  if (!canType) {
+    const fix = `${PRIVACY_PANE} Accessibility: ${ALLOW_TERMINAL}`;
+    return problem({ name: "Accessibility", status: "fail", detail: "not allowed", fix });
+  }
+
+  return ok("Accessibility", "voxkey can type at the caret");
+};
+
+const inputMonitoringCheck = (keyboard: Keyboard): DoctorCheck => {
+  const canReadShift = keyboard.inputMonitoringAllowed();
+  if (!canReadShift) {
+    const fix = `${PRIVACY_PANE} Input Monitoring: ${ALLOW_TERMINAL}`;
+    return problem({ name: "Input Monitoring", status: "warn", detail: "not allowed", fix });
+  }
+
+  return ok("Input Monitoring", "voxkey can read Shift");
+};
+
+const keyboardChecks = loadKeyboard.pipe(
+  Effect.match({
+    onSuccess: (keyboard) => [accessibilityCheck(keyboard), inputMonitoringCheck(keyboard)],
+    onFailure: (error) => [problem({ name: "Keyboard access", status: "fail", detail: error.message, fix: REINSTALL })],
+  }),
+);
+
+const microphoneCheckFor = (authorization: string): DoctorCheck => {
+  if (authorization === "3") {
+    return ok("Microphone", "allowed");
+  }
+
+  if (authorization === "0") {
+    const fix = "Run voxkey on and accept the prompt.";
+    return problem({ name: "Microphone", status: "warn", detail: "not asked yet", fix });
+  }
+
+  return problem({ name: "Microphone", status: "fail", detail: "denied", fix: MICROPHONE_FIX });
+};
 
 const microphoneCheck = runCli({
   executable: "osascript",
   args: ["-l", "JavaScript", "-e", MICROPHONE_STATUS_SCRIPT],
   timeoutMs: 10_000,
 }).pipe(
-  Effect.map((cliRun): DoctorCheck => {
-    switch (cliRun.stdout.trim()) {
-      case "3":
-        return ok("Microphone", "allowed");
-      case "0":
-        return problem({
-          name: "Microphone",
-          status: "warn",
-          detail: "not asked yet",
-          fix: "Run voxkey on and accept the prompt.",
-        });
-      default:
-        return problem({ name: "Microphone", status: "fail", detail: "denied", fix: microphoneFix });
-    }
+  Effect.match({
+    onSuccess: (cliRun) => {
+      const authorization = cliRun.stdout.trim();
+      return microphoneCheckFor(authorization);
+    },
+    onFailure: () =>
+      problem({ name: "Microphone", status: "warn", detail: "could not ask macOS", fix: MICROPHONE_FIX }),
   }),
-  Effect.orElseSucceed(() =>
-    problem({ name: "Microphone", status: "warn", detail: "could not ask macOS", fix: microphoneFix }),
-  ),
 );
 
 const hookChecks = (): ReadonlyArray<DoctorCheck> => {
+  const home = homedir();
   const registered = registeredAgents().map((target) => target.agent);
   return agentHookTargets.map((target) => {
+    const name = `${target.displayName} hook`;
     if (registered.includes(target.agent)) {
-      return ok(`${target.displayName} hook`, target.settingsFile);
+      return ok(name, target.settingsFile);
     }
 
-    return existsSync(path.join(homedir(), target.homeFolder))
-      ? problem({ name: `${target.displayName} hook`, status: "warn", detail: "not registered", fix: "voxkey on" })
-      : ok(`${target.displayName} hook`, "agent not installed");
+    const agentFolder = path.join(home, target.homeFolder);
+    if (!existsSync(agentFolder)) {
+      return ok(name, "agent not installed");
+    }
+
+    return problem({ name, status: "warn", detail: "not registered", fix: "voxkey on" });
   });
 };
 
-const refineChecks = (config: Config) =>
-  config.refineMode === "off"
-    ? Effect.succeed<ReadonlyArray<DoctorCheck>>([ok("Refine", "off")])
-    : Effect.map(
-        discoverProviders({ refresh: true }),
-        (providers): ReadonlyArray<DoctorCheck> => [
-          providers.length > 0
-            ? ok("Refine providers", providers.map((provider) => provider.id).join(", "))
-            : problem({
-                name: "Refine providers",
-                status: "fail",
-                detail: "no agent CLI on PATH",
-                fix: "Install one of codex, claude, gemini, grok, ollama, opencode, pi.",
-              }),
-          ...(config.refineSendTo === "caret" || Option.isSome(findCli("cmux"))
-            ? []
-            : [
-                problem({
-                  name: "cmux",
-                  status: "fail",
-                  detail: "not on PATH",
-                  fix: "Install cmux or set refine-send-to caret.",
-                }),
-              ]),
-        ],
-      );
+const whisperCheck = (config: Config): DoctorCheck => {
+  const environment = readEnvironment();
+  const model = selectWhisperModel({ environment, config });
+  if (!isWhisperModelPresent(model)) {
+    return problem({
+      name: "Whisper model",
+      status: "warn",
+      detail: `${model.label} not downloaded`,
+      fix: "voxkey on",
+    });
+  }
 
-const runDoctorChecks: Effect.Effect<ReadonlyArray<DoctorCheck>> = Effect.gen(function* () {
-  const savedConfig = yield* Effect.either(readConfig);
-  const config = savedConfig._tag === "Right" ? savedConfig.right : undefined;
-  const configCheck =
-    savedConfig._tag === "Right"
-      ? ok("Config", "valid")
-      : problem({
-          name: "Config",
-          status: "fail",
-          detail: savedConfig.left.message,
-          fix: "Fix the file, or reset a setting: voxkey config unset <name>",
-        });
-  const natives = yield* Effect.forEach(
-    [
-      { name: "koffi (keyboard)", load: () => import("koffi") },
-      { name: "PvRecorder (microphone)", load: () => import("@picovoice/pvrecorder-node") },
-      { name: "whisper.node (dictation)", load: () => import(WHISPER_PACKAGE) },
-      { name: "onnxruntime-node (speech)", load: () => import("onnxruntime-node") },
-    ],
-    nativeModuleCheck,
+  const modelPath = whisperModelPath(model);
+  return ok("Whisper model", modelPath);
+};
+
+const supertonicCheck = (config: Config): DoctorCheck => {
+  const missing = missingSupertonicFiles();
+  if (missing.length === 0) {
+    const folder = supertonicFolder();
+    return ok("Supertonic voices", folder);
+  }
+
+  if (config.speechMode === "off") {
+    return ok("Supertonic voices", "not needed (speech is off)");
+  }
+
+  const detail = `${String(missing.length)} files missing`;
+  return problem({ name: "Supertonic voices", status: "warn", detail, fix: "voxkey on" });
+};
+
+const providersCheck = (providers: ReadonlyArray<DiscoveredProvider>): DoctorCheck => {
+  if (providers.length === 0) {
+    const fix = "Install one of codex, claude, gemini, grok, ollama, opencode, pi.";
+    return problem({ name: "Refine providers", status: "fail", detail: "no agent CLI on PATH", fix });
+  }
+
+  const names = providers.map((provider) => provider.id).join(", ");
+  return ok("Refine providers", names);
+};
+
+const cmuxCheck = (config: Config): DoctorCheck => {
+  if (config.refineSendTo === "caret") {
+    return ok("cmux", "not needed (refine sends to the caret)");
+  }
+
+  const cmuxPath = findCli("cmux");
+  if (Option.isNone(cmuxPath)) {
+    return problem({
+      name: "cmux",
+      status: "fail",
+      detail: "not on PATH",
+      fix: "Install cmux or set refine-send-to caret.",
+    });
+  }
+
+  return ok("cmux", cmuxPath.value);
+};
+
+const refineChecks = (config: Config): Effect.Effect<ReadonlyArray<DoctorCheck>> => {
+  if (config.refineMode === "off") {
+    return Effect.succeed([ok("Refine", "off")]);
+  }
+
+  return discoverProviders({ refresh: true }).pipe(
+    Effect.map((providers) => [providersCheck(providers), cmuxCheck(config)]),
   );
-  return [
-    platformCheck(),
-    nodeCheck(),
-    configCheck,
-    ...natives,
-    ...toolChecks(),
-    ...(config === undefined ? [] : modelChecks(config)),
-    ...(yield* keyboardPermissionChecks),
-    yield* microphoneCheck,
-    ...hookChecks(),
-    ...(config === undefined ? [] : yield* refineChecks(config)),
-  ];
+};
+
+const settingChecks = (config: Config) =>
+  Effect.gen(function* () {
+    const refine = yield* refineChecks(config);
+    return [ok("Config", "valid"), whisperCheck(config), supertonicCheck(config), ...refine];
+  });
+
+const configFailedChecks = (error: Error) => {
+  const fix = "Fix the file, or reset a setting: voxkey config unset <name>";
+  return Effect.succeed([problem({ name: "Config", status: "fail", detail: error.message, fix })]);
+};
+
+const runDoctorChecks = Effect.gen(function* () {
+  const natives = yield* Effect.forEach(NATIVE_MODULES, nativeModuleCheck);
+  const keyboard = yield* keyboardChecks;
+  const microphone = yield* microphoneCheck;
+  const settings = yield* readConfig.pipe(
+    Effect.matchEffect({ onSuccess: settingChecks, onFailure: configFailedChecks }),
+  );
+  const tools = SYSTEM_TOOLS.map(toolCheck);
+  const hooks = hookChecks();
+  return [platformCheck(), nodeCheck(), ...natives, ...tools, ...keyboard, microphone, ...hooks, ...settings];
 });
+
+const showCheck = (check: DoctorCheck) => {
+  const line = `${check.name}: ${check.detail}`;
+  const lineWithFix = `${line} — ${check.fix || ""}`;
+  switch (check.status) {
+    case "ok":
+      return TerminalUI.success(line);
+    case "warn":
+      return TerminalUI.warn(lineWithFix);
+    case "fail":
+      return TerminalUI.fail(lineWithFix);
+  }
+};
+
+const showChecks = (checks: ReadonlyArray<DoctorCheck>) =>
+  Effect.gen(function* () {
+    yield* TerminalUI.intro("doctor");
+    yield* Effect.forEach(checks, showCheck);
+  });
 
 class DoctorChecksFailed extends Schema.TaggedError<DoctorChecksFailed>()("DoctorChecksFailed", {
   failed: Schema.Number,
@@ -259,18 +296,9 @@ export const doctorCommand = Command.make("doctor", { json: jsonOption }, (args)
     if (args.json) {
       yield* TerminalUI.json(checks);
     } else {
-      yield* TerminalUI.intro("doctor");
-      yield* Effect.forEach(checks, (check) => {
-        switch (check.status) {
-          case "ok":
-            return TerminalUI.success(`${check.name}: ${check.detail}`);
-          case "warn":
-            return TerminalUI.warn(`${check.name}: ${check.detail} — ${check.fix || ""}`);
-          case "fail":
-            return TerminalUI.fail(`${check.name}: ${check.detail} — ${check.fix || ""}`);
-        }
-      });
+      yield* showChecks(checks);
     }
+
     const failed = checks.filter((check) => check.status === "fail").length;
     if (failed > 0) {
       return yield* new DoctorChecksFailed({ failed });

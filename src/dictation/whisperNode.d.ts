@@ -1,7 +1,5 @@
-/**
- * The part of @fugood/whisper.node voxkey uses. The package ships TypeScript sources without declarations,
- * so voxkey imports it through a constant specifier and describes it here.
- */
+// The part of @fugood/whisper.node voxkey uses. The package ships TypeScript sources without declarations, so
+// voxkey imports it through a constant specifier and describes it here.
 
 export type TranscribeOptions = {
   readonly language?: string;

@@ -1,5 +1,3 @@
-/** `voxkey reset`: a clean slate when something is stuck: kill every voxkey worker and pill and clear the locks. */
-
 import { Command } from "@effect/cli";
 import { Effect } from "effect";
 

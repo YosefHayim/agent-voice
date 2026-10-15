@@ -33,7 +33,8 @@ describe("supertonicText", () => {
 
 describe("characterIds", () => {
   it("maps characters through the indexer and drops unsupported ones", () => {
-    const indexer = Array.from({ length: 128 }, (_unused, code) => (code === 0x7e ? -1 : code + 1000));
+    const indexer = Array.from({ length: 128 }, (_unused, code) => code + 1000);
+    indexer[0x7e] = -1;
     expect(characterIds("a~b", indexer)).toEqual([1097, 1098]);
   });
 });
@@ -50,6 +51,7 @@ describe("WAV files", () => {
   it("writes 16-bit mono PCM and reads the same samples back", () => {
     const wav = encodeWav({ samples: Float32Array.from([0, 0.5, -0.5, 1]), sampleRate: 44_100 });
     expect(decodeWav(wav)).toEqual({ sampleRate: 44_100, pcm: Int16Array.from([0, 16_384, -16_383, 32_767]) });
-    expect(decodeWav(Buffer.from("not a wav file at all"))).toBeUndefined();
+    const notWav = Buffer.from("not a wav file at all");
+    expect(decodeWav(notWav)).toBeUndefined();
   });
 });

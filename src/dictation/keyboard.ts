@@ -1,7 +1,4 @@
-/**
- * The keyboard through CoreGraphics, called with koffi: read Shift and other keys from HID state (works
- * without an event tap), and post key events the way enigo did for the Rust worker.
- */
+// Reads keys from HID state, which works without an event tap, and posts key events through CoreGraphics.
 
 import { Effect, Schema } from "effect";
 
@@ -16,49 +13,59 @@ export class KeyboardError extends Schema.TaggedError<KeyboardError>()("Keyboard
 const HID_SYSTEM_STATE = 1;
 const COMBINED_SESSION_STATE = 0;
 const HID_EVENT_TAP = 0;
-/** kVK_Shift and kVK_RightShift. */
-const SHIFT_KEYS = [0x38, 0x3c];
-/** kVK_CapsLock follows the lock light, not a press. */
+const LEFT_SHIFT_KEY = 0x38;
+const RIGHT_SHIFT_KEY = 0x3c;
+const SHIFT_KEYS = [LEFT_SHIFT_KEY, RIGHT_SHIFT_KEY];
+// Caps Lock reads as held while its light is on, not while it is pressed.
 const CAPS_LOCK_KEY = 0x39;
 const RETURN_KEY = 0x24;
 const TAB_KEY = 0x30;
-/** kVK_ANSI_V: a Unicode "v" can lose the Command modifier and type a bare v. */
+// The V key code, because a Unicode "v" can lose the Command modifier and type a bare v.
 const V_KEY = 0x09;
 const COMMAND_FLAG = 0x0010_0000n;
-/** CGEventKeyboardSetUnicodeString truncates longer strings. */
+// CGEventKeyboardSetUnicodeString truncates longer strings.
 const UNICODE_CHUNK_UNITS = 20;
 
 const OTHER_KEYS = Array.from({ length: 0x80 }, (_unused, key) => key).filter(
   (key) => !SHIFT_KEYS.includes(key) && key !== CAPS_LOCK_KEY,
 );
 
-/** Text split into posting chunks of at most 20 UTF-16 units, never inside a surrogate pair. */
+// Iterating by character keeps a surrogate pair inside one chunk.
 export const unicodeChunks = (text: string): ReadonlyArray<string> => {
   const chunks: Array<string> = [];
-  let current = "";
   for (const character of text) {
-    if (current.length + character.length > UNICODE_CHUNK_UNITS) {
-      chunks.push(current);
-      current = "";
+    const last = chunks.at(-1);
+    const isFull = last === undefined || last.length + character.length > UNICODE_CHUNK_UNITS;
+    if (isFull) {
+      chunks.push(character);
+      continue;
     }
-    current += character;
+
+    chunks[chunks.length - 1] = `${last}${character}`;
   }
-  return current === "" ? chunks : [...chunks, current];
+  return chunks;
 };
 
-/** Every UTF-16 code unit of a chunk, so an emoji or other character outside the BMP keeps both surrogates. */
+// Every UTF-16 code unit, so an emoji or other character outside the BMP keeps both surrogates.
 export const utf16Units = (chunk: string): Uint16Array =>
   Uint16Array.from({ length: chunk.length }, (_unused, index) => chunk.charCodeAt(index));
 
-/** A chunk that starts with a newline is silently dropped by macOS, so it is led by a zero-width space. */
-export const postableChunk = (chunk: string): string => (/^[\r\n]/u.test(chunk) ? `​${chunk}` : chunk);
+// macOS silently drops a chunk that starts with a newline, so a zero-width space leads it.
+export const postableChunk = (chunk: string): string => {
+  const startsWithNewline = /^[\r\n]/u.test(chunk);
+  if (!startsWithNewline) {
+    return chunk;
+  }
 
-/** Load koffi and the CoreGraphics functions once; the returned keyboard is used for the worker's lifetime. */
+  return `\u200b${chunk}`;
+};
+
 export const loadKeyboard = Effect.gen(function* () {
-  const koffi = (yield* Effect.tryPromise({
+  const koffiModule = yield* Effect.tryPromise({
     try: () => import("koffi"),
     catch: (error) => new KeyboardError({ issue: String(error) }),
-  })).default;
+  });
+  const koffi = koffiModule.default;
   const coreGraphics = koffi.load("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics");
   const coreFoundation = koffi.load("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation");
   const applicationServices = koffi.load(
@@ -107,23 +114,21 @@ export const loadKeyboard = Effect.gen(function* () {
       if (chunk.startsWith("\t")) {
         pressKey(TAB_KEY, 0n);
       }
-      postUnicode(postableChunk(chunk.replace(/^\t/u, "")));
+      const withoutTab = chunk.replace(/^\t/u, "");
+      const postable = postableChunk(withoutTab);
+      postUnicode(postable);
     }
   };
 
   return {
-    /** True while either Shift key is held. */
     shiftDown: (): boolean => SHIFT_KEYS.some(isKeyDown),
-    /** Bit n is set while key code n (other than Shift and Caps Lock) is held. */
-    otherKeysDown: (): bigint =>
-      OTHER_KEYS.reduce((held, key) => (isKeyDown(key) ? held | (1n << BigInt(key)) : held), 0n),
+    // Bit n is set while key code n is held.
+    otherKeysDown: (): bigint => OTHER_KEYS.filter(isKeyDown).reduce((held, key) => held | (1n << BigInt(key)), 0n),
     typeUnicode,
     pressReturn: () => pressKey(RETURN_KEY, 0n),
     pressCommandV: () => pressKey(V_KEY, COMMAND_FLAG),
-    releaseShift: () => postKey({ key: SHIFT_KEYS[0] || 0x38, down: false, flags: 0n }),
-    /** Accessibility lets voxkey type into other apps. */
+    releaseShift: () => postKey({ key: LEFT_SHIFT_KEY, down: false, flags: 0n }),
     accessibilityAllowed: (): boolean => trusted() === true,
-    /** Input Monitoring lets voxkey read the keyboard. */
     inputMonitoringAllowed: (): boolean => listenAllowed() === true,
     postingAllowed: (): boolean => postAllowed() === true,
   };

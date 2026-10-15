@@ -1,5 +1,3 @@
-/** `voxkey reply --agent <id>`: the agent Stop hook that `voxkey on` registers. */
-
 import { Command, Options } from "@effect/cli";
 import { Option } from "effect";
 
@@ -12,9 +10,10 @@ const agentOption = Options.text("agent").pipe(
   Options.optional,
 );
 
-export const replyCommand = Command.make("reply", { agent: agentOption }, (args) =>
-  runReplyHookFromArguments(Option.match(args.agent, { onNone: () => [], onSome: (agent) => ["--agent", agent] })),
-).pipe(
+export const replyCommand = Command.make("reply", { agent: agentOption }, (args) => {
+  const hookArguments = Option.match(args.agent, { onNone: () => [], onSome: (agent) => ["--agent", agent] });
+  return runReplyHookFromArguments(hookArguments);
+}).pipe(
   Command.withDescription(
     "Agent Stop hook: queue the agent's finished reply for speech. Prints nothing and always exits 0.",
   ),

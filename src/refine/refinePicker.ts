@@ -1,5 +1,3 @@
-/** The macOS refine picker: native dialogs to choose a provider found on this Mac, a model, and an effort. */
-
 import { Effect, Option, Schema } from "effect";
 
 import { readEnvironment } from "../settings/environmentVariables.js";
@@ -18,10 +16,10 @@ import { codexLastGoodModel, DEFAULT_REFINE_EFFORT, readSavedChoice } from "./re
 // ASCII hyphens: AppleScript "choose from list" can choke on em dashes.
 export const SKIP_REFINE_LABEL = "-- Skip refine (keep the dictated text) --";
 
-export const NO_PROVIDERS_MESSAGE =
+const NO_PROVIDERS_MESSAGE =
   "No agent CLI found on PATH (codex, claude, gemini, grok, ollama, opencode, pi). Install one, then try again.";
 
-export const refinePickSchema = Schema.Struct({
+const refinePickSchema = Schema.Struct({
   provider: providerIdSchema,
   model: Schema.String,
   effort: Schema.String,
@@ -29,7 +27,11 @@ export const refinePickSchema = Schema.Struct({
 
 export type RefinePick = Schema.Schema.Type<typeof refinePickSchema>;
 
-/** The picker runs only on a Mac, outside CI, and unless VOXKEY_REFINE_PICKER is off. */
+const PICKER_TITLE = "voxkey refine";
+const DIALOG_TIMEOUT_MS = 300_000;
+const ALERT_TIMEOUT_MS = 60_000;
+
+// The picker runs only on a Mac, outside CI, and unless VOXKEY_REFINE_PICKER is off.
 export const pickerEnabled = (): boolean => {
   const environment = readEnvironment();
   return environment.VOXKEY_REFINE_PICKER && environment.CI === "" && process.platform === "darwin";
@@ -37,21 +39,46 @@ export const pickerEnabled = (): boolean => {
 
 const appleScriptText = (text: string): string => text.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"');
 
-const DIALOG_TIMEOUT_MS = 300_000;
+const appleScriptList = (items: ReadonlyArray<string>): string => {
+  const quotedItems = items.map((item) => `"${appleScriptText(item)}"`);
+  return `{${quotedItems.join(", ")}}`;
+};
 
-/** A native list picker; none when cancelled. AppleScript preselects the first item, so the default goes first. */
-export const chooseFromList = (request: {
-  readonly title: string;
+// AppleScript preselects the first item, so the default goes first.
+const defaultFirst = (items: ReadonlyArray<string>, defaultItem: string): ReadonlyArray<string> => {
+  if (!items.includes(defaultItem)) {
+    return items;
+  }
+
+  const otherItems = items.filter((item) => item !== defaultItem);
+  return [defaultItem, ...otherItems];
+};
+
+const chosenItem = (stdout: string): Option.Option<string> => {
+  const chosen = stdout.trim();
+  const isDismissed = chosen === "" || chosen === "CANCEL" || chosen.startsWith("ERROR:");
+  if (isDismissed) {
+    return Option.none();
+  }
+
+  return Option.some(chosen);
+};
+
+const chooseFromList = (request: {
   readonly prompt: string;
   readonly items: ReadonlyArray<string>;
   readonly defaultItem: string;
 }): Effect.Effect<Option.Option<string>> => {
-  const ordered = request.items.includes(request.defaultItem)
-    ? [request.defaultItem, ...request.items.filter((item) => item !== request.defaultItem)]
-    : request.items;
+  const ordered = defaultFirst(request.items, request.defaultItem);
+  if (ordered.length === 0) {
+    return Effect.succeedNone;
+  }
+
+  const itemList = appleScriptList(ordered);
+  const prompt = appleScriptText(request.prompt);
   const script = `try
-  set theList to {${ordered.map((item) => `"${appleScriptText(item)}"`).join(", ")}}
-  set theChoice to choose from list theList with title "${appleScriptText(request.title)}" with prompt "${appleScriptText(request.prompt)}" default items {item 1 of theList} OK button name "Use" cancel button name "Cancel"
+  set theList to ${itemList}
+  set theChoice to choose from list theList with title "${PICKER_TITLE}" with prompt "${prompt}" default items {item 1 of theList} OK button name "Use" cancel button name "Cancel"
   if theChoice is false then
     return "CANCEL"
   end if
@@ -59,67 +86,98 @@ export const chooseFromList = (request: {
 on error errMsg
   return "ERROR:" & errMsg
 end try`;
-  if (ordered.length === 0) {
-    return Effect.succeed(Option.none());
-  }
-
   return runCli({ executable: "osascript", args: ["-e", script], timeoutMs: DIALOG_TIMEOUT_MS }).pipe(
-    Effect.map((cliRun) => cliRun.stdout.trim()),
-    Effect.map((chosen) =>
-      chosen === "" || chosen === "CANCEL" || chosen.startsWith("ERROR:") ? Option.none() : Option.some(chosen),
-    ),
+    Effect.map((cliRun) => chosenItem(cliRun.stdout)),
     Effect.orElseSucceed(() => Option.none<string>()),
   );
 };
 
-export const showAlert = (request: { readonly title: string; readonly message: string }): Effect.Effect<void> =>
-  runCli({
-    executable: "osascript",
-    args: [
-      "-e",
-      `try\n  display alert "${appleScriptText(request.title)}" message "${appleScriptText(request.message.slice(0, 900))}" as warning buttons {"OK"} default button "OK"\nend try`,
-    ],
-    timeoutMs: 60_000,
-  }).pipe(Effect.ignore);
+const showAlert = (request: { readonly title: string; readonly message: string }): Effect.Effect<void> => {
+  const title = appleScriptText(request.title);
+  const shortMessage = request.message.slice(0, 900);
+  const message = appleScriptText(shortMessage);
+  const script = `try\n  display alert "${title}" message "${message}" as warning buttons {"OK"} default button "OK"\nend try`;
+  return runCli({ executable: "osascript", args: ["-e", script], timeoutMs: ALERT_TIMEOUT_MS }).pipe(Effect.ignore);
+};
 
-/**
- * Model IDs offered for one discovered provider; Codex adds its cached and curated lists. The preferred model and
- * the saved pick come first only when they belong to this provider, so switching provider never offers (or saves)
- * another provider's model.
- */
+const listedModels = (providers: ReadonlyArray<DiscoveredProvider>, id: DiscoveredProvider["id"]) => {
+  const listed = providers.find((provider) => provider.id === id);
+  if (listed === undefined) {
+    return [];
+  }
+
+  return listed.models;
+};
+
+// Another provider's model is never offered (or saved) after switching provider.
+const preferredModelFor = (
+  preferred: { readonly provider: string; readonly model: string },
+  provider: DiscoveredProvider["id"],
+): string => {
+  if (preferred.provider !== provider) {
+    return "";
+  }
+
+  return preferred.model;
+};
+
+const savedCodexModel = (): string =>
+  readSavedChoice().pipe(
+    Option.filter((choice) => choice.provider === "codex"),
+    Option.map((choice) => choice.model),
+    Option.getOrElse(() => ""),
+  );
+
+// Codex adds its last-good, saved, cached and curated models.
 export const pickerModels = (request: {
   readonly provider: DiscoveredProvider["id"];
   readonly providers: ReadonlyArray<DiscoveredProvider>;
   readonly preferred: { readonly provider: string; readonly model: string };
 }): ReadonlyArray<string> => {
-  const listed = request.providers.find((provider) => provider.id === request.provider)?.models || [];
-  const preferred = request.preferred.provider === request.provider ? request.preferred.model : "";
+  const listed = listedModels(request.providers, request.provider);
+  const preferred = preferredModelFor(request.preferred, request.provider);
   if (request.provider !== "codex") {
     return dedupe([preferred, ...listed]);
   }
 
-  const saved = Option.match(
-    Option.filter(readSavedChoice(), (choice) => choice.provider === "codex"),
-    { onNone: () => "", onSome: (choice) => choice.model },
-  );
-  return dedupe([
-    preferred,
-    codexLastGoodModel(),
-    saved,
-    ...listed,
-    ...codexCachedModels(),
-    ...CODEX_PICKER_MODELS,
-    ...CODEX_MODEL_FALLBACKS,
-  ]);
+  const lastGood = codexLastGoodModel();
+  const saved = savedCodexModel();
+  const cached = codexCachedModels();
+  return dedupe([preferred, lastGood, saved, ...listed, ...cached, ...CODEX_PICKER_MODELS, ...CODEX_MODEL_FALLBACKS]);
 };
 
-const providerLabel = (provider: DiscoveredProvider) =>
+const providerLabel = (provider: DiscoveredProvider): string =>
   `${provider.id}  (${provider.binary}, ${String(provider.models.length)} models)`;
 
-/**
- * Ask with macOS dialogs for a provider, a model, and (when the provider supports it) an effort.
- * None when cancelled or no provider is installed; the model is SKIP_REFINE_LABEL when the user skips.
- */
+const defaultProviderLabel = (providers: ReadonlyArray<DiscoveredProvider>, preferredProvider: string): string => {
+  const preferred = providers.find((provider) => provider.id === preferredProvider) || providers[0];
+  if (preferred === undefined) {
+    return "";
+  }
+
+  return providerLabel(preferred);
+};
+
+const providerWithLabel = (
+  providers: ReadonlyArray<DiscoveredProvider>,
+  label: string,
+): Option.Option<DiscoveredProvider> => {
+  const labeled = providers.find((provider) => providerLabel(provider) === label);
+  return Option.fromNullable(labeled);
+};
+
+const modelItems = (request: {
+  readonly models: ReadonlyArray<string>;
+  readonly offerSkip: boolean;
+}): ReadonlyArray<string> => {
+  if (!request.offerSkip) {
+    return request.models;
+  }
+
+  return [...request.models, SKIP_REFINE_LABEL];
+};
+
+// None when cancelled or no provider is installed; the model is SKIP_REFINE_LABEL when the user skips.
 export const pickRefineTargetWithDialogs = (request: {
   readonly reason: string;
   readonly preferredProvider: string;
@@ -138,41 +196,42 @@ export const pickRefineTargetWithDialogs = (request: {
       yield* showAlert({ title: "Prompt refine — pick provider / model", message: request.reason });
     }
 
-    const labels = providers.map(providerLabel);
-    const preferred = providers.find((provider) => provider.id === request.preferredProvider);
     const chosenLabel = yield* chooseFromList({
-      title: "voxkey refine",
       prompt: "Provider (found on this Mac):",
-      items: labels,
-      defaultItem: preferred === undefined ? labels[0] || "" : providerLabel(preferred),
+      items: providers.map(providerLabel),
+      defaultItem: defaultProviderLabel(providers, request.preferredProvider),
     });
-    const provider = Option.flatMap(chosenLabel, (label) => Option.fromNullable(providers[labels.indexOf(label)]));
+    const provider = chosenLabel.pipe(Option.flatMap((label) => providerWithLabel(providers, label)));
     if (Option.isNone(provider)) {
       return Option.none();
     }
 
+    const providerId = provider.value.id;
     const models = pickerModels({
-      provider: provider.value.id,
+      provider: providerId,
       providers,
       preferred: { provider: request.preferredProvider, model: request.preferredModel },
     });
     const model = yield* chooseFromList({
-      title: "voxkey refine",
-      prompt: `Model for ${provider.value.id}:`,
-      items: request.offerSkip ? [...models, SKIP_REFINE_LABEL] : models,
+      prompt: `Model for ${providerId}:`,
+      items: modelItems({ models, offerSkip: request.offerSkip }),
       defaultItem: models[0] || "",
     });
-    if (Option.isNone(model) || model.value === SKIP_REFINE_LABEL || !provider.value.effort) {
-      return Option.map(model, (chosen) => ({ provider: provider.value.id, model: chosen, effort: "" }));
+    if (Option.isNone(model)) {
+      return Option.none();
+    }
+
+    const isSkipped = model.value === SKIP_REFINE_LABEL;
+    if (isSkipped || !provider.value.effort) {
+      return Option.some({ provider: providerId, model: model.value, effort: "" });
     }
 
     const effortDefault =
       REASONING_EFFORTS.find((effort) => effort === request.preferredEffort) || DEFAULT_REFINE_EFFORT;
     const effort = yield* chooseFromList({
-      title: "voxkey refine",
       prompt: `Reasoning effort for ${model.value}:`,
       items: REASONING_EFFORTS,
       defaultItem: effortDefault,
     });
-    return Option.map(effort, (chosen) => ({ provider: provider.value.id, model: model.value, effort: chosen }));
+    return effort.pipe(Option.map((chosen) => ({ provider: providerId, model: model.value, effort: chosen })));
   });

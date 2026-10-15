@@ -1,8 +1,3 @@
-/**
- * The pill: a small bottom-centre panel that shows the dictation stage from status.json. It is a
- * JavaScript for Automation script run by `osascript`, so it needs no compiler and no app bundle.
- */
-
 import { type ChildProcess, spawn } from "node:child_process";
 
 import { Option } from "effect";
@@ -10,8 +5,9 @@ import { removeIfPresent } from "../files/stateFiles.js";
 import { stateFile, voxkeyHome } from "../settings/voxkeyHome.js";
 import { runningPid, signalGroup, writePid } from "./workerProcesses.js";
 
-// AppKit through the JXA Objective-C bridge. The script exits when the worker it serves is gone.
-const PILL_SCRIPT = String.raw`
+// A bottom-centre panel that shows the dictation stage from status.json. It is a JavaScript for Automation script
+// run by `osascript`, so it needs no compiler and no app bundle, and it exits when the worker it serves is gone.
+const PILL_SCRIPT = `
 ObjC.import("Cocoa");
 ObjC.import("QuartzCore");
 ObjC.import("signal");
@@ -202,7 +198,6 @@ function run(argv) {
 }
 `;
 
-/** Start the pill for this worker (replacing any earlier one) and remember its pid. */
 export const startPill = (workerPid: number): ChildProcess => {
   stopPill();
   const child = spawn("osascript", ["-l", "JavaScript", "-", String(workerPid), voxkeyHome()], {
@@ -216,9 +211,10 @@ export const startPill = (workerPid: number): ChildProcess => {
 };
 
 export const stopPill = (): void => {
-  Option.map(runningPid("pill.pid"), (pid) => signalGroup(pid, "SIGKILL"));
-  removeIfPresent(stateFile("pill.pid"));
+  const pillPid = runningPid("pill.pid");
+  if (Option.isSome(pillPid)) {
+    signalGroup(pillPid.value, "SIGKILL");
+  }
+  const pidPath = stateFile("pill.pid");
+  removeIfPresent(pidPath);
 };
-
-/** The script source, for the syntax smoke test. */
-export const pillScript = (): string => PILL_SCRIPT;

@@ -1,8 +1,5 @@
-/**
- * voxkey's one Stop entry in an agent settings file, added and removed by text edits at jsonc-parser
- * offsets: comments, key order, and spacing of everything else stay byte for byte, and removing the
- * entry right after adding it restores the original text.
- */
+// voxkey's one Stop entry is added and removed by text edits at jsonc-parser offsets: comments, key order, and spacing
+// of everything else stay byte for byte, and removing the entry right after adding it restores the original text.
 
 import { Either, Option, Schema } from "effect";
 import { findNodeAtLocation, getNodeValue, type Node, type ParseError, parseTree } from "jsonc-parser";
@@ -19,10 +16,19 @@ export class HookSettingsIssue extends Schema.TaggedError<HookSettingsIssue>()("
 
 type SettingsEdit = { readonly source: string; readonly changed: boolean };
 
+type ReplyHookLocation = {
+  readonly stopArray: Node;
+  readonly group: Node;
+  readonly groupHooks: Node;
+  readonly hook: Node;
+};
+
+type HookInsertion = { readonly container: Node; readonly keyPrefix: string; readonly value: unknown };
+
 // POSIX single quotes: the shell expands nothing inside them, and an embedded ' is closed, escaped, and reopened.
 const shellQuoted = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
 
-/** `'<node>' [loader flags] '<voxkey main>' reply --agent <id>`: the command that identifies voxkey's entry. */
+// `'<node>' [loader flags] '<voxkey main>' reply --agent <id>`: the command that identifies voxkey's entry.
 export const replyHookCommand = (request: {
   readonly nodePath: string;
   readonly scriptArguments: ReadonlyArray<string>;
@@ -36,14 +42,12 @@ const QUOTED_WORD = String.raw`'(?:[^']|'\\'')*'`;
 
 const MAIN_SCRIPT_WORD = String.raw`'(?:[^']|'\\'')*/src/cli/main\.[jt]s'`;
 
-/**
- * voxkey's entry for this agent, whatever path voxkey was installed at when it was written: only the exact shape
- * replyHookCommand writes (quoted words ending in voxkey's `src/cli/main` script, then `reply --agent <id>`).
- */
-export const isReplyHookCommand = (command: string, agent: AgentId): boolean =>
-  new RegExp(`^(?:${QUOTED_WORD} )+${MAIN_SCRIPT_WORD} reply --agent ${agent}$`, "u").test(command.trim());
-
-const hookGroupFor = (command: string) => ({ hooks: [{ type: "command", command }] });
+// Matches voxkey's entry from any install path, but only in the exact shape replyHookCommand writes.
+export const isReplyHookCommand = (command: string, agent: AgentId): boolean => {
+  const replyHookPattern = new RegExp(`^(?:${QUOTED_WORD} )+${MAIN_SCRIPT_WORD} reply --agent ${agent}$`, "u");
+  const trimmed = command.trim();
+  return replyHookPattern.test(trimmed);
+};
 
 const parseSettings = (source: string): Either.Either<Node, HookSettingsIssue> => {
   const errors: Array<ParseError> = [];
@@ -57,7 +61,8 @@ const parseSettings = (source: string): Either.Either<Node, HookSettingsIssue> =
 
 const lineIndent = (source: string, offset: number): string => {
   const lineStart = source.lastIndexOf("\n", offset - 1) + 1;
-  return /^[ \t]*/u.exec(source.slice(lineStart))?.[0] || "";
+  const line = source.slice(lineStart);
+  return /^[ \t]*/u.exec(line)?.[0] || "";
 };
 
 const indentUnit = (source: string): string => /\n([ \t]+)"/u.exec(source)?.[1] || "  ";
@@ -68,7 +73,7 @@ const pretty = (request: { readonly value: unknown; readonly unit: string; reado
 const splice = (source: string, edit: { readonly offset: number; readonly length: number; readonly text: string }) =>
   source.slice(0, edit.offset) + edit.text + source.slice(edit.offset + edit.length);
 
-/** Insert `text` as the last member of an array or object node, indented like its siblings. */
+// The new member is indented like its siblings, or one unit deeper than an empty container.
 const appendMember = (request: {
   readonly source: string;
   readonly container: Node;
@@ -94,7 +99,7 @@ const appendMember = (request: {
   });
 };
 
-/** Delete one member together with the separator that belongs to it, so the remaining text reads as before. */
+// The member goes with the separator that belongs to it, so the remaining text reads as before.
 const removeMember = (request: {
   readonly source: string;
   readonly container: Node;
@@ -127,20 +132,16 @@ const removeMember = (request: {
   });
 };
 
-type ReplyHookLocation = {
-  readonly stopArray: Node;
-  readonly group: Node;
-  readonly groupHooks: Node;
-  readonly hook: Node;
-};
+const decodeString = Schema.decodeUnknownOption(Schema.String);
 
-const commandOf = (hook: Node): string =>
-  Option.getOrElse(
-    Option.flatMap(Option.fromNullable(findNodeAtLocation(hook, ["command"])), (node) =>
-      Schema.decodeUnknownOption(Schema.String)(getNodeValue(node)),
-    ),
-    () => "",
+const commandOf = (hook: Node): string => {
+  const commandNode = findNodeAtLocation(hook, ["command"]);
+  return Option.fromNullable(commandNode).pipe(
+    Option.map(getNodeValue),
+    Option.flatMap(decodeString),
+    Option.getOrElse(() => ""),
   );
+};
 
 const findReplyHook = (root: Node, matches: (command: string) => boolean): Option.Option<ReplyHookLocation> => {
   const stopArray = findNodeAtLocation(root, ["hooks", "Stop"]);
@@ -150,114 +151,155 @@ const findReplyHook = (root: Node, matches: (command: string) => boolean): Optio
 
   const locations = (stopArray.children || []).flatMap((group) => {
     const groupHooks = findNodeAtLocation(group, ["hooks"]);
-    const hooks = groupHooks?.type === "array" ? groupHooks.children || [] : [];
-    return groupHooks === undefined ? [] : hooks.map((hook) => ({ stopArray, group, groupHooks, hook }));
+    if (groupHooks?.type !== "array") {
+      return [];
+    }
+
+    return (groupHooks.children || []).map((hook) => ({ stopArray, group, groupHooks, hook }));
   });
-  return Option.fromNullable(locations.find((location) => matches(commandOf(location.hook))));
+  const location = locations.find((candidate) => {
+    const command = commandOf(candidate.hook);
+    return matches(command);
+  });
+  return Option.fromNullable(location);
 };
 
-const propertyNode = (objectNode: Node, key: string): Option.Option<Node> =>
-  Option.fromNullable((objectNode.children || []).find((property) => property.children?.[0]?.value === key));
+const isEmptyContainer = (node: Node | undefined): boolean =>
+  (node?.type === "array" || node?.type === "object") && (node.children || []).length === 0;
 
 // Remove an object property, or nothing, once removing voxkey's entry left its value empty.
 const pruneIfEmpty = (request: { readonly source: string; readonly path: ReadonlyArray<string> }): string => {
-  const root = Either.getOrUndefined(parseSettings(request.source));
-  const parentPath = request.path.slice(0, -1);
-  const parent = parentPath.length === 0 || root === undefined ? root : findNodeAtLocation(root, [...parentPath]);
-  const property = parent === undefined ? Option.none() : propertyNode(parent, request.path.at(-1) || "");
-  const value = Option.getOrUndefined(Option.map(property, (node) => node.children?.[1]));
-  const isEmptyContainer =
-    value !== undefined && (value.type === "array" || value.type === "object") && (value.children || []).length === 0;
-  if (parent === undefined || Option.isNone(property) || !isEmptyContainer) {
+  const parsed = parseSettings(request.source);
+  if (Either.isLeft(parsed)) {
     return request.source;
   }
 
-  return removeMember({ source: request.source, container: parent, member: property.value });
+  const parentPath = request.path.slice(0, -1);
+  const key = request.path.at(-1) || "";
+  const parent = findNodeAtLocation(parsed.right, parentPath);
+  const property = (parent?.children || []).find((candidate) => candidate.children?.[0]?.value === key);
+  const hasEmptyValue = isEmptyContainer(property?.children?.[1]);
+  if (parent === undefined || property === undefined || !hasEmptyValue) {
+    return request.source;
+  }
+
+  return removeMember({ source: request.source, container: parent, member: property });
 };
 
-/** Remove voxkey's Stop entry for this agent; a container left empty by the removal goes too. */
+// A group that also holds other hooks keeps them; a group holding only voxkey's hook goes whole.
+const removeHookEntry = (source: string, location: ReplyHookLocation): string => {
+  const hasOtherHooks = (location.groupHooks.children || []).length > 1;
+  if (hasOtherHooks) {
+    return removeMember({ source, container: location.groupHooks, member: location.hook });
+  }
+
+  return removeMember({ source, container: location.stopArray, member: location.group });
+};
+
+// A container left empty by the removal goes too.
 export const removeReplyHook = (request: {
   readonly source: string;
   readonly agent: AgentId;
 }): Either.Either<SettingsEdit, HookSettingsIssue> =>
-  Either.map(parseSettings(request.source), (root) => {
-    const location = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
-    if (Option.isNone(location)) {
-      return { source: request.source, changed: false };
-    }
+  parseSettings(request.source).pipe(
+    Either.map((root) => {
+      const location = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
+      if (Option.isNone(location)) {
+        return { source: request.source, changed: false };
+      }
 
-    const { stopArray, group, groupHooks, hook } = location.value;
-    const withoutHook =
-      (groupHooks.children || []).length > 1
-        ? removeMember({ source: request.source, container: groupHooks, member: hook })
-        : removeMember({ source: request.source, container: stopArray, member: group });
-    const withoutStop = pruneIfEmpty({ source: withoutHook, path: ["hooks", "Stop"] });
-    return { source: pruneIfEmpty({ source: withoutStop, path: ["hooks"] }), changed: true };
-  });
+      const withoutHook = removeHookEntry(request.source, location.value);
+      const withoutStop = pruneIfEmpty({ source: withoutHook, path: ["hooks", "Stop"] });
+      const withoutHooks = pruneIfEmpty({ source: withoutStop, path: ["hooks"] });
+      return { source: withoutHooks, changed: true };
+    }),
+  );
+
+// voxkey's hook group goes into the Stop array, into a new Stop key in hooks, or into a new hooks key.
+const hookInsertion = (root: Node, command: string): Either.Either<HookInsertion, HookSettingsIssue> => {
+  const hookGroup = { hooks: [{ type: "command", command }] };
+  const hooks = findNodeAtLocation(root, ["hooks"]);
+  const stopArray = findNodeAtLocation(root, ["hooks", "Stop"]);
+  if (hooks !== undefined && hooks.type !== "object") {
+    return Either.left(new HookSettingsIssue({ issue: "hooks is not an object" }));
+  }
+
+  if (stopArray !== undefined && stopArray.type !== "array") {
+    return Either.left(new HookSettingsIssue({ issue: "hooks.Stop is not an array" }));
+  }
+
+  if (stopArray !== undefined) {
+    return Either.right({ container: stopArray, keyPrefix: "", value: hookGroup });
+  }
+
+  if (hooks !== undefined) {
+    return Either.right({ container: hooks, keyPrefix: '"Stop": ', value: [hookGroup] });
+  }
+
+  return Either.right({ container: root, keyPrefix: '"hooks": ', value: { Stop: [hookGroup] } });
+};
 
 const appendReplyHook = (source: string, command: string): Either.Either<string, HookSettingsIssue> =>
-  Either.flatMap(parseSettings(source), (root) => {
-    const unit = indentUnit(source);
-    const stopArray = findNodeAtLocation(root, ["hooks", "Stop"]);
-    if (stopArray !== undefined) {
-      return stopArray.type === "array"
-        ? Either.right(
-            appendMember({
-              source,
-              container: stopArray,
-              member: (indent) => pretty({ value: hookGroupFor(command), unit, baseIndent: indent }),
-            }),
-          )
-        : Either.left(new HookSettingsIssue({ issue: "hooks.Stop is not an array" }));
-    }
-
-    const hooks = findNodeAtLocation(root, ["hooks"]);
-    if (hooks !== undefined && hooks.type !== "object") {
-      return Either.left(new HookSettingsIssue({ issue: "hooks is not an object" }));
-    }
-
-    const property =
-      hooks === undefined
-        ? { container: root, key: "hooks", value: { Stop: [hookGroupFor(command)] } }
-        : { container: hooks, key: "Stop", value: [hookGroupFor(command)] };
-    return Either.right(
-      appendMember({
+  parseSettings(source).pipe(
+    Either.flatMap((root) => hookInsertion(root, command)),
+    Either.map((insertion) => {
+      const unit = indentUnit(source);
+      return appendMember({
         source,
-        container: property.container,
-        member: (indent) => `"${property.key}": ${pretty({ value: property.value, unit, baseIndent: indent })}`,
-      }),
-    );
-  });
+        container: insertion.container,
+        member: (indent) => `${insertion.keyPrefix}${pretty({ value: insertion.value, unit, baseIndent: indent })}`,
+      });
+    }),
+  );
 
-/** Add voxkey's Stop entry with `command`, replacing an older voxkey entry for the same agent. */
+const settingsText = (source: string): string => {
+  const isBlank = source.trim() === "";
+  if (isBlank) {
+    return "{}\n";
+  }
+
+  return source;
+};
+
+const confirmAdded = (edited: string, command: string): Either.Either<SettingsEdit, HookSettingsIssue> =>
+  parseSettings(edited).pipe(
+    Either.map((root) => findReplyHook(root, (found) => found === command)),
+    Either.filterOrLeft(
+      Option.isSome,
+      () => new HookSettingsIssue({ issue: "the edited settings lost voxkey's entry" }),
+    ),
+    Either.map(() => ({ source: edited, changed: true })),
+  );
+
+const replaceReplyHook = (request: {
+  readonly source: string;
+  readonly command: string;
+  readonly agent: AgentId;
+}): Either.Either<SettingsEdit, HookSettingsIssue> =>
+  removeReplyHook({ source: request.source, agent: request.agent }).pipe(
+    Either.flatMap((cleared) => appendReplyHook(cleared.source, request.command)),
+    Either.flatMap((edited) => confirmAdded(edited, request.command)),
+  );
+
+// Replaces an older voxkey entry for the same agent, so a moved install keeps one entry.
 export const addReplyHook = (request: {
   readonly source: string;
   readonly command: string;
   readonly agent: AgentId;
 }): Either.Either<SettingsEdit, HookSettingsIssue> => {
-  const source = request.source.trim() === "" ? "{}\n" : request.source;
-  return Either.flatMap(parseSettings(source), (root): Either.Either<SettingsEdit, HookSettingsIssue> => {
-    const existing = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
-    if (Option.isSome(existing) && commandOf(existing.value.hook) === request.command) {
-      return Either.right({ source: request.source, changed: false });
-    }
+  const source = settingsText(request.source);
+  return parseSettings(source).pipe(
+    Either.flatMap((root): Either.Either<SettingsEdit, HookSettingsIssue> => {
+      const existing = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
+      const isCurrent = Option.exists(existing, (location) => commandOf(location.hook) === request.command);
+      if (isCurrent) {
+        return Either.right({ source: request.source, changed: false });
+      }
 
-    const cleared = Either.getOrElse(
-      removeReplyHook({ source, agent: request.agent }),
-      (): SettingsEdit => ({
-        source,
-        changed: false,
-      }),
-    );
-    return Either.flatMap(appendReplyHook(cleared.source, request.command), (edited) =>
-      Either.flatMap(parseSettings(edited), (editedRoot) =>
-        Option.isSome(findReplyHook(editedRoot, (command) => command === request.command))
-          ? Either.right({ source: edited, changed: true })
-          : Either.left(new HookSettingsIssue({ issue: "the edited settings lost voxkey's entry" })),
-      ),
-    );
-  });
+      return replaceReplyHook({ source, command: request.command, agent: request.agent });
+    }),
+  );
 };
 
-/** True when the settings text is `{}` and whitespace, with no comment (voxkey may then delete its own file). */
+// `{}` and whitespace with no comment, so voxkey may then delete its own file.
 export const isEmptySettings = (source: string): boolean => source.replace(/\s/gu, "") === "{}";

@@ -1,50 +1,71 @@
 import { readFileSync } from "node:fs";
 
-import { Schema } from "effect";
+import { Option } from "effect";
 import { describe, expect, it } from "vitest";
 
-import {
-  agentReplyIdOf,
-  directReply,
-  isFinishedTurn,
-  replyFromTranscript,
-  stopHookInputSchema,
-  transcriptPathOf,
-} from "./agentReply.js";
+import { replyFromTranscript, stopReplyFromJson } from "./agentReply.js";
 
-const fixtureLines = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8").split("\n");
+const fixture = (name: string) => {
+  const fixtureUrl = new URL(`./fixtures/${name}`, import.meta.url);
+  return readFileSync(fixtureUrl, "utf8");
+};
 
-const input = (fields: Record<string, unknown>) => Schema.decodeUnknownSync(stopHookInputSchema)(fields);
-
-describe("agent reply from a Stop hook", () => {
-  it("prefers the reply the agent passes directly, in any of its spellings", () => {
-    expect(directReply(input({ last_assistant_message: "# Done" }))).toBe("# Done");
-    expect(directReply(input({ lastAssistantMessage: "camel" }))).toBe("camel");
-    expect(directReply(input({ last_agent_message: 42, lastAgentMessage: "codex" }))).toBe("codex");
-    expect(directReply(input({}))).toBe("");
+const grokStop = (reason: string) =>
+  JSON.stringify({
+    hookEventName: "Stop",
+    hook_event_name: "Stop",
+    reason,
+    lastAssistantMessage: "Complete answer",
+    transcriptPath: "/grok/updates.jsonl",
+    transcript_path: "/grok/updates.jsonl",
   });
 
-  it("reads the transcript path and the reply ID", () => {
-    const fields = input({ transcriptPath: "/x.jsonl", turn_id: "t-9" });
-    expect(transcriptPathOf(fields)).toBe("/x.jsonl");
-    expect(agentReplyIdOf(fields)).toBe("t-9");
-  });
+describe("stopReplyFromJson", () => {
+  it("reads the reply, transcript path, and turn ID that Claude Code, Codex, and Devin send", () => {
+    const stopInput = JSON.stringify({
+      hook_event_name: "Stop",
+      last_assistant_message: "# Done",
+      transcript_path: "/x.jsonl",
+      turn_id: "t-9",
+    });
 
-  it("reads only finished Grok turns and every turn from other agents", () => {
-    expect(isFinishedTurn(input({ reason: "end_turn" }), "grok")).toBe(true);
-    expect(isFinishedTurn(input({ hookReason: "session:end_turn" }), "grok")).toBe(true);
-    expect(isFinishedTurn(input({}), "grok")).toBe(true);
-    expect(isFinishedTurn(input({ reason: "tool_use" }), "grok")).toBe(false);
-    expect(isFinishedTurn(input({ reason: "tool_use" }), "codex")).toBe(true);
-  });
-
-  it("joins every assistant text block after the latest genuine user prompt in a Claude transcript", () => {
-    expect(replyFromTranscript(fixtureLines("claudeTranscript.jsonl"))).toBe(
-      "First section\n\nSecond section\n\n- complete",
+    expect(stopReplyFromJson(stopInput)).toEqual(
+      Option.some({ markdown: "# Done", transcriptPath: "/x.jsonl", agentReplyId: "t-9" }),
     );
   });
 
+  it("reads a null or missing field as empty", () => {
+    const stopInput = JSON.stringify({ last_assistant_message: null, transcript_path: null });
+
+    expect(stopReplyFromJson(stopInput)).toEqual(Option.some({ markdown: "", transcriptPath: "", agentReplyId: "" }));
+  });
+
+  it("reads a finished Grok turn, never its transcript, and skips a session close", () => {
+    const finishedTurn = grokStop("end_turn");
+    const sessionClose = grokStop("shutdown");
+
+    expect(stopReplyFromJson(finishedTurn)).toEqual(
+      Option.some({ markdown: "Complete answer", transcriptPath: "", agentReplyId: "" }),
+    );
+    expect(stopReplyFromJson(sessionClose)).toEqual(Option.none());
+  });
+
+  it("reads nothing from input that is not a JSON object", () => {
+    expect(stopReplyFromJson("not json")).toEqual(Option.none());
+    expect(stopReplyFromJson("null")).toEqual(Option.none());
+  });
+});
+
+describe("replyFromTranscript", () => {
+  it("joins every assistant text block after the latest user prompt in a Claude transcript", () => {
+    const transcript = fixture("claudeTranscript.jsonl");
+
+    expect(replyFromTranscript(transcript)).toBe("First section\n\nSecond section\n\n- complete");
+  });
+
   it("reads role/content transcripts and skips blank assistant text", () => {
-    expect(replyFromTranscript(fixtureLines("codexTranscript.jsonl"))).toBe("Fixed the build.");
+    const transcript = fixture("codexTranscript.jsonl");
+
+    expect(replyFromTranscript(transcript)).toBe("Fixed the build.");
   });
 });

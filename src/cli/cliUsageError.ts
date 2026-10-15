@@ -1,7 +1,6 @@
-/** The one failure that means "the command line was wrong", which main.ts maps to exit code 2. */
-
 import { Schema } from "effect";
 
+// main.ts maps this one failure to exit code 2: the command line was wrong.
 export class CliUsageError extends Schema.TaggedError<CliUsageError>()("CliUsageError", {
   issue: Schema.NonEmptyString,
 }) {

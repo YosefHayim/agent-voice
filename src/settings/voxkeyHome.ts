@@ -1,42 +1,51 @@
-/** Where voxkey keeps its files: one folder in HOME (default ~/.voxkey) for config, state, models, and logs. */
-
 import { homedir } from "node:os";
 import path from "node:path";
 
 import { readEnvironment } from "./environmentVariables.js";
 
-export const stateFileNames = [
-  "status.json",
-  "seen.json",
-  "dictation.pid",
-  "dictation.lock",
-  "speech.pid",
-  "speech.lock",
-  "pill.pid",
-  "stop",
-  "dictation.log",
-  "dictation-worker.log",
-  "speech-worker.log",
-  "refine-choice.json",
-  "refine-codex-last-good.txt",
-  "refine-codex-failed.txt",
-  "created-hook-files.json",
-] as const;
+type StateFileName =
+  | "status.json"
+  | "seen.json"
+  | "dictation.pid"
+  | "dictation.lock"
+  | "speech.pid"
+  | "speech.lock"
+  | "pill.pid"
+  | "stop"
+  | "dictation.log"
+  | "dictation-worker.log"
+  | "speech-worker.log"
+  | "refine-choice.json"
+  | "refine-codex-last-good.txt"
+  | "refine-codex-failed.txt"
+  | "created-hook-files.json";
 
-export type StateFileName = (typeof stateFileNames)[number];
-
-export type StateFolderName = "inbox" | "failed" | "models" | "backups" | "audio" | "prompts" | "devin";
+type StateFolderName = "inbox" | "failed" | "models" | "backups" | "audio" | "prompts" | "devin";
 
 export const voxkeyHome = (): string => {
-  const override = readEnvironment().VOXKEY_HOME;
-  return override === "" ? path.join(homedir(), ".voxkey") : path.resolve(override);
+  const { VOXKEY_HOME } = readEnvironment();
+  if (VOXKEY_HOME !== "") {
+    return path.resolve(VOXKEY_HOME);
+  }
+
+  const home = homedir();
+  return path.join(home, ".voxkey");
+};
+
+const homePath = (name: string): string => {
+  const home = voxkeyHome();
+  return path.join(home, name);
 };
 
 export const configFilePath = (): string => {
-  const override = readEnvironment().VOXKEY_CONFIG_FILE;
-  return override === "" ? path.join(voxkeyHome(), "config.json") : path.resolve(override);
+  const { VOXKEY_CONFIG_FILE } = readEnvironment();
+  if (VOXKEY_CONFIG_FILE !== "") {
+    return path.resolve(VOXKEY_CONFIG_FILE);
+  }
+
+  return homePath("config.json");
 };
 
-export const stateFile = (name: StateFileName): string => path.join(voxkeyHome(), name);
+export const stateFile = (name: StateFileName): string => homePath(name);
 
-export const stateFolder = (name: StateFolderName): string => path.join(voxkeyHome(), name);
+export const stateFolder = (name: StateFolderName): string => homePath(name);

@@ -42,10 +42,10 @@ Why: bucket files collect unrelated code forever, because nothing in the name sa
 Authored source directories use camelCase.
 
 ```ts
-// ✓ src/agentHooks/hookSettings.ts
+// ✓ src/agents/hookSettings.ts
 export const agentId = "claude-code";
 
-// ✗ src/agent-hooks/hookSettings.ts or src/AgentHooks/hookSettings.ts
+// ✗ src/Agents/hookSettings.ts or src/agent_hooks/hookSettings.ts
 ```
 
 Why: public IDs stay kebab-case data; directory names follow one casing so the tree reads the same everywhere.
@@ -57,7 +57,7 @@ A repository-owned layer exists only when it owns policy the library it wraps do
 
 ```ts
 // ✓ owns real policy: wait for Shift to be up before typing so it cannot capitalize the text
-export const typeAtCaret = (text: string) => Effect.zipRight(waitForShiftUp(900), postUnicodeText(text));
+export const typeAtCaret = (text: string) => waitForShiftUp(900).pipe(Effect.zipRight(postUnicodeText(text)));
 
 // ✗ a pass-through that only renames a koffi call
 export const keyState = (key: number) => cgEventSourceKeyState(1, key);
@@ -186,11 +186,11 @@ Adjacent function declarations are separated by a blank line, and Biome collapse
 // ✓
 const isSpeaking = () => speakingFiles().length > 0;
 
-const isMuted = () => existsSync(stateFile("speech-muted"));
+const isMuted = (config: Config) => config.speechMuted;
 
 // ✗
 const isSpeaking = () => speakingFiles().length > 0;
-const isMuted = () => existsSync(stateFile("speech-muted"));
+const isMuted = (config: Config) => config.speechMuted;
 ```
 
 Why: the blank line is the boundary between units.
@@ -262,20 +262,25 @@ return sendToCmux(text);
 
 Why: exhaustive control flow makes a newly added variant fail to compile.
 
-### Ternaries stay trivial
-[rule:control.ternary] · verify: `biome ci .`
+### No ternaries
+[rule:control.no-ternary] · verify: `pnpm style`
 
-A ternary expresses one short symmetric choice and never contains another ternary.
+Name the condition in a boolean such as `isFinishedTurn`, then branch with `if` and an early return instead of `? :`.
 
 ```ts
 // ✓
-const marker = muted ? "muted" : "speaking";
+const isFinishedTurn = input.reason === "end_turn";
+if (!isFinishedTurn) {
+  return Option.none();
+}
+
+return Option.some(input.lastAssistantMessage);
 
 // ✗
-const marker = muted ? (speaking ? "a" : "b") : listening ? "c" : "d";
+return input.reason === "end_turn" ? Option.some(input.lastAssistantMessage) : Option.none();
 ```
 
-Why: nested ternaries optimize for line count rather than comprehension.
+Why: a named condition reads as a sentence, and each branch is its own line to read and to stop on.
 
 ### Tagged errors are the only classes
 [rule:class.tagged-error-only] · verify: `pnpm style`
@@ -356,6 +361,23 @@ yield* rememberSpoken(reply);
 ```
 
 Why: speech repeats syntax and drifts, while a hidden constraint stops a future edit from breaking an invariant.
+
+### No doc comments
+[rule:comment.no-doc-block] · verify: `pnpm style`
+
+Code has no `/** */` doc comments; the name says what a thing is, and a `//` line says a hidden reason.
+
+```ts
+// ✓
+// A Claude Code Stop hook that exits 2 blocks the agent, so bad arguments are a silent no-op.
+export const runReplyHookFromArguments = (args: ReadonlyArray<string>): Effect.Effect<void> => {
+
+// ✗
+/** Runs the reply hook from its arguments. */
+export const runReplyHookFromArguments = (args: ReadonlyArray<string>): Effect.Effect<void> => {
+```
+
+Why: voxkey publishes no API docs, so a doc block only repeats the name and drifts from the code.
 
 ### Schema owns runtime objects
 [rule:type.schema-owned-runtime] · verify: `pnpm style`
@@ -453,6 +475,22 @@ const voice = flags.voice ?? config.speechVoice ?? "F4";
 ```
 
 Why: one decoded boundary owns absence and defaults instead of fallback syntax spread through the logic.
+
+### No nested calls
+[rule:syntax.no-nested-call] · verify: `pnpm style`
+
+A call never takes another call as an argument; name the inner value on its own line, except inside `expect(...)`, `.pipe(...)`, and a Schema built from Schemas.
+
+```ts
+// ✓
+const transcript = readFileSync(transcriptPath, "utf8");
+return replyFromTranscript(transcript);
+
+// ✗
+return replyFromTranscript(readFileSync(transcriptPath, "utf8"));
+```
+
+Why: each named step can be read, logged, and stopped on by itself.
 
 ### Interfaces only when the mechanism requires them
 [rule:type.no-interface] · verify: `pnpm style`
@@ -808,37 +846,42 @@ Why: keeps main releasable and reviews scoped.
 
 ## Canonical example
 
-The hold-to-dictate path is the litmus test for policy and mechanism: `src/dictation/holdKey.ts` is a pure transition table with unit tests; `src/dictation/keyboard.ts` owns the koffi calls; `src/dictation/dictationWorker.ts` polls Shift every 8 ms, feeds events to the table, and turns actions into microphone and queue calls.
+The hold-to-dictate path is the litmus test for policy and mechanism: `src/dictation/holdKey.ts` is a pure transition table, every state and event spelled out, with unit tests; `src/dictation/keyboard.ts` owns the koffi calls; `src/dictation/dictationWorker.ts` polls Shift every 8 ms, feeds events to the table, and turns actions into microphone and queue calls.
 
 ```ts
 // src/dictation/holdKey.ts
-export const holdTransition = (state: HoldState, event: HoldEvent): readonly [HoldState, HoldAction] => {
-  switch (state) {
-    case "idle":
-      return event === "shiftDown" ? ["waiting", "schedule"] : [state, "none"];
-    case "waiting":
-      return waitingTransition(event);
-    case "shortcut":
-      return event === "shiftUp" ? ["idle", "none"] : [state, "none"];
-    case "listening":
-      return listeningTransition(event);
-  }
+const holdSteps: Record<HoldState, Record<HoldEvent, HoldStep>> = {
+  idle: {
+    shiftDown: ["waiting", "schedule"],
+    shiftUp: ["idle", "none"],
+    otherDown: ["idle", "none"],
+    holdElapsed: ["idle", "none"],
+  },
+  waiting: {
+    shiftDown: ["waiting", "none"],
+    shiftUp: ["idle", "tap"],
+    otherDown: ["shortcut", "cancel"],
+    holdElapsed: ["listening", "start"],
+  },
+  // ...shortcut and listening spell out their four events the same way
 };
+
+export const holdTransition = (state: HoldState, event: HoldEvent): HoldStep => holdSteps[state][event];
 ```
 
 ## Golden path — adding a feature
 
-1. Put the pure decision in the capability folder that owns it (`dictation`, `speech`, `refine`, `agentHooks`, …) with a colocated test.
+1. Put the pure decision in the capability folder that owns it (`dictation`, `speech`, `refine`, `agents`, …) with a colocated test.
 2. Put the mechanism (native call, process, file) beside it and load native modules lazily.
-3. Add any setting to `src/config/configSchema.ts` with a title and description; add any environment variable to `src/config/environmentVariables.ts`.
+3. Add any setting to `src/settings/configSchema.ts` with a title and description; add any environment variable to `src/settings/environmentVariables.ts` and `.env.example`.
 4. Add or extend one command file in `src/cli/`, rendering through `TerminalUI`.
-5. Update README and TESTING.md when the user must check the feature by hand.
+5. Update README, and its hand checks when the user must check the feature by hand.
 6. Run `pnpm verify`.
 
 ## Exemplars
 
 - `src/dictation/holdKey.ts` — a pure decision with a table of unit cases.
-- `src/agentHooks/hookSettings.ts` — byte-preserving edits of a user file, verified before the write.
+- `src/agents/hookSettings.ts` — byte-preserving edits of a user file, verified before the write.
 - `src/speech/inbox.ts` — Schema-owned files and pure ordering rules.
 - `src/cli/TerminalUI.ts` — the single presentation owner.
 
@@ -849,6 +892,9 @@ export const holdTransition = (state: HoldState, event: HoldEvent): readonly [Ho
 - A handwritten object type next to a hand-rolled reader · [rule:type.schema-owned-runtime]
 - `data`, `raw`, `result`, `response`, `payload`, `body`, `info`, `temp`, `tmp`, `final`, or `outcome` in identifiers · [rule:name.domain-specific]
 - `??` · [rule:syntax.no-nullish]
+- `? :` · [rule:control.no-ternary]
+- `f(g(x))` · [rule:syntax.no-nested-call]
+- `/** */` doc comments · [rule:comment.no-doc-block]
 - `as`, `any`, or `!` used to get past a boundary · [rule:type.no-assertion]
 - `console.log` in application code · [rule:presentation.terminal-ui]
 - A top-level import of a native addon in a module the reply hook loads · [rule:native.lazy-load]
@@ -857,7 +903,7 @@ export const holdTransition = (state: HoldState, event: HoldEvent): readonly [Ho
 
 ## Formatting and verification
 
-Biome owns formatting (2 spaces, double quotes, semicolons, trailing commas, 120 columns), import order, and the nested-ternary ban. `pnpm style` owns the repository rules above that say `pnpm style`.
+Biome owns formatting (2 spaces, double quotes, semicolons, trailing commas, 120 columns) and import order. `pnpm style` owns the repository rules above that say `pnpm style`.
 
 | Command | Covers |
 | --- | --- |

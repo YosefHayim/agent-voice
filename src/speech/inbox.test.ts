@@ -1,20 +1,11 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { Effect, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { makeTestFolder } from "../scripts/testFolder.js";
+import type { Config } from "../settings/configSchema.js";
 import { focusFrom } from "./cmuxFocus.js";
 import {
   claimNextReply,
@@ -30,13 +21,10 @@ import {
   surfaceIdentity,
 } from "./inbox.js";
 
-const scratchRoot = fileURLToPath(new URL("../../.scratch/", import.meta.url));
-
 let home = "";
 
 beforeEach(() => {
-  mkdirSync(scratchRoot, { recursive: true });
-  home = mkdtempSync(path.join(scratchRoot, "inbox-"));
+  home = makeTestFolder("inbox");
   vi.stubEnv("VOXKEY_HOME", home);
 });
 
@@ -56,9 +44,32 @@ const reply = (agentReplyId: string): QueuedReply => ({
 const cmuxOrigin = (surfaceId: string) =>
   ({ kind: "cmux", socketPath: path.join(home, "no-cmux.sock"), workspaceId: "W1", surfaceId }) as const;
 
-const claim = (mode: "auto" | "immediate" | "off" = "auto") => Effect.runPromise(claimNextReply(mode));
+const claimNext = (mode: Config["speechMode"]) => {
+  const claiming = claimNextReply(mode);
+  return Effect.runPromise(claiming);
+};
 
-const inboxNames = () => (existsSync(path.join(home, "inbox")) ? readdirSync(path.join(home, "inbox")) : []);
+const claimReply = async () => {
+  const claimed = await claimNext("auto");
+  return Option.getOrThrow(claimed);
+};
+
+const inboxNames = (): ReadonlyArray<string> => {
+  const inbox = path.join(home, "inbox");
+  if (!existsSync(inbox)) {
+    return [];
+  }
+
+  return readdirSync(inbox);
+};
+
+const permissions = (file: string): number => statSync(file).mode & 0o777;
+
+const filePermissions = (folder: string): ReadonlyArray<number> =>
+  readdirSync(folder).map((name) => {
+    const file = path.join(folder, name);
+    return permissions(file);
+  });
 
 describe("reply identity", () => {
   it("gives the same text the same stable token", () => {
@@ -77,8 +88,10 @@ describe("reply identity", () => {
   });
 
   it("keys a Cmux reply by workspace and surface", () => {
-    expect(surfaceIdentity({ ...reply(""), origin: cmuxOrigin("S1") })).toBe("W1:S1");
-    expect(surfaceIdentity(reply(""))).toBe("");
+    const cmuxReply = { ...reply(""), origin: cmuxOrigin("S1") };
+    expect(surfaceIdentity(cmuxReply)).toBe("W1:S1");
+    const terminalReply = reply("");
+    expect(surfaceIdentity(terminalReply)).toBe("");
   });
 });
 
@@ -106,65 +119,75 @@ describe("inbox", () => {
     queueReply({ markdown: "first", source: "codex", agentReplyId: "a", origin: { kind: "terminal" } });
     queueReply({ markdown: "second", source: "codex", agentReplyId: "b", origin: { kind: "terminal" } });
 
-    const first = Option.getOrThrow(await claim());
+    const first = await claimReply();
     expect(first.reply.markdown).toBe("first");
     expect(isSpeaking()).toBe(true);
     completeReply(first.file);
-    expect(Option.getOrThrow(await claim()).reply.markdown).toBe("second");
+    const second = await claimReply();
+    expect(second.reply.markdown).toBe("second");
   });
 
   it("never speaks the same reply twice, even when the hook fires again with another ID", async () => {
     queueReply({ markdown: "once", source: "codex", agentReplyId: "", origin: { kind: "terminal" } });
-    completeReply(Option.getOrThrow(await claim()).file);
+    const spoken = await claimReply();
+    completeReply(spoken.file);
 
     queueReply({ markdown: "once", source: "codex", agentReplyId: "turn-9", origin: { kind: "terminal" } });
+    const next = await claimNext("auto");
     expect(inboxNames()).toEqual([]);
-    expect(Option.isNone(await claim())).toBe(true);
+    expect(Option.isNone(next)).toBe(true);
   });
 
   it("lets the newest reply from a Cmux surface supersede older ones, and speaks it when Cmux cannot be asked", async () => {
     queueReply({ markdown: "older", source: "codex", agentReplyId: "1", origin: cmuxOrigin("S1") });
     queueReply({ markdown: "newer", source: "codex", agentReplyId: "2", origin: cmuxOrigin("S1") });
 
-    expect(Option.getOrThrow(await claim()).reply.markdown).toBe("newer");
+    const claimed = await claimReply();
+    expect(claimed.reply.markdown).toBe("newer");
     expect(inboxNames().filter((name) => name.endsWith(".json"))).toEqual([]);
   });
 
   it("empties the queue when speech is off", async () => {
     queueReply({ markdown: "missed while off", source: "grok", agentReplyId: "", origin: { kind: "terminal" } });
-    expect(Option.isNone(await claim("off"))).toBe(true);
+    const next = await claimNext("off");
+    expect(Option.isNone(next)).toBe(true);
     expect(inboxNames()).toEqual([]);
   });
 
   it("deletes unreadable and expired files and moves a failed reply aside", async () => {
-    mkdirSync(path.join(home, "inbox"), { recursive: true });
-    writeFileSync(path.join(home, "inbox", "0-broken.json"), "{");
-    writeFileSync(
-      path.join(home, "inbox", "1-old.json"),
-      JSON.stringify({ ...reply("x"), markdown: "stale", receivedAt: 1 }),
-    );
+    const inbox = path.join(home, "inbox");
+    const brokenFile = path.join(inbox, "0-broken.json");
+    const staleFile = path.join(inbox, "1-old.json");
+    const staleReply = JSON.stringify({ ...reply("x"), markdown: "stale", receivedAt: 1 });
+    mkdirSync(inbox, { recursive: true });
+    writeFileSync(brokenFile, "{");
+    writeFileSync(staleFile, staleReply);
     queueReply({ markdown: "fresh", source: "codex", agentReplyId: "", origin: { kind: "terminal" } });
 
-    const claimed = Option.getOrThrow(await claim());
+    const claimed = await claimReply();
     expect(claimed.reply.markdown).toBe("fresh");
     failReply(claimed.file);
+    const failed = path.join(home, "failed");
+    const seenFile = path.join(home, "seen.json");
+    const seenText = readFileSync(seenFile, "utf8");
     expect(inboxNames()).toEqual([]);
-    expect(readdirSync(path.join(home, "failed"))).toHaveLength(1);
-    expect(JSON.parse(readFileSync(path.join(home, "seen.json"), "utf8"))).toBeTruthy();
+    expect(readdirSync(failed)).toHaveLength(1);
+    expect(JSON.parse(seenText)).toBeTruthy();
   });
 
   it("keeps queued and failed replies readable by the user alone, tightening an inbox made looser before", async () => {
-    const permissions = (file: string) => statSync(file).mode & 0o777;
-    mkdirSync(path.join(home, "inbox"));
-    chmodSync(path.join(home, "inbox"), 0o755);
+    const inbox = path.join(home, "inbox");
+    const failed = path.join(home, "failed");
+    mkdirSync(inbox);
+    chmodSync(inbox, 0o755);
 
     queueReply({ markdown: "the agent's reply", source: "codex", agentReplyId: "", origin: { kind: "terminal" } });
-    expect(permissions(path.join(home, "inbox"))).toBe(0o700);
-    expect(inboxNames().map((name) => permissions(path.join(home, "inbox", name)))).toEqual([0o600]);
+    expect(permissions(inbox)).toBe(0o700);
+    expect(filePermissions(inbox)).toEqual([0o600]);
 
-    failReply(Option.getOrThrow(await claim()).file);
-    const failed = path.join(home, "failed");
+    const claimed = await claimReply();
+    failReply(claimed.file);
     expect(permissions(failed)).toBe(0o700);
-    expect(readdirSync(failed).map((name) => permissions(path.join(failed, name)))).toEqual([0o600]);
+    expect(filePermissions(failed)).toEqual([0o600]);
   });
 });

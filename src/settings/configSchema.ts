@@ -1,5 +1,3 @@
-/** voxkey's settings: one Schema owns every config.json key, its default, its CLI label, and its meaning. */
-
 import { Effect, Option, ParseResult, Schema, SchemaAST, Struct } from "effect";
 
 const withDefault = <Value, Encoded>(schema: Schema.Schema<Value, Encoded>, fallback: Value) =>
@@ -11,11 +9,13 @@ const numberSetting = (setting: {
   readonly fallback: number;
   readonly title: string;
   readonly description: string;
-}) =>
-  withDefault(
-    Schema.Number.pipe(Schema.between(...setting.range, { message: () => setting.outOfRange })),
-    setting.fallback,
-  ).annotations({ title: setting.title, description: setting.description });
+}) => {
+  const rangedNumber = Schema.Number.pipe(Schema.between(...setting.range, { message: () => setting.outOfRange }));
+  return withDefault(rangedNumber, setting.fallback).annotations({
+    title: setting.title,
+    description: setting.description,
+  });
+};
 
 // A closed choice that also accepts any letter case and the listed aliases ("Hebrew" → "he").
 const choiceWithAliases = <Choice extends string>(request: {
@@ -26,16 +26,20 @@ const choiceWithAliases = <Choice extends string>(request: {
     strict: true,
     decode: (text) => {
       const key = text.trim().toLowerCase();
-      const choice = Object.entries(request.aliases).find(([alias]) => alias === key)?.[1];
-      return choice === undefined
-        ? ParseResult.fail(new ParseResult.Type(request.choices.ast, text, `Unknown value "${text}".`))
-        : ParseResult.succeed(choice);
+      const alias = Object.entries(request.aliases).find(([name]) => name === key);
+      if (alias === undefined) {
+        return ParseResult.fail(new ParseResult.Type(request.choices.ast, text, `Unknown value "${text}".`));
+      }
+
+      return ParseResult.succeed(alias[1]);
     },
     encode: (choice) => ParseResult.succeed(choice),
   });
 
-const literalAliases = <Choice extends string>(choices: ReadonlyArray<Choice>): Readonly<Record<string, Choice>> =>
-  Object.fromEntries(choices.map((choice) => [choice.toLowerCase(), choice]));
+const literalAliases = <Choice extends string>(choices: ReadonlyArray<Choice>): Readonly<Record<string, Choice>> => {
+  const lowercaseEntries = choices.map((choice) => [choice.toLowerCase(), choice]);
+  return Object.fromEntries(lowercaseEntries);
+};
 
 export const speechVoices = ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"] as const;
 
@@ -72,10 +76,16 @@ const dictationLanguageSchema = choiceWithAliases({
 
 const trimmedText = Schema.Trim;
 
+const speechModeSchema = Schema.Literal("auto", "immediate", "off");
+
+const refineModeSchema = Schema.Literal("off", "clipboard", "dictation", "both");
+
+const refineSendToSchema = Schema.Literal("caret", "cmux-new", "cmux-resume");
+
 // Every setting carries its CLI label (title) and meaning (description) on its property signature,
 // so `voxkey config list`, `voxkey config set`, and the README all read one declaration.
 export const configSchema = Schema.Struct({
-  speechMode: withDefault(Schema.Literal("auto", "immediate", "off"), "auto").annotations({
+  speechMode: withDefault(speechModeSchema, "auto").annotations({
     title: "speech mode",
     description:
       "When agent replies are read aloud: auto holds a Cmux reply until its surface is focused and Cmux is in front, and speaks other replies at once; immediate speaks every reply at once; off reads nothing.",
@@ -113,7 +123,7 @@ export const configSchema = Schema.Struct({
     description:
       "Semicolon-separated heard=written pairs applied to dictation, e.g. Joseph=Yosef;type script=TypeScript.",
   }),
-  refineMode: withDefault(Schema.Literal("off", "clipboard", "dictation", "both"), "off").annotations({
+  refineMode: withDefault(refineModeSchema, "off").annotations({
     title: "refine mode",
     description:
       "Prompt refine: off; clipboard = double-tap Shift refines the copied prompt; dictation = refine the dictation before it is typed; both.",
@@ -138,7 +148,7 @@ export const configSchema = Schema.Struct({
     title: "refine press Enter",
     description: "Press Enter after dictated text (refined or not) is typed at the caret.",
   }),
-  refineSendTo: withDefault(Schema.Literal("caret", "cmux-new", "cmux-resume"), "caret").annotations({
+  refineSendTo: withDefault(refineSendToSchema, "caret").annotations({
     title: "refine send to",
     description:
       "Where refined dictation goes: caret (the focused input), cmux-new (a new focused cmux workspace), or cmux-resume (the focused cmux surface).",
@@ -158,11 +168,9 @@ export type Config = Schema.Schema.Type<typeof configSchema>;
 
 type ConfigKey = keyof Config;
 
-export const configJsonSchema = Schema.parseJson(configSchema);
-
 export const defaultConfig = Schema.decodeUnknownSync(configSchema, { onExcessProperty: "error" })({});
 
-export const decodeConfig = Schema.decodeUnknown(configSchema, { onExcessProperty: "error" });
+const decodeConfig = Schema.decodeUnknown(configSchema, { onExcessProperty: "error" });
 
 type ConfigProperty = Schema.PropertySignature.All;
 
@@ -189,14 +197,22 @@ const settingKind = (valueAst: SchemaAST.AST): SettingKind => {
   }
 };
 
+const unionMembers = (typeAst: SchemaAST.AST): ReadonlyArray<SchemaAST.AST> => {
+  if (SchemaAST.isUnion(typeAst)) {
+    return typeAst.types;
+  }
+
+  return [typeAst];
+};
+
 const literalChoices = (valueAst: SchemaAST.AST): ReadonlyArray<string> => {
   const typeAst = SchemaAST.typeAST(valueAst);
   if (SchemaAST.isBooleanKeyword(typeAst)) {
     return ["true", "false"];
   }
 
-  const members = SchemaAST.isUnion(typeAst) ? typeAst.types : [typeAst];
-  return members.flatMap((member) => (SchemaAST.isLiteral(member) ? [String(member.literal)] : []));
+  const members = unionMembers(typeAst);
+  return members.filter(SchemaAST.isLiteral).map((member) => String(member.literal));
 };
 
 // e.g. "speechWordsPerMinute" → "speech-words-per-minute"
@@ -220,8 +236,8 @@ export const configSettings: ReadonlyArray<ConfigSetting> = Struct.keys(configFi
   return {
     key,
     name: settingNameFor(key),
-    label: Option.getOrElse(SchemaAST.getTitleAnnotation(annotations), () => key),
-    description: Option.getOrElse(SchemaAST.getDescriptionAnnotation(annotations), () => ""),
+    label: SchemaAST.getTitleAnnotation(annotations).pipe(Option.getOrElse(() => key)),
+    description: SchemaAST.getDescriptionAnnotation(annotations).pipe(Option.getOrElse(() => "")),
     kind: settingKind(valueAst),
     choices: literalChoices(valueAst),
     optional: property.ast._tag === "PropertySignatureDeclaration" && property.ast.isOptional,
@@ -237,32 +253,30 @@ export const settingValueFromText = (request: {
   readonly setting: ConfigSetting;
   readonly text: string;
 }): Effect.Effect<Option.Option<unknown>, ParseResult.ParseError> => {
-  if (request.setting.optional && request.text.trim() === "") {
-    return Effect.succeed(Option.none());
+  const trimmed = request.text.trim();
+  if (request.setting.optional && trimmed === "") {
+    return Effect.succeedNone;
   }
 
   switch (request.setting.kind) {
     case "number":
-      return decodeNumberText(request.text.trim()).pipe(Effect.map(Option.some));
+      return decodeNumberText(trimmed).pipe(Effect.map(Option.some));
     case "boolean":
-      return decodeBooleanText(request.text.trim()).pipe(Effect.map(Option.some));
+      return decodeBooleanText(trimmed).pipe(Effect.map(Option.some));
     case "text":
-      return Effect.succeed(Option.some(request.text));
+      return Effect.succeedSome(request.text);
   }
 };
-
-export const defaultSettingValue = (key: ConfigKey): Option.Option<unknown> =>
-  key in defaultConfig ? Option.some(defaultConfig[key]) : Option.none();
 
 // A cleared optional setting leaves config.json without the key instead of storing an empty value.
 export const withSettingValue = (request: {
   readonly config: Config;
   readonly key: ConfigKey;
   readonly value: Option.Option<unknown>;
-}) =>
-  decodeConfig(
-    Option.match(request.value, {
-      onNone: () => Struct.omit(request.config, request.key),
-      onSome: (value) => ({ ...request.config, [request.key]: value }),
-    }),
-  );
+}) => {
+  const changedConfig = Option.match(request.value, {
+    onNone: () => Struct.omit(request.config, request.key),
+    onSome: (value) => ({ ...request.config, [request.key]: value }),
+  });
+  return decodeConfig(changedConfig);
+};

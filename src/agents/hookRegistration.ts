@@ -1,5 +1,3 @@
-/** `voxkey on` / `voxkey off` for agent hooks: add or remove voxkey's Stop entry in each installed agent's settings. */
-
 import { chmodSync, copyFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -11,7 +9,7 @@ import { voxkeyInvocation } from "../workers/workerProcesses.js";
 import { type AgentHookTarget, agentHookTargets, agentIdSchema } from "./agentCatalog.js";
 import { addReplyHook, HookSettingsIssue, isEmptySettings, removeReplyHook, replyHookCommand } from "./hookSettings.js";
 
-export const hookChangeSchema = Schema.Struct({
+const hookChangeSchema = Schema.Struct({
   agent: agentIdSchema,
   displayName: Schema.String,
   file: Schema.String,
@@ -22,7 +20,17 @@ export const hookChangeSchema = Schema.Struct({
 
 export type HookChange = Schema.Schema.Type<typeof hookChangeSchema>;
 
-const settingsPath = (target: AgentHookTarget) => path.join(homedir(), target.settingsFile);
+const homePath = (relativePath: string): string => {
+  const home = homedir();
+  return path.join(home, relativePath);
+};
+
+const settingsPath = (target: AgentHookTarget): string => homePath(target.settingsFile);
+
+const isAgentInstalled = (target: AgentHookTarget): boolean => {
+  const agentFolder = homePath(target.homeFolder);
+  return existsSync(agentFolder);
+};
 
 const backupFile = (target: AgentHookTarget): string => {
   // Agent settings can hold tokens, so their copies are private like the rest of voxkey's state.
@@ -30,37 +38,47 @@ const backupFile = (target: AgentHookTarget): string => {
   makePrivateFolder(folder);
   const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
   const backup = path.join(folder, `${target.agent}-${path.basename(target.settingsFile)}-${stamp}`);
-  copyFileSync(settingsPath(target), backup);
+  const file = settingsPath(target);
+  copyFileSync(file, backup);
   chmodSync(backup, 0o600);
   return backup;
+};
+
+const fileMode = (file: string): number => {
+  if (!existsSync(file)) {
+    return 0o644;
+  }
+
+  return statSync(file).mode & 0o777;
 };
 
 // The agent's file keeps its permissions; the new text lands through a rename so the agent never reads half of it.
 const writeSettings = (target: AgentHookTarget, text: string): void => {
   const file = settingsPath(target);
-  const mode = existsSync(file) ? statSync(file).mode & 0o777 : 0o644;
-  mkdirSync(path.dirname(file), { recursive: true });
+  const mode = fileMode(file);
+  const folder = path.dirname(file);
+  mkdirSync(folder, { recursive: true });
   const staging = `${file}.voxkey-partial`;
   writeFileSync(staging, text, { mode });
   renameSync(staging, file);
 };
 
 // Settings files voxkey created, so `voxkey off` can delete one it leaves empty and keep any file that existed before.
-const createdFiles = (): ReadonlyArray<string> =>
-  Option.getOrElse(
-    readJsonFile({ path: stateFile("created-hook-files.json"), schema: Schema.Array(Schema.String) }),
-    () => [],
-  );
-
-const recordCreated = (request: { readonly file: string; readonly created: boolean }): void => {
-  const others = createdFiles().filter((file) => file !== request.file);
-  writeJsonAtomically({
-    path: stateFile("created-hook-files.json"),
-    value: request.created ? [...others, request.file] : others,
-  });
+const createdFiles = (): ReadonlyArray<string> => {
+  const createdPath = stateFile("created-hook-files.json");
+  return readJsonFile({ path: createdPath, schema: Schema.Array(Schema.String) }).pipe(Option.getOrElse(() => []));
 };
 
-const isAgentInstalled = (target: AgentHookTarget) => existsSync(path.join(homedir(), target.homeFolder));
+const recordCreated = (request: { readonly file: string; readonly created: boolean }): void => {
+  const createdPath = stateFile("created-hook-files.json");
+  const others = createdFiles().filter((file) => file !== request.file);
+  if (request.created) {
+    writeJsonAtomically({ path: createdPath, value: [...others, request.file] });
+    return;
+  }
+
+  writeJsonAtomically({ path: createdPath, value: others });
+};
 
 const changeFor = (target: AgentHookTarget, change: HookChange["change"]): HookChange => ({
   agent: target.agent,
@@ -70,16 +88,40 @@ const changeFor = (target: AgentHookTarget, change: HookChange["change"]): HookC
 });
 
 // A settings file voxkey cannot read or parse is reported and left exactly as it is.
-const reportFailure =
-  (target: AgentHookTarget) =>
-  (issue: HookSettingsIssue): HookChange => ({ ...changeFor(target, "failed"), issue: issue.message });
+const failedChange = (target: AgentHookTarget, issue: HookSettingsIssue): HookChange => ({
+  ...changeFor(target, "failed"),
+  issue: issue.message,
+});
 
 // Reading an unreadable file as missing would replace the user's settings with a hook-only file.
-const readSettings = (target: AgentHookTarget): Either.Either<Option.Option<string>, HookSettingsIssue> =>
-  Either.try({
-    try: () => readTextIfPresent(settingsPath(target)),
+const readSettings = (target: AgentHookTarget): Either.Either<Option.Option<string>, HookSettingsIssue> => {
+  const file = settingsPath(target);
+  return Either.try({
+    try: () => readTextIfPresent(file),
     catch: (error) => new HookSettingsIssue({ issue: `the settings file could not be read (${String(error)})` }),
   });
+};
+
+const voxkeyReplyCommand = (target: AgentHookTarget): string => {
+  const invocation = voxkeyInvocation();
+  return replyHookCommand({
+    nodePath: invocation.executable,
+    scriptArguments: invocation.scriptArguments,
+    agent: target.agent,
+  });
+};
+
+// A settings file voxkey created is deleted once its entry was the only thing in it.
+const saveRemoval = (target: AgentHookTarget, source: string): void => {
+  const file = settingsPath(target);
+  const isCreatedByVoxkey = target.ownFile || createdFiles().includes(file);
+  if (isCreatedByVoxkey && isEmptySettings(source)) {
+    rmSync(file, { force: true });
+    return;
+  }
+
+  writeSettings(target, source);
+};
 
 const registerOne = (target: AgentHookTarget): HookChange => {
   if (!isAgentInstalled(target)) {
@@ -88,37 +130,37 @@ const registerOne = (target: AgentHookTarget): HookChange => {
 
   const read = readSettings(target);
   if (Either.isLeft(read)) {
-    return reportFailure(target)(read.left);
+    return failedChange(target, read.left);
   }
 
   const current = read.right;
-  const invocation = voxkeyInvocation();
-  const command = replyHookCommand({
-    nodePath: invocation.executable,
-    scriptArguments: invocation.scriptArguments,
-    agent: target.agent,
-  });
-  return Either.match(addReplyHook({ source: Option.getOrElse(current, () => ""), command, agent: target.agent }), {
-    onLeft: reportFailure(target),
-    onRight: (edit) => {
-      if (!edit.changed) {
-        return changeFor(target, "unchanged");
-      }
+  const source = Option.getOrElse(current, () => "");
+  const command = voxkeyReplyCommand(target);
+  const edit = addReplyHook({ source, command, agent: target.agent });
+  if (Either.isLeft(edit)) {
+    return failedChange(target, edit.left);
+  }
 
-      const backup = Option.isSome(current) ? backupFile(target) : undefined;
-      writeSettings(target, edit.source);
-      if (Option.isNone(current)) {
-        recordCreated({ file: settingsPath(target), created: true });
-      }
-      return { ...changeFor(target, "added"), ...(backup === undefined ? {} : { backup }) };
-    },
-  });
+  if (!edit.right.changed) {
+    return changeFor(target, "unchanged");
+  }
+
+  const added = changeFor(target, "added");
+  if (Option.isNone(current)) {
+    writeSettings(target, edit.right.source);
+    recordCreated({ file: added.file, created: true });
+    return added;
+  }
+
+  const backup = backupFile(target);
+  writeSettings(target, edit.right.source);
+  return { ...added, backup };
 };
 
 const unregisterOne = (target: AgentHookTarget): HookChange => {
   const read = readSettings(target);
   if (Either.isLeft(read)) {
-    return reportFailure(target)(read.left);
+    return failedChange(target, read.left);
   }
 
   const current = read.right;
@@ -126,46 +168,40 @@ const unregisterOne = (target: AgentHookTarget): HookChange => {
     return changeFor(target, "absent");
   }
 
-  return Either.match(removeReplyHook({ source: current.value, agent: target.agent }), {
-    onLeft: reportFailure(target),
-    onRight: (edit) => {
-      if (!edit.changed) {
-        return changeFor(target, "absent");
-      }
+  const edit = removeReplyHook({ source: current.value, agent: target.agent });
+  if (Either.isLeft(edit)) {
+    return failedChange(target, edit.left);
+  }
 
-      const backup = backupFile(target);
-      const createdByVoxkey = target.ownFile || createdFiles().includes(settingsPath(target));
-      if (createdByVoxkey && isEmptySettings(edit.source)) {
-        rmSync(settingsPath(target), { force: true });
-      } else {
-        writeSettings(target, edit.source);
-      }
-      recordCreated({ file: settingsPath(target), created: false });
-      return { ...changeFor(target, "removed"), backup };
-    },
-  });
+  if (!edit.right.changed) {
+    return changeFor(target, "absent");
+  }
+
+  const backup = backupFile(target);
+  const removed = changeFor(target, "removed");
+  saveRemoval(target, edit.right.source);
+  recordCreated({ file: removed.file, created: false });
+  return { ...removed, backup };
 };
 
-/** Register `voxkey reply` as the Stop hook for every installed agent; a broken settings file is reported, not touched. */
 export const registerReplyHooks: Effect.Effect<ReadonlyArray<HookChange>> = Effect.sync(() =>
   agentHookTargets.map(registerOne),
 );
 
-/** Remove voxkey's Stop entry from every agent settings file; everything else in the files stays. */
 export const unregisterReplyHooks: Effect.Effect<ReadonlyArray<HookChange>> = Effect.sync(() =>
   agentHookTargets.map(unregisterOne),
 );
 
-const hasReplyHook = (target: AgentHookTarget): boolean =>
-  Either.getOrElse(
-    Either.flatMap(readSettings(target), (current) =>
-      Option.match(current, {
-        onNone: () => Either.right(false),
-        onSome: (text) => Either.map(removeReplyHook({ source: text, agent: target.agent }), (edit) => edit.changed),
-      }),
-    ),
-    () => false,
-  );
+const hasReplyHook = (target: AgentHookTarget): boolean => {
+  const current = readSettings(target).pipe(Either.getOrElse(() => Option.none<string>()));
+  if (Option.isNone(current)) {
+    return false;
+  }
 
-/** Which agents currently run `voxkey reply`, for `voxkey status` and `voxkey doctor`. */
+  return removeReplyHook({ source: current.value, agent: target.agent }).pipe(
+    Either.map((edit) => edit.changed),
+    Either.getOrElse(() => false),
+  );
+};
+
 export const registeredAgents = (): ReadonlyArray<AgentHookTarget> => agentHookTargets.filter(hasReplyHook);

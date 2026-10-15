@@ -1,5 +1,3 @@
-/** `voxkey devin -- <devin arguments>`: run Devin with its ATIF export and read each finished turn aloud. */
-
 import { spawn } from "node:child_process";
 import path from "node:path";
 
@@ -18,35 +16,48 @@ class DevinFailed extends Schema.TaggedError<DevinFailed>()("DevinFailed", { iss
   }
 }
 
+// A child killed by a signal exits with no code; that counts as a failure.
+const exitedWith = (code: number | null) => {
+  if (code === null) {
+    return Effect.succeed(1);
+  }
+
+  return Effect.succeed(code);
+};
+
 const runDevin = (args: ReadonlyArray<string>) =>
   Effect.async<number, DevinFailed>((resume) => {
     const child = spawn("devin", [...args], { stdio: "inherit" });
-    child.on("error", (error) => resume(Effect.fail(new DevinFailed({ issue: error.message }))));
-    child.on("exit", (code) => resume(Effect.succeed(code === null ? 1 : code)));
+    child.on("error", (error) => resume(new DevinFailed({ issue: error.message })));
+    child.on("exit", (code) => {
+      const exited = exitedWith(code);
+      resume(exited);
+    });
     return Effect.sync(() => child.kill("SIGTERM"));
   });
 
-export const devinCommand = Command.make(
-  "devin",
-  {
-    devinArguments: Args.text({ name: "devin-argument" }).pipe(
-      Args.repeated,
-      Args.withDescription("Arguments passed to Devin; put -- before Devin flags"),
-    ),
-  },
-  (args) =>
-    Effect.gen(function* () {
-      yield* TerminalUI.intro("devin");
-      yield* startWorkers;
-      const folder = path.join(stateFolder("devin"), new Date().toISOString().replace(/[:.]/gu, "-"));
-      // Devin writes the whole session here, so the folder is private.
-      makePrivateFolder(folder);
-      const exportFile = path.join(folder, "session.atif.json");
-      yield* TerminalUI.detail(`Reading finished turns aloud from Devin's ATIF export (${exportFile}).`);
-      const code = yield* watchDevinSession({
-        exportFile,
-        session: runDevin(["--export", exportFile, ...args.devinArguments]),
-      });
-      yield* TerminalUI.outro(`Devin exited with ${String(code)}; the watcher stopped.`);
-    }),
+const sessionFolder = (): string => {
+  const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
+  const devinFolder = stateFolder("devin");
+  return path.join(devinFolder, stamp);
+};
+
+const devinArguments = Args.text({ name: "devin-argument" }).pipe(
+  Args.repeated,
+  Args.withDescription("Arguments passed to Devin; put -- before Devin flags"),
+);
+
+export const devinCommand = Command.make("devin", { devinArguments }, (args) =>
+  Effect.gen(function* () {
+    yield* TerminalUI.intro("devin");
+    yield* startWorkers;
+    const folder = sessionFolder();
+    // Devin writes the whole session here, so the folder is private.
+    makePrivateFolder(folder);
+    const exportFile = path.join(folder, "session.atif.json");
+    yield* TerminalUI.detail(`Reading finished turns aloud from Devin's ATIF export (${exportFile}).`);
+    const session = runDevin(["--export", exportFile, ...args.devinArguments]);
+    const code = yield* watchDevinSession({ exportFile, session });
+    yield* TerminalUI.outro(`Devin exited with ${String(code)}; the watcher stopped.`);
+  }),
 ).pipe(Command.withDescription("Run Devin and read each finished turn aloud from its official ATIF export"));

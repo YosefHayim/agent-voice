@@ -1,19 +1,16 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { makeTestFolder } from "../scripts/testFolder.js";
 import { holdLock, removeFreeLock } from "./fileLock.js";
-
-const scratchRoot = fileURLToPath(new URL("../../.scratch/", import.meta.url));
 
 let folder = "";
 
 beforeEach(() => {
-  mkdirSync(scratchRoot, { recursive: true });
-  folder = mkdtempSync(path.join(scratchRoot, "lock-"));
+  folder = makeTestFolder("lock");
 });
 
 afterEach(() => {
@@ -23,19 +20,16 @@ afterEach(() => {
 describe("file lock", () => {
   it("is refused to a second taker, even in the same process, until the holder's scope ends", async () => {
     const lock = path.join(folder, "model.bin.lock");
-    const takers = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const first = yield* holdLock(lock);
-          const second = yield* Effect.scoped(holdLock(lock));
-          return [first, second];
-        }),
-      ),
-    );
+    const takers = await Effect.gen(function* () {
+      const first = yield* holdLock(lock);
+      const second = yield* holdLock(lock).pipe(Effect.scoped);
+      return [first, second];
+    }).pipe(Effect.scoped, Effect.runPromise);
 
     expect(takers).toEqual([true, false]);
     expect(existsSync(lock)).toBe(false);
-    expect(await Effect.runPromise(Effect.scoped(holdLock(lock)))).toBe(true);
+    const isTakenAfterRelease = await holdLock(lock).pipe(Effect.scoped, Effect.runPromise);
+    expect(isTakenAfterRelease).toBe(true);
   });
 
   it("removes a lock file nobody holds, but never one that is held", async () => {
@@ -44,15 +38,11 @@ describe("file lock", () => {
     removeFreeLock(lock);
     expect(existsSync(lock)).toBe(false);
 
-    const keptWhileHeld = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          yield* holdLock(lock);
-          removeFreeLock(lock);
-          return existsSync(lock);
-        }),
-      ),
-    );
+    const keptWhileHeld = await Effect.gen(function* () {
+      yield* holdLock(lock);
+      removeFreeLock(lock);
+      return existsSync(lock);
+    }).pipe(Effect.scoped, Effect.runPromise);
     expect(keptWhileHeld).toBe(true);
   });
 });

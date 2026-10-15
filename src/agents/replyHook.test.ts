@@ -1,12 +1,12 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
-const scratchRoot = path.join(repositoryRoot, ".scratch");
+import { makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
+
 const mainScript = path.join(repositoryRoot, "src", "cli", "main.ts");
 
 let home = "";
@@ -15,13 +15,13 @@ let sleepers: ReadonlyArray<ChildProcess> = [];
 // Pid files naming sleeping processes whose command lines end in `worker dictation` and `worker speech` make
 // voxkey believe both workers already run, so no real worker starts. The test kills only these sleepers.
 beforeEach(async () => {
-  mkdirSync(scratchRoot, { recursive: true });
-  home = mkdtempSync(path.join(scratchRoot, "reply-"));
+  home = makeTestFolder("reply");
   const spawned = (["dictation", "speech"] as const).map((kind) => {
     const sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1 << 30)", "worker", kind], {
       stdio: "ignore",
     });
-    writeFileSync(path.join(home, `${kind}.pid`), String(sleeper.pid));
+    const pidPath = path.join(home, `${kind}.pid`);
+    writeFileSync(pidPath, `${sleeper.pid}`);
     return { sleeper, ready: new Promise((resolve) => sleeper.once("spawn", resolve)) };
   });
   sleepers = spawned.map((entry) => entry.sleeper);
@@ -37,6 +37,11 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
+const writeConfig = (configText: string): void => {
+  const configPath = path.join(home, "config.json");
+  writeFileSync(configPath, configText);
+};
+
 const runHook = (request: {
   readonly agent: string;
   readonly stdin: string;
@@ -44,10 +49,11 @@ const runHook = (request: {
   readonly speechMuted?: boolean;
   readonly environment?: Readonly<Record<string, string>>;
 }) => {
-  writeFileSync(
-    path.join(home, "config.json"),
-    JSON.stringify({ speechMode: request.speechMode || "auto", speechMuted: request.speechMuted === true }),
-  );
+  const configText = JSON.stringify({
+    speechMode: request.speechMode || "auto",
+    speechMuted: request.speechMuted === true,
+  });
+  writeConfig(configText);
   return spawnSync(process.execPath, ["--import", "tsx", mainScript, "reply", "--agent", request.agent], {
     cwd: repositoryRoot,
     input: request.stdin,
@@ -65,9 +71,15 @@ const runHook = (request: {
 
 const queued = (): ReadonlyArray<unknown> => {
   const inbox = path.join(home, "inbox");
-  return existsSync(inbox)
-    ? readdirSync(inbox).map((name) => JSON.parse(readFileSync(path.join(inbox, name), "utf8")))
-    : [];
+  if (!existsSync(inbox)) {
+    return [];
+  }
+
+  return readdirSync(inbox).map((name) => {
+    const replyPath = path.join(inbox, name);
+    const replyText = readFileSync(replyPath, "utf8");
+    return JSON.parse(replyText);
+  });
 };
 
 describe("voxkey reply (the agent Stop hook)", () => {
@@ -129,14 +141,19 @@ describe("voxkey reply (the agent Stop hook)", () => {
         },
       }),
     ]);
-    expect(JSON.stringify(queued())).not.toContain("must-not-leak");
+    const queuedReplies = queued();
+    const queuedText = JSON.stringify(queuedReplies);
+    expect(queuedText).not.toContain("must-not-leak");
   });
 
-  it("queues a finished Grok turn and ignores its other hook events", () => {
-    runHook({ agent: "grok", stdin: JSON.stringify({ lastAssistantMessage: "Still working", reason: "tool_use" }) });
+  it("queues a finished Grok turn and ignores a session close", () => {
+    const grokStop = (reason: string, lastAssistantMessage: string) =>
+      JSON.stringify({ hookEventName: "Stop", reason, lastAssistantMessage });
+
+    runHook({ agent: "grok", stdin: grokStop("shutdown", "Closing") });
     expect(queued()).toEqual([]);
 
-    runHook({ agent: "grok", stdin: JSON.stringify({ lastAssistantMessage: "Complete answer", reason: "end_turn" }) });
+    runHook({ agent: "grok", stdin: grokStop("end_turn", "Complete answer") });
     expect(queued()).toEqual([expect.objectContaining({ markdown: "Complete answer", source: "grok" })]);
   });
 
@@ -148,7 +165,8 @@ describe("voxkey reply (the agent Stop hook)", () => {
   });
 
   it("exits 0 with no output and queues nothing when --agent is unknown, missing, empty, or has extra arguments", () => {
-    writeFileSync(path.join(home, "config.json"), JSON.stringify({ speechMode: "auto", speechMuted: false }));
+    const configText = JSON.stringify({ speechMode: "auto", speechMuted: false });
+    writeConfig(configText);
     const stdin = JSON.stringify({ last_assistant_message: "Should not be queued" });
     for (const args of [
       ["--agent", "nosuch"],
@@ -191,7 +209,7 @@ describe("voxkey reply (the agent Stop hook)", () => {
       const execution = runHook({ agent: "claude-code", stdin });
       expect([execution.status, execution.stdout, execution.stderr]).toEqual([0, "", ""]);
     }
-    writeFileSync(path.join(home, "config.json"), "{ broken");
+    writeConfig("{ broken");
     const broken = spawnSync(process.execPath, ["--import", "tsx", mainScript, "reply", "--agent", "codex"], {
       cwd: repositoryRoot,
       input: JSON.stringify({ last_assistant_message: "dropped, because the defaults are muted" }),

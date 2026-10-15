@@ -1,5 +1,3 @@
-/** Supertonic 3 TTS models: four ONNX graphs, their config, the character index, and the ten voice styles. */
-
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -13,7 +11,7 @@ const SUPERTONIC_REVISION = "724fb5abbf5502583fb520898d45929e62f02c0b";
 
 const SUPERTONIC_REPOSITORY = "https://huggingface.co/Supertone/supertonic-3/resolve";
 
-export const supertonicFiles: ReadonlyArray<string> = [
+const supertonicFiles: ReadonlyArray<string> = [
   "onnx/tts.json",
   "onnx/unicode_indexer.json",
   "onnx/duration_predictor.onnx",
@@ -23,22 +21,30 @@ export const supertonicFiles: ReadonlyArray<string> = [
   ...speechVoices.map((voice) => `voice_styles/${voice}.json`),
 ];
 
-export const supertonicFolder = (): string => path.join(stateFolder("models"), "supertonic-3");
+export const supertonicFolder = (): string => {
+  const modelsFolder = stateFolder("models");
+  return path.join(modelsFolder, "supertonic-3");
+};
 
-export const missingSupertonicFiles = (): ReadonlyArray<string> =>
-  supertonicFiles.filter((file) => !existsSync(path.join(supertonicFolder(), file)));
+export const missingSupertonicFiles = (): ReadonlyArray<string> => {
+  const folder = supertonicFolder();
+  return supertonicFiles.filter((file) => {
+    const filePath = path.join(folder, file);
+    return !existsSync(filePath);
+  });
+};
 
-/** Download whichever Supertonic files are missing (about 400 MB the first time). */
 export const ensureSupertonicModels = (
   onProgress: (file: string, receivedBytes: number) => void,
-): Effect.Effect<string, ModelDownloadError> =>
-  Effect.as(
-    Effect.forEach(missingSupertonicFiles(), (file) =>
-      downloadFile({
-        url: `${SUPERTONIC_REPOSITORY}/${SUPERTONIC_REVISION}/${file}`,
-        destination: path.join(supertonicFolder(), file),
-        onProgress: (receivedBytes) => onProgress(file, receivedBytes),
-      }),
-    ),
-    supertonicFolder(),
+): Effect.Effect<string, ModelDownloadError> => {
+  const folder = supertonicFolder();
+  const missingFiles = missingSupertonicFiles();
+  const downloads = Effect.forEach(missingFiles, (file) =>
+    downloadFile({
+      url: `${SUPERTONIC_REPOSITORY}/${SUPERTONIC_REVISION}/${file}`,
+      destination: path.join(folder, file),
+      onProgress: (receivedBytes) => onProgress(file, receivedBytes),
+    }),
   );
+  return Effect.as(downloads, folder);
+};

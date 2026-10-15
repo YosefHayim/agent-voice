@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-/** voxkey CLI entry point: the only file that starts the Effect runtime. */
-
 import { CliConfig, Command, ValidationError } from "@effect/cli";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Effect, ParseResult } from "effect";
@@ -42,28 +40,53 @@ const voxkey = Command.make("voxkey").pipe(
   ]),
 );
 
-const exitCodeFor = (error: unknown) =>
-  ValidationError.isValidationError(error) || ParseResult.isParseError(error) || error instanceof CliUsageError ? 2 : 1;
+const runVoxkey = Command.run(voxkey, { name: "voxkey", version: voxkeyVersion });
+
+const cliConfig = CliConfig.layer({ showBuiltIns: false });
+
+const exitCodeFor = (error: unknown): number => {
+  const isUsageError =
+    ValidationError.isValidationError(error) || ParseResult.isParseError(error) || error instanceof CliUsageError;
+  if (isUsageError) {
+    return 2;
+  }
+
+  return 1;
+};
 
 // @effect/cli already printed its own validation message; everything else is shown once here.
 const reportFailure = (error: unknown) =>
-  (ValidationError.isValidationError(error) ? Effect.void : TerminalUI.showError(error)).pipe(
-    Effect.zipRight(
-      Effect.sync(() => {
-        process.exitCode = exitCodeFor(error);
-      }),
-    ),
+  Effect.gen(function* () {
+    const isPrinted = ValidationError.isValidationError(error);
+    if (!isPrinted) {
+      yield* TerminalUI.showError(error);
+    }
+
+    process.exitCode = exitCodeFor(error);
+  });
+
+const runCommandLine = (commandLine: ReadonlyArray<string>) =>
+  runVoxkey(commandLine).pipe(
+    Effect.catchAll(reportFailure),
+    Effect.provide(NodeContext.layer),
+    Effect.provide(cliConfig),
   );
 
-const invocation = process.argv.length <= 2 ? ["node", "voxkey", "--help"] : process.argv;
-
-const cliProgram = Command.run(voxkey, { name: "voxkey", version: voxkeyVersion })(invocation).pipe(
-  Effect.catchAll(reportFailure),
-  Effect.provide(NodeContext.layer),
-  Effect.provide(CliConfig.layer({ showBuiltIns: false })),
-);
-
 // The Stop hook skips the CLI parser: a parser error exits 2, and exit 2 from a Claude Code Stop hook blocks the agent.
-const program = process.argv[2] === "reply" ? runReplyHookFromArguments(process.argv.slice(3)) : cliProgram;
+const programFor = (commandLine: ReadonlyArray<string>): Effect.Effect<void> => {
+  const commandName = commandLine[2];
+  if (commandName === "reply") {
+    const hookArguments = commandLine.slice(3);
+    return runReplyHookFromArguments(hookArguments);
+  }
+
+  if (commandName === undefined) {
+    return runCommandLine(["node", "voxkey", "--help"]);
+  }
+
+  return runCommandLine(commandLine);
+};
+
+const program = programFor(process.argv);
 
 NodeRuntime.runMain(program);

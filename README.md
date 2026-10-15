@@ -110,7 +110,13 @@ voxkey tries the configured provider and model, rotates through that provider's 
 
 ## Settings
 
-Stored in `~/.voxkey/config.json`. Names are the kebab-case form of the JSON keys (`speech-mode` is `speechMode`).
+Every setting lives in one file, `~/.voxkey/config.json`. You do not need to open it: `voxkey config` shows, checks, and changes each value, and a change applies at once. On the command line a name is the kebab-case form of its JSON key (`speech-mode` is `speechMode`).
+
+```bash
+voxkey config list                  # every setting and its current value
+voxkey config set speech-voice M2
+voxkey config unset speech-voice    # back to the default
+```
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -131,6 +137,8 @@ Stored in `~/.voxkey/config.json`. Names are the kebab-case form of the JSON key
 | `refine-cmux-press-enter` | `false` | Press Enter after sending refined text into cmux (cmux-resume, or cmux-new without a command). |
 
 ## Environment variables
+
+These change where voxkey keeps its files and switch a few features off. For the installed `voxkey`, export them in your shell profile. When you run from source, copy [`.env.example`](.env.example) to `.env` and fill in a value: `pnpm cli` loads `.env`, and an empty value keeps the default.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -160,34 +168,41 @@ What you dictate and what agents reply stays yours: every file voxkey keeps in `
 
 Agent hooks: `~/.claude/settings.json`, `~/.codex/hooks.json`, and `~/.grok/hooks/voxkey.json` each get one Stop entry whose command ends in `reply --agent <id>`; `voxkey off` removes exactly that entry.
 
-## Coming from the old voice feature
+## Project structure
 
-voxkey is a clean break: it does not read the old config file. Re-create your settings with `voxkey config set`, and copy the Whisper models you already downloaded (from the old voice `models` folder in `~/Library/Application Support/`) into `~/.voxkey/models/` to skip the download.
-
-| Old | voxkey |
+| Folder | Holds |
 | --- | --- |
-| `voice on`, `stt on` | `voxkey on` |
-| `voice off`, `stt off` | `voxkey off` |
-| `voice status` | `voxkey status` |
-| `voice speak`, `voice refine`, `voice devin` | `voxkey speak`, `voxkey refine`, `voxkey devin` |
-| `tts on` / `tts off` | `voxkey config set speech-muted false` / `true` |
-| `stt keep-listening <s>` | `voxkey config set dictation-keep-listening-seconds <s>` |
-| `stt lang <en\|he>` | `voxkey config set dictation-language <en\|he>` |
-| `config show` / `set` / `reset` / `pick-refine` | `voxkey config list` / `set` / `unset` / `pick-refine` |
-| worker `hotkey-check`, `render`, `reset`, `bench` | `voxkey hotkey-check`, `voxkey render`, `voxkey reset`, `pnpm bench` |
-| `speechMode`, `speechVoice`, `speechWordsPerMinute` | `speechMode`, `speechVoice`, `speechWordsPerMinute` |
-| `refineProvider: local` (Apple Foundation Models) | removed; `auto` starts at codex |
-| the voice-folder, config-file, dictation-model, live-preview, and refine-picker variables | `VOXKEY_HOME`, `VOXKEY_CONFIG_FILE`, `VOXKEY_DICTATION_MODEL`, `VOXKEY_DICTATION_LIVE_PREVIEW`, `VOXKEY_REFINE_PICKER` |
+| `src/cli/` | One file per command (`<name>Command.ts`), `main.ts` (the only place an Effect runs), and `TerminalUI.ts` (all terminal output) |
+| `src/settings/` | The settings Schema, the config file, the `VOXKEY_*` variables, and the `~/.voxkey` paths |
+| `src/files/` | Atomic state files, file locks, and model downloads |
+| `src/dictation/` | Hold Shift: keyboard, microphone, clip audio, Whisper, transcript text, live caption, typing at the caret, and the dictation worker |
+| `src/speech/` | Replies read aloud: inbox, Markdown to speech, Supertonic, playback, Cmux focus, and the speech worker |
+| `src/refine/` | Agent CLI discovery and calls, reply checks, model rotation, the picker, and cmux delivery |
+| `src/agents/` | The agent catalog, Stop hook edits, `voxkey reply`, and the Devin watcher |
+| `src/workers/` | Worker processes, `status.json`, worker logs, and the pill |
+| `src/scripts/` | Tooling only: the code-style and rule-card checkers, `pnpm bench`, `pnpm cli` (the CLI from source), and the test folder helper |
 
 ## Development
 
 ```bash
+pnpm install
 pnpm verify          # Biome, typecheck, code-style rules, rule cards, tests, build
-pnpm cli status      # run the CLI from source
+pnpm cli status      # run the CLI from source; loads .env when it exists
 pnpm bench --models base,turbo-q5 --seconds 1,2,4 --runs 3
 ```
 
-Smoke tests use models already on your Mac: put (or symlink) `ggml-base.en.bin` and `supertonic-3/` in `.scratch/models/` or `~/.voxkey/models/`; without them those tests skip. Hand checks (hotkey, mic, typing, live speech, permissions) are in [TESTING.md](TESTING.md). Agents start at [AGENTS.md](AGENTS.md).
+Tests never touch your real `~/.voxkey` or agent settings. Each test makes its own home folder under `.test-home/` (gitignored, safe to delete) with `makeTestFolder` from `src/scripts/testFolder.ts`. The Whisper and Supertonic smoke tests read the models already in `~/.voxkey/models` and skip when they are missing.
+
+Hand checks need a mic, a keyboard, and macOS permissions. After `voxkey on`:
+
+1. `voxkey doctor` passes Microphone and Accessibility.
+2. `voxkey hotkey-check --seconds 8` prints each Shift press.
+3. In a text field, hold Shift and say "hello comma world period": `Hello, world.` is typed.
+4. Shift+A types `A`, and Shift held with another key types nothing.
+5. `voxkey speak "Release status: **ready**."` reads one sentence, and a tap on Shift stops it.
+6. `voxkey off` leaves each agent settings file as its copy in `~/.voxkey/backups/`, minus the voxkey Stop entry.
+
+Agents start at [AGENTS.md](AGENTS.md).
 
 ## License
 

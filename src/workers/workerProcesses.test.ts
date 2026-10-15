@@ -1,23 +1,21 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
 import { isWorkerRunning, stopWorkers } from "./workerProcesses.js";
 
-const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
-const scratchRoot = path.join(repositoryRoot, ".scratch");
 const workerProcessesModule = fileURLToPath(new URL("./workerProcesses.js", import.meta.url));
 
 let home = "";
 const started: Array<ChildProcess> = [];
 
 beforeEach(() => {
-  mkdirSync(scratchRoot, { recursive: true });
-  home = mkdtempSync(path.join(scratchRoot, "workers-"));
+  home = makeTestFolder("workers");
   vi.stubEnv("VOXKEY_HOME", home);
 });
 
@@ -30,6 +28,8 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
+const homeFile = (name: string): string => path.join(home, name);
+
 const isAlive = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
@@ -39,7 +39,7 @@ const isAlive = (pid: number): boolean => {
   }
 };
 
-/** A sleeping Node process whose command line ends with `trailing`, e.g. ["worker", "dictation"]. */
+// A sleeping Node process whose command line ends with `trailing`, such as ["worker", "dictation"].
 const startSleeper = async (trailing: ReadonlyArray<string>): Promise<number> => {
   const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1 << 30)", ...trailing], {
     stdio: "ignore",
@@ -50,7 +50,10 @@ const startSleeper = async (trailing: ReadonlyArray<string>): Promise<number> =>
   return child.pid || 0;
 };
 
-const writePidFile = (name: string, pid: number) => writeFileSync(path.join(home, name), String(pid));
+const writePidFile = (name: string, pid: number) => {
+  const pidPath = homeFile(name);
+  writeFileSync(pidPath, `${pid}`);
+};
 
 const eventually = async (check: () => boolean, timeoutMs = 3_000): Promise<boolean> => {
   const deadline = Date.now() + timeoutMs;
@@ -83,9 +86,10 @@ describe("worker pid files", () => {
 
     await Effect.runPromise(stopWorkers);
 
+    const dictationPidFile = homeFile("dictation.pid");
     expect(await eventually(() => !isAlive(speech))).toBe(true);
     expect(isAlive(stranger)).toBe(true);
-    expect(existsSync(path.join(home, "dictation.pid"))).toBe(false);
+    expect(existsSync(dictationPidFile)).toBe(false);
   });
 });
 
@@ -101,8 +105,12 @@ process.stdout.write("ready\\n");
 while (!existsSync(go)) await new Promise((resolve) => setTimeout(resolve, 1));
 await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
   const owns = yield* claimWorkerLock("dictation");
-  process.stdout.write(owns ? "owner\\n" : "busy\\n");
-  if (owns) yield* Effect.sleep(Number(holdMs));
+  if (!owns) {
+    process.stdout.write("busy\\n");
+    return;
+  }
+  process.stdout.write("owner\\n");
+  yield* Effect.sleep(Number(holdMs));
 })));
 `;
 
@@ -126,14 +134,16 @@ const startStarter = (request: { readonly go: string; readonly holdMs: number })
 
 describe("worker lock", () => {
   it("lets exactly one of eight racing starters own the lock, even over a lock left by a SIGKILLed owner", async () => {
-    const go = path.join(home, "go");
+    const go = homeFile("go");
+    const lockFile = homeFile("dictation.lock");
+    const pidFile = homeFile("dictation.pid");
     writeFileSync(go, "");
     const crashed = startStarter({ go, holdMs: 60_000 });
     expect(await eventually(() => crashed.output().includes("owner"), 20_000)).toBe(true);
     process.kill(crashed.pid, "SIGKILL");
     await crashed.exited;
-    expect(existsSync(path.join(home, "dictation.lock"))).toBe(true);
-    expect(readFileSync(path.join(home, "dictation.pid"), "utf8")).toBe(String(crashed.pid));
+    expect(existsSync(lockFile)).toBe(true);
+    expect(readFileSync(pidFile, "utf8")).toBe(String(crashed.pid));
     rmSync(go);
 
     const racers = Array.from({ length: 8 }, () => startStarter({ go, holdMs: 2_000 }));
@@ -141,7 +151,7 @@ describe("worker lock", () => {
     writeFileSync(go, "");
     expect(await eventually(() => racers.some((racer) => racer.output().includes("owner")), 20_000)).toBe(true);
     const owner = racers.find((racer) => racer.output().includes("owner"));
-    expect(readFileSync(path.join(home, "dictation.pid"), "utf8")).toBe(String(owner?.pid));
+    expect(readFileSync(pidFile, "utf8")).toBe(String(owner?.pid));
 
     for (const racer of racers) {
       await racer.exited;
@@ -156,7 +166,7 @@ describe("worker lock", () => {
       "busy\n",
       "owner\n",
     ]);
-    expect(existsSync(path.join(home, "dictation.lock"))).toBe(false);
-    expect(existsSync(path.join(home, "dictation.pid"))).toBe(false);
+    expect(existsSync(lockFile)).toBe(false);
+    expect(existsSync(pidFile)).toBe(false);
   });
 });

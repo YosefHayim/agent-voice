@@ -19,9 +19,9 @@ const command = replyHookCommand({
 });
 
 const added = (source: string, hookCommand = command) =>
-  Either.getOrThrow(addReplyHook({ source, command: hookCommand, agent: "codex" }));
+  addReplyHook({ source, command: hookCommand, agent: "codex" }).pipe(Either.getOrThrow);
 
-const removed = (source: string) => Either.getOrThrow(removeReplyHook({ source, agent: "codex" }));
+const removed = (source: string) => removeReplyHook({ source, agent: "codex" }).pipe(Either.getOrThrow);
 
 const stopCommands = (source: string): ReadonlyArray<string> =>
   (parse(source)?.hooks?.Stop || []).flatMap((group: { hooks: ReadonlyArray<{ command: string }> }) =>
@@ -72,10 +72,12 @@ describe("replyHookCommand", () => {
 describe("addReplyHook and removeReplyHook", () => {
   it("appends one Stop entry, keeps every other byte, and restores the file exactly", () => {
     const withHook = added(claudeSettings);
+    const stopArrayEnd = claudeSettings.indexOf("    ]");
+    const textBeforeStopEnd = claudeSettings.slice(0, stopArrayEnd).trimEnd();
 
     expect(withHook.changed).toBe(true);
     expect(stopCommands(withHook.source)).toEqual(["notify-send done", command]);
-    expect(withHook.source.startsWith(claudeSettings.slice(0, claudeSettings.indexOf("    ]")).trimEnd())).toBe(true);
+    expect(withHook.source.startsWith(textBeforeStopEnd)).toBe(true);
     expect(withHook.source).toContain("// my settings");
     expect(removed(withHook.source)).toEqual({ source: claudeSettings, changed: true });
   });
@@ -142,8 +144,11 @@ describe("addReplyHook and removeReplyHook", () => {
   });
 
   it("leaves a file without voxkey's entry unchanged and refuses a file that is not a JSON object", () => {
+    const arraySettings = addReplyHook({ source: "[1, 2]", command, agent: "codex" });
+    const objectStop = addReplyHook({ source: '{"hooks": {"Stop": {}}}', command, agent: "codex" });
+
     expect(removed(claudeSettings)).toEqual({ source: claudeSettings, changed: false });
-    expect(Either.isLeft(addReplyHook({ source: "[1, 2]", command, agent: "codex" }))).toBe(true);
-    expect(Either.isLeft(addReplyHook({ source: '{"hooks": {"Stop": {}}}', command, agent: "codex" }))).toBe(true);
+    expect(Either.isLeft(arraySettings)).toBe(true);
+    expect(Either.isLeft(objectStop)).toBe(true);
   });
 });

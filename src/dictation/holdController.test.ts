@@ -1,10 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { makeTestFolder } from "../scripts/testFolder.js";
 import { readConfig } from "../settings/configFile.js";
 import { stopSpeech } from "../workers/workerProcesses.js";
 import { makeStatusWriter } from "../workers/workerStatus.js";
@@ -14,18 +14,21 @@ import { makeLiveCaption } from "./livePreview.js";
 import { makeClipBuffer } from "./microphone.js";
 
 // The real one signals the speech worker named in speech.pid; the tests only count the stops.
-vi.mock("../workers/workerProcesses.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../workers/workerProcesses.js")>()),
-  stopSpeech: vi.fn(),
-}));
-
-const scratchRoot = fileURLToPath(new URL("../../.scratch/", import.meta.url));
+vi.mock("../workers/workerProcesses.js", async (importOriginal) => {
+  const workerProcesses = await importOriginal<typeof import("../workers/workerProcesses.js")>();
+  return { ...workerProcesses, stopSpeech: vi.fn() };
+});
 
 let home = "";
 
+const writeConfig = (config: { readonly speechMuted: boolean }) => {
+  const configPath = path.join(home, "config.json");
+  const configText = JSON.stringify(config);
+  writeFileSync(configPath, configText);
+};
+
 beforeEach(() => {
-  mkdirSync(scratchRoot, { recursive: true });
-  home = mkdtempSync(path.join(scratchRoot, "hold-"));
+  home = makeTestFolder("hold");
   vi.stubEnv("VOXKEY_HOME", home);
   vi.stubEnv("VOXKEY_CONFIG_FILE", undefined);
   vi.mocked(stopSpeech).mockClear();
@@ -36,7 +39,6 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-/** A keyboard whose Shift is held while `shift.down` is true. */
 const shiftKeyboard = (shift: { down: boolean }): Keyboard => ({
   shiftDown: () => shift.down,
   otherKeysDown: () => 0n,
@@ -56,12 +58,13 @@ const doubleTapShift = async () => {
     clip: makeClipBuffer(),
     caption: makeLiveCaption(),
     status: makeStatusWriter({ model: "fake", backend: "none", recording: () => false }),
-    queue: { offer: () => Effect.succeed(true), isIdle: () => true },
+    queue: { offer: () => Effect.void, isIdle: () => true },
   });
   // Enough samples to pass the debounce: 2 down, 4 up.
   for (const down of [true, false, true, false]) {
     shift.down = down;
-    await Effect.runPromise(Effect.repeatN(controller.poll, 4));
+    const samples = Effect.repeatN(controller.poll, 4);
+    await Effect.runPromise(samples);
   }
 };
 
@@ -72,7 +75,7 @@ const savedMute = async () => {
 
 describe("double-tap Shift", () => {
   it("mutes speech and stops speech that is about to start", async () => {
-    writeFileSync(path.join(home, "config.json"), JSON.stringify({ speechMuted: false }));
+    writeConfig({ speechMuted: false });
 
     await doubleTapShift();
 
@@ -82,7 +85,7 @@ describe("double-tap Shift", () => {
   });
 
   it("unmutes speech without a second stop", async () => {
-    writeFileSync(path.join(home, "config.json"), JSON.stringify({ speechMuted: true }));
+    writeConfig({ speechMuted: true });
 
     await doubleTapShift();
 

@@ -1,5 +1,3 @@
-/** The two background workers (dictation, speech): pid and lock files, spawning, stopping, and reset. */
-
 import { spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -21,56 +19,82 @@ export type WorkerKind = "dictation" | "speech";
 
 type PidFileName = "dictation.pid" | "speech.pid" | "pill.pid";
 
+const WORKER_FILES = {
+  dictation: { pid: "dictation.pid", lock: "dictation.lock", log: "dictation-worker.log" },
+  speech: { pid: "speech.pid", lock: "speech.lock", log: "speech-worker.log" },
+} as const;
+
+const PROCESS_ROW = /^\s*(\S+)\s+(.*)$/u;
+const WORKER_COMMAND = / worker (?:dictation|speech)$/u;
+
 export class WorkerStartError extends Schema.TaggedError<WorkerStartError>()("WorkerStartError", {
   worker: Schema.String,
   logFile: Schema.String,
   lastLines: Schema.String,
 }) {
   get message(): string {
-    const tail = this.lastLines === "" ? "" : `\n${this.lastLines}`;
-    return `The ${this.worker} worker did not start. See ${this.logFile}.${tail}`;
+    const summary = `The ${this.worker} worker did not start. See ${this.logFile}.`;
+    if (this.lastLines === "") {
+      return summary;
+    }
+
+    return `${summary}\n${this.lastLines}`;
   }
 }
 
-const pidFile = (kind: WorkerKind): PidFileName => (kind === "dictation" ? "dictation.pid" : "speech.pid");
+const workerLockPath = (kind: WorkerKind): string => stateFile(WORKER_FILES[kind].lock);
 
-const lockFile = (kind: WorkerKind) => (kind === "dictation" ? stateFile("dictation.lock") : stateFile("speech.lock"));
+const workerLogPath = (kind: WorkerKind): string => stateFile(WORKER_FILES[kind].log);
 
-const logFile = (kind: WorkerKind) =>
-  kind === "dictation" ? stateFile("dictation-worker.log") : stateFile("speech-worker.log");
-
-export const readPid = (name: PidFileName): Option.Option<number> =>
-  Option.filter(
-    Option.flatMap(readTextIfReadable(stateFile(name)), (text) =>
-      Schema.decodeUnknownOption(Schema.NumberFromString)(text.trim()),
-    ),
-    (pid) => Number.isInteger(pid) && pid > 1,
-  );
-
-export const writePid = (name: PidFileName, pid: number): void => {
-  makePrivateFolder(voxkeyHome());
-  writeFileSync(stateFile(name), String(pid));
+const runPs = (psArguments: ReadonlyArray<string>): string => {
+  const ps = spawnSync("ps", psArguments, { encoding: "utf8" });
+  return ps.stdout.trim();
 };
 
-// A zombie still answers signal 0 until it is reaped, so it is checked by its ps state.
-const isZombie = (pid: number): boolean =>
-  spawnSync("ps", ["-o", "state=", "-p", String(pid)], { encoding: "utf8" })
-    .stdout.trim()
-    .startsWith("Z");
-
-export const isProcessAlive = (pid: number): boolean => {
+const sendSignal = (pid: number, signal: NodeJS.Signals | 0): boolean => {
   try {
-    process.kill(pid, 0);
+    process.kill(pid, signal);
+    return true;
   } catch {
     return false;
   }
-  return !isZombie(pid);
 };
 
-const PROCESS_ROW = /^\s*(\S+)\s+(.*)$/u;
+// A zombie still answers signal 0 until it is reaped, so it is checked by its ps state.
+const isZombie = (pid: number): boolean => {
+  const state = runPs(["-o", "state=", "-p", String(pid)]);
+  return state.startsWith("Z");
+};
 
-// What each pid file stands for. A pid can be reused by another program (say after a reboot), so a pid file is
-// trusted, and its pid signalled, only while that pid still runs this command line.
+const isProcessAlive = (pid: number): boolean => sendSignal(pid, 0) && !isZombie(pid);
+
+const isPillCommand = (commandLine: string): boolean => {
+  const home = voxkeyHome();
+  return commandLine.includes("osascript -l JavaScript") && commandLine.includes(home);
+};
+
+const isUsablePid = (pid: number): boolean => Number.isInteger(pid) && pid > 1;
+
+const decodePid = Schema.decodeUnknownOption(Schema.NumberFromString);
+
+export const readPid = (name: PidFileName): Option.Option<number> => {
+  const pidPath = stateFile(name);
+  return readTextIfReadable(pidPath).pipe(
+    Option.map((text) => text.trim()),
+    Option.flatMap(decodePid),
+    Option.filter(isUsablePid),
+  );
+};
+
+export const writePid = (name: PidFileName, pid: number): void => {
+  const home = voxkeyHome();
+  makePrivateFolder(home);
+  const pidPath = stateFile(name);
+  writeFileSync(pidPath, `${pid}`);
+};
+
+// A pid can be reused by another program (say after a reboot), so a pid file is trusted, and its pid signalled,
+// only while that pid still runs the command line the file names.
 const isNamedProcess = (name: PidFileName, commandLine: string): boolean => {
   switch (name) {
     case "dictation.pid":
@@ -78,86 +102,99 @@ const isNamedProcess = (name: PidFileName, commandLine: string): boolean => {
     case "speech.pid":
       return commandLine.endsWith(" worker speech");
     case "pill.pid":
-      return commandLine.includes("osascript -l JavaScript") && commandLine.includes(voxkeyHome());
+      return isPillCommand(commandLine);
   }
 };
 
-/** The pid in a pid file, while that process is alive (not a zombie) and still the voxkey process the file names. */
-export const runningPid = (name: PidFileName): Option.Option<number> =>
-  Option.filter(readPid(name), (pid) => {
-    const row = PROCESS_ROW.exec(
-      spawnSync("ps", ["-o", "state=,args=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim(),
-    );
-    return row !== null && !(row[1] || "").startsWith("Z") && isNamedProcess(name, row[2] || "");
-  });
+const isRunningAs = (name: PidFileName, pid: number): boolean => {
+  const processRow = runPs(["-o", "state=,args=", "-p", String(pid)]);
+  const match = PROCESS_ROW.exec(processRow);
+  if (match === null) {
+    return false;
+  }
 
-export const isWorkerRunning = (kind: WorkerKind): boolean => Option.isSome(runningPid(pidFile(kind)));
-
-/** Stop speech in the speech worker now (it handles SIGUSR2); nothing when no speech worker runs. */
-export const stopSpeech = (): void => {
-  Option.map(runningPid("speech.pid"), (pid) => {
-    try {
-      process.kill(pid, "SIGUSR2");
-    } catch {
-      // The speech worker exited meanwhile.
-    }
-  });
+  const state = match[1] || "";
+  const commandLine = match[2] || "";
+  return !state.startsWith("Z") && isNamedProcess(name, commandLine);
 };
 
-const processGroupOf = (pid: number): number =>
-  Number(spawnSync("ps", ["-o", "pgid=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim());
+export const runningPid = (name: PidFileName): Option.Option<number> =>
+  readPid(name).pipe(Option.filter((pid) => isRunningAs(name, pid)));
 
-/** Never signal pid 0 or 1, this process, or this process's own group (the CLI and its shell). */
+export const isWorkerRunning = (kind: WorkerKind): boolean => {
+  const workerPid = runningPid(WORKER_FILES[kind].pid);
+  return Option.isSome(workerPid);
+};
+
+// The speech worker drops the reply it is reading on SIGUSR2.
+export const stopSpeech = (): void => {
+  const speechPid = runningPid("speech.pid");
+  if (Option.isSome(speechPid)) {
+    sendSignal(speechPid.value, "SIGUSR2");
+  }
+};
+
+const processGroupOf = (pid: number): number => {
+  const group = runPs(["-o", "pgid=", "-p", String(pid)]);
+  return Number(group);
+};
+
+// Never signal pid 0 or 1, this process, or this process's own group (the CLI and its shell).
 const isSafeTarget = (pid: number): boolean => pid > 1 && pid !== process.pid && pid !== processGroupOf(process.pid);
 
-/** Signal a process group (workers are group leaders, so their pill and players go too), else the process. */
+// Workers lead their process group, so their pill and players stop with them.
 export const signalGroup = (pid: number, signal: NodeJS.Signals): void => {
   if (!isSafeTarget(pid)) {
     return;
   }
 
-  try {
-    process.kill(-pid, signal);
-  } catch {
-    try {
-      process.kill(pid, signal);
-    } catch {
-      // Already gone.
-    }
+  const signalledGroup = sendSignal(-pid, signal);
+  if (signalledGroup) {
+    return;
   }
+
+  sendSignal(pid, signal);
 };
 
 const removeOwnPidFile = (kind: WorkerKind): void => {
-  if (Option.exists(readPid(pidFile(kind)), (pid) => pid === process.pid)) {
-    removeIfPresent(stateFile(pidFile(kind)));
+  const pidName = WORKER_FILES[kind].pid;
+  const savedPid = readPid(pidName);
+  const isOwnPid = Option.contains(savedPid, process.pid);
+  if (isOwnPid) {
+    const pidPath = stateFile(pidName);
+    removeIfPresent(pidPath);
   }
 };
 
-/**
- * Hold this kind's worker lock for the rest of the scope and write the pid file; false when another worker of this
- * kind holds it. The kernel lock ends with its worker, even one killed with SIGKILL, so racing starters never meet a
- * stale lock to take over, and exactly one of them owns it.
- */
+// False when another worker of this kind holds the lock. The kernel lock ends with its worker, even one killed with
+// SIGKILL, so racing starters never meet a stale lock to take over, and exactly one of them owns it.
 export const claimWorkerLock = (kind: WorkerKind): Effect.Effect<boolean, FileLockError, Scope.Scope> =>
   Effect.gen(function* () {
-    makePrivateFolder(voxkeyHome());
-    if (!(yield* holdLock(lockFile(kind)))) {
+    const home = voxkeyHome();
+    makePrivateFolder(home);
+    const lock = workerLockPath(kind);
+    const ownsLock = yield* holdLock(lock);
+    if (!ownsLock) {
       return false;
     }
 
-    writePid(pidFile(kind), process.pid);
+    writePid(WORKER_FILES[kind].pid, process.pid);
     // Added after the lock, so it runs before the lock is dropped: the next owner's pid file is never removed.
     yield* Effect.addFinalizer(() => Effect.sync(() => removeOwnPidFile(kind)));
     return true;
   });
 
-/** The script that is voxkey's CLI: the built main.js, or main.ts when running from source with tsx. */
+// From source there is no built main.js next to this file, so tsx runs main.ts.
 const entryScript = (): string => {
-  const built = fileURLToPath(new URL("../cli/main.js", import.meta.url));
-  return existsSync(built) ? built : fileURLToPath(new URL("../cli/main.js", import.meta.url));
+  const builtEntry = fileURLToPath(new URL("../cli/main.js", import.meta.url));
+  if (existsSync(builtEntry)) {
+    return builtEntry;
+  }
+
+  return fileURLToPath(new URL("../cli/main.ts", import.meta.url));
 };
 
-/** How to run voxkey again from here: this Node, its loader flags (tsx in development), and the entry script. */
+// This Node with its loader flags, so a worker or a hook runs the same voxkey as the command that started it.
 export const voxkeyInvocation = (): {
   readonly executable: string;
   readonly scriptArguments: ReadonlyArray<string>;
@@ -166,27 +203,29 @@ export const voxkeyInvocation = (): {
   scriptArguments: [...process.execArgv, entryScript()],
 });
 
-/** Start a worker detached in its own process group, logging to its own private file (errors can quote text). */
+// Detached in its own process group. Its log is private because errors can quote dictated text.
 export const spawnWorker = (kind: WorkerKind): void => {
-  const log = openPrivateFile({ path: logFile(kind), flags: "a" });
+  const logPath = workerLogPath(kind);
+  const log = openPrivateFile({ path: logPath, flags: "a" });
   const invocation = voxkeyInvocation();
   const child = spawn(invocation.executable, [...invocation.scriptArguments, "worker", kind], {
     detached: true,
     stdio: ["ignore", log, log],
-    env: process.env,
   });
   child.unref();
   closeSync(log);
 };
 
-export const stopRequested = (): boolean => existsSync(stateFile("stop"));
+export const stopRequested = (): boolean => {
+  const stopPath = stateFile("stop");
+  return existsSync(stopPath);
+};
 
-const lastLogLines = (kind: WorkerKind): string =>
-  Option.getOrElse(readTextIfReadable(logFile(kind)), () => "")
-    .trimEnd()
-    .split("\n")
-    .slice(-6)
-    .join("\n");
+const lastLogLines = (kind: WorkerKind): string => {
+  const logPath = workerLogPath(kind);
+  const logText = readTextIfReadable(logPath).pipe(Option.getOrElse(() => ""));
+  return logText.trimEnd().split("\n").slice(-6).join("\n");
+};
 
 const waitUntil = (request: { readonly done: () => boolean; readonly timeoutMs: number }) =>
   Effect.gen(function* () {
@@ -197,43 +236,55 @@ const waitUntil = (request: { readonly done: () => boolean; readonly timeoutMs: 
     return request.done();
   });
 
-/** Ask both workers to stop, then force any survivor, and clear their pid, lock, and stop files. */
+const runningWorkerPids = (): ReadonlyArray<number> =>
+  (["dictation.pid", "speech.pid"] as const).flatMap((name) => {
+    const workerPid = runningPid(name);
+    return Option.toArray(workerPid);
+  });
+
+// Asks both workers to stop, forces any survivor, and clears their pid, lock, and stop files.
 export const stopWorkers: Effect.Effect<void> = Effect.gen(function* () {
-  touchFile(stateFile("stop"));
-  const running = () => (["dictation.pid", "speech.pid"] as const).flatMap((name) => Option.toArray(runningPid(name)));
-  const pids = running();
-  for (const pid of pids) {
+  const stopPath = stateFile("stop");
+  touchFile(stopPath);
+  const stoppingPids = runningWorkerPids();
+  for (const pid of stoppingPids) {
     signalGroup(pid, "SIGTERM");
   }
-  yield* waitUntil({ done: () => pids.every((pid) => !isProcessAlive(pid)), timeoutMs: 4_000 });
-  for (const pid of [...running(), ...Option.toArray(runningPid("pill.pid"))]) {
+  yield* waitUntil({ done: () => !stoppingPids.some(isProcessAlive), timeoutMs: 4_000 });
+
+  const pillPid = runningPid("pill.pid");
+  const survivors = [...runningWorkerPids(), ...Option.toArray(pillPid)];
+  for (const pid of survivors) {
     signalGroup(pid, "SIGKILL");
   }
   for (const name of ["dictation.pid", "speech.pid", "pill.pid", "stop"] as const) {
-    removeIfPresent(stateFile(name));
+    const filePath = stateFile(name);
+    removeIfPresent(filePath);
   }
   // A lock some worker still holds (say one that started after the pids were read) must stay, or a second could start.
   for (const kind of ["dictation", "speech"] as const) {
-    removeFreeLock(lockFile(kind));
+    const lock = workerLockPath(kind);
+    removeFreeLock(lock);
   }
   removeInboxFiles([".speaking"]);
 });
 
-const PS_LINE = /^\s*(\d+)\s+(.*)$/u;
+// Every voxkey worker or pill process on this Mac, found by its command line.
+const strayVoxkeyProcesses = (): ReadonlyArray<number> => {
+  const processList = runPs(["-ax", "-o", "pid=,args="]);
+  return processList.split("\n").flatMap((line) => {
+    const match = PROCESS_ROW.exec(line);
+    const commandLine = match?.[2] || "";
+    const isWorker = commandLine.includes("voxkey") && WORKER_COMMAND.test(commandLine);
+    const isStray = isWorker || isPillCommand(commandLine);
+    if (!isStray) {
+      return [];
+    }
 
-/** Every voxkey worker or pill process on this Mac, found by its command line. */
-const strayVoxkeyProcesses = (): ReadonlyArray<number> =>
-  spawnSync("ps", ["-ax", "-o", "pid=,args="], { encoding: "utf8" })
-    .stdout.split("\n")
-    .flatMap((line) => {
-      const match = PS_LINE.exec(line);
-      const args = match?.[2] || "";
-      const isWorker = args.includes("voxkey") && / worker (?:dictation|speech)$/u.test(args);
-      const isPill = args.includes("osascript -l JavaScript") && args.includes(voxkeyHome());
-      return isWorker || isPill ? [Number(match?.[1])] : [];
-    });
+    return [Number(match?.[1])];
+  });
+};
 
-/** A clean slate: stop the workers, kill any stray voxkey worker or pill, and clear every lock. */
 export const resetWorkers: Effect.Effect<void> = Effect.gen(function* () {
   yield* stopWorkers;
   for (const pid of strayVoxkeyProcesses()) {
@@ -241,13 +292,14 @@ export const resetWorkers: Effect.Effect<void> = Effect.gen(function* () {
   }
 });
 
-/** Start the dictation worker (which starts speech) and wait until it reports ready or fails. */
+// The dictation worker starts the speech worker itself.
 export const startWorkers: Effect.Effect<"started" | "already running", WorkerStartError> = Effect.gen(function* () {
   if (isWorkerRunning("dictation")) {
     return "already running";
   }
 
-  removeIfPresent(stateFile("stop"));
+  const stopPath = stateFile("stop");
+  removeIfPresent(stopPath);
   writeWorkerStatus({
     stage: "starting",
     detail: "Loading the dictation model",
@@ -259,32 +311,31 @@ export const startWorkers: Effect.Effect<"started" | "already running", WorkerSt
   spawnWorker("dictation");
   const spawnedAt = Date.now();
   // Ready once the worker leaves "starting"; failed once it is gone after having had time to start.
-  const settled = () =>
-    Option.exists(readWorkerStatus(), (status) => status.stage !== "starting") ||
-    (Date.now() - spawnedAt > 3_000 && !isWorkerRunning("dictation"));
+  const settled = () => {
+    const hasLeftStarting = readWorkerStatus().pipe(Option.exists((status) => status.stage !== "starting"));
+    const hasDied = Date.now() - spawnedAt > 3_000 && !isWorkerRunning("dictation");
+    return hasLeftStarting || hasDied;
+  };
   yield* waitUntil({ done: settled, timeoutMs: 120_000 });
+
   const status = readWorkerStatus();
-  if (isWorkerRunning("dictation") && Option.exists(status, (current) => current.stage !== "unavailable")) {
+  const isAvailable = status.pipe(Option.exists((current) => current.stage !== "unavailable"));
+  if (isAvailable && isWorkerRunning("dictation")) {
     return "started";
   }
 
-  return yield* new WorkerStartError({
-    worker: "dictation",
-    logFile: logFile("dictation"),
-    lastLines:
-      Option.getOrElse(
-        Option.map(status, (current) => current.detail),
-        () => "",
-      ) || lastLogLines("dictation"),
-  });
+  const statusDetail = status.pipe(
+    Option.map((current) => current.detail),
+    Option.getOrElse(() => ""),
+  );
+  const lastLines = statusDetail || lastLogLines("dictation");
+  return yield* new WorkerStartError({ worker: "dictation", logFile: workerLogPath("dictation"), lastLines });
 });
 
-/** Start the speech worker unless it already runs; the dictation worker calls this at startup. */
 export const startSpeechWorker = (): void => {
-  if (!isWorkerRunning("speech")) {
-    spawnWorker("speech");
+  if (isWorkerRunning("speech")) {
+    return;
   }
-};
 
-/** The last bytes of a worker's log, for `voxkey status` and failures. */
-export const workerLogFile = (kind: WorkerKind): string => logFile(kind);
+  spawnWorker("speech");
+};

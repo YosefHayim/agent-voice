@@ -1,4 +1,4 @@
-/** Whisper ggml models: which file dictation loads, where it lives, and where it downloads from. */
+// Whisper ggml models: which file dictation loads, where it lives, and where it downloads from.
 
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
@@ -96,10 +96,9 @@ const MODEL_ALIASES: Readonly<Record<string, WhisperModel["key"]>> = {
 };
 
 const modelFor = (key: WhisperModel["key"]): WhisperModel =>
-  whisperModels.find((model) => model.key === key) ||
-  whisperModels[3] || { key, file: "", label: "", url: "", approximateBytes: 0 };
+  whisperModels.find((model) => model.key === key) || whisperModels[3];
 
-/** VOXKEY_DICTATION_MODEL wins (unknown names mean turbo-q5); otherwise Hebrew picks ivrit.ai and English turbo-q5. */
+// VOXKEY_DICTATION_MODEL wins, and an unknown name means turbo-q5; otherwise Hebrew picks ivrit.ai and English turbo-q5.
 export const selectWhisperModel = (request: {
   readonly environment: VoxkeyEnvironment;
   readonly config: Config;
@@ -109,29 +108,33 @@ export const selectWhisperModel = (request: {
     return modelFor(MODEL_ALIASES[forced] || "turbo-q5");
   }
 
-  return modelFor(request.config.dictationLanguage === "he" ? "ivrit" : "turbo-q5");
+  if (request.config.dictationLanguage === "he") {
+    return modelFor("ivrit");
+  }
+
+  return modelFor("turbo-q5");
 };
 
-export const whisperModelPath = (model: WhisperModel): string => path.join(stateFolder("models"), model.file);
+export const whisperModelPath = (model: WhisperModel): string => {
+  const modelsFolder = stateFolder("models");
+  return path.join(modelsFolder, model.file);
+};
 
-/** A file under 1 MB is a failed download, not a model. */
+// A file under 1 MB is a failed download, not a model.
 export const isWhisperModelPresent = (model: WhisperModel): boolean => {
   const file = whisperModelPath(model);
   return existsSync(file) && statSync(file).size > 1_000_000;
 };
 
-/** The model file, downloaded first when it is missing. */
 export const ensureWhisperModel = (request: {
   readonly model: WhisperModel;
   readonly onProgress: (receivedBytes: number) => void;
-}): Effect.Effect<string, ModelDownloadError> =>
-  isWhisperModelPresent(request.model)
-    ? Effect.succeed(whisperModelPath(request.model))
-    : Effect.as(
-        downloadFile({
-          url: request.model.url,
-          destination: whisperModelPath(request.model),
-          onProgress: request.onProgress,
-        }),
-        whisperModelPath(request.model),
-      );
+}): Effect.Effect<string, ModelDownloadError> => {
+  const modelPath = whisperModelPath(request.model);
+  if (isWhisperModelPresent(request.model)) {
+    return Effect.succeed(modelPath);
+  }
+
+  const download = downloadFile({ url: request.model.url, destination: modelPath, onProgress: request.onProgress });
+  return download.pipe(Effect.as(modelPath));
+};

@@ -28,7 +28,9 @@ const failConfiguration = (message: string): never => {
 };
 
 const assertRuleCardsConform = (repositoryRoot: string): void => {
-  const violations = checkRuleCards({ guide: readFileSync(join(repositoryRoot, "CODE-STYLE.md"), "utf8") });
+  const guidePath = join(repositoryRoot, "CODE-STYLE.md");
+  const guide = readFileSync(guidePath, "utf8");
+  const violations = checkRuleCards({ guide });
   if (violations.length > 0) {
     const lines = violations.map((violation) => `  CODE-STYLE.md:${violation.line} ${violation.message}`);
     failConfiguration(`CODE-STYLE.md does not match the rule-card format:\n${lines.join("\n")}`);
@@ -81,27 +83,38 @@ const nearestStatement = (node: ts.Node): ts.Node => {
     return node;
   }
 
-  return node.parent ? nearestStatement(node.parent) : node;
+  if (!node.parent) {
+    return node;
+  }
+
+  return nearestStatement(node.parent);
 };
 
-const precedingComment = (sourceFile: ts.SourceFile, node: ts.Node) =>
-  ts.getLeadingCommentRanges(sourceFile.text, nearestStatement(node).getFullStart())?.at(-1);
+const precedingComment = (sourceFile: ts.SourceFile, node: ts.Node) => {
+  const statementStart = nearestStatement(node).getFullStart();
+  return ts.getLeadingCommentRanges(sourceFile.text, statementStart)?.at(-1);
+};
 
 const hasProofCommentAbove = (sourceFile: ts.SourceFile, node: ts.Node): boolean => {
   const comment = precedingComment(sourceFile, node);
+  if (comment === undefined) {
+    return false;
+  }
+
+  const statementStart = nearestStatement(node).getStart(sourceFile);
+  const gap = sourceFile.text.slice(comment.end, statementStart);
   // Only whitespace and a single line break may sit between the proof and the statement.
-  return (
-    comment !== undefined &&
-    /^[ \t]*\r?\n[ \t]*$/u.test(sourceFile.text.slice(comment.end, nearestStatement(node).getStart(sourceFile)))
-  );
+  return /^[ \t]*\r?\n[ \t]*$/u.test(gap);
 };
 
 const hasExternalTypeProof = (sourceFile: ts.SourceFile, node: ts.Node): boolean => {
   const comment = precedingComment(sourceFile, node);
-  return (
-    comment !== undefined &&
-    /external type|upstream|issue\s+#?\d+|https:\/\//iu.test(sourceFile.text.slice(comment.pos, comment.end))
-  );
+  if (comment === undefined) {
+    return false;
+  }
+
+  const commentText = sourceFile.text.slice(comment.pos, comment.end);
+  return /external type|upstream|issue\s+#?\d+|https:\/\//iu.test(commentText);
 };
 
 const isConstAssertion = (node: ts.AsExpression): boolean =>
@@ -124,7 +137,12 @@ const nestingDepth = (node: ts.Node): number => {
   }
 
   const isElseIf = ts.isIfStatement(parent) && parent.elseStatement === node && ts.isIfStatement(node);
-  return nestingDepth(parent) + (isControlNode(parent) && !isElseIf ? 1 : 0);
+  const isNestedLevel = isControlNode(parent) && !isElseIf;
+  if (!isNestedLevel) {
+    return nestingDepth(parent);
+  }
+
+  return nestingDepth(parent) + 1;
 };
 
 const isFunctionStatement = (node: ts.Node): boolean =>
@@ -144,12 +162,17 @@ const previousStatement = (node: ts.Node): ts.Statement | undefined => {
 };
 
 const lacksBlankLineAfterFunction = (node: ts.Node, sourceFile: ts.SourceFile): boolean => {
-  const previous = isFunctionStatement(node) ? previousStatement(node) : undefined;
+  if (!isFunctionStatement(node)) {
+    return false;
+  }
+
+  const previous = previousStatement(node);
   if (!previous || !isFunctionStatement(previous)) {
     return false;
   }
 
-  const gap = sourceFile.text.slice(previous.end, node.getStart(sourceFile));
+  const nodeStart = node.getStart(sourceFile);
+  const gap = sourceFile.text.slice(previous.end, nodeStart);
   return (gap.match(/\r?\n/gu) || []).length < 2;
 };
 
@@ -180,7 +203,7 @@ const hasInvalidInputShape = (node: ExecutableFunction): boolean =>
   );
 
 const hasExportModifier = (node: ts.TypeAliasDeclaration): boolean =>
-  Boolean(node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword));
+  node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) === true;
 
 // Service shapes hold only functions, which no Schema can describe.
 const isFunctionOnlyType = (typeLiteral: ts.TypeLiteralNode): boolean =>
@@ -191,14 +214,31 @@ const isFunctionOnlyType = (typeLiteral: ts.TypeLiteralNode): boolean =>
       (ts.isPropertySignature(member) && member.type !== undefined && ts.isFunctionTypeNode(member.type)),
   );
 
-const MUTATING_METHODS = new Set(
-  "add clear copyWithin delete fill pop push reverse set shift sort splice unshift".split(" "),
-);
+const MUTATING_METHODS = new Set([
+  "add",
+  "clear",
+  "copyWithin",
+  "delete",
+  "fill",
+  "pop",
+  "push",
+  "reverse",
+  "set",
+  "shift",
+  "sort",
+  "splice",
+  "unshift",
+]);
 
 const mutationTarget = (node: ts.Node): ts.Expression | undefined => {
   if (ts.isBinaryExpression(node)) {
     const kind = node.operatorToken.kind;
-    return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment ? node.left : undefined;
+    const isAssignment = kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
+    if (!isAssignment) {
+      return undefined;
+    }
+
+    return node.left;
   }
 
   if (
@@ -212,8 +252,12 @@ const mutationTarget = (node: ts.Node): ts.Expression | undefined => {
     return node.expression;
   }
 
-  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-    return MUTATING_METHODS.has(node.expression.name.text) ? node.expression.expression : undefined;
+  const isMutatingCall =
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    MUTATING_METHODS.has(node.expression.name.text);
+  if (isMutatingCall) {
+    return node.expression.expression;
   }
 
   return undefined;
@@ -240,7 +284,7 @@ const isInsideParameter = (node: ts.Node): boolean => {
     return false;
   }
 
-  return node.parent ? isInsideParameter(node.parent) : false;
+  return node.parent !== undefined && isInsideParameter(node.parent);
 };
 
 const mutatesInput = (node: ts.Node, typeChecker: ts.TypeChecker): boolean => {
@@ -249,16 +293,28 @@ const mutatesInput = (node: ts.Node, typeChecker: ts.TypeChecker): boolean => {
   return Boolean(root && typeChecker.getSymbolAtLocation(root)?.declarations?.some(isInsideParameter));
 };
 
-const FORBIDDEN_NAME_TOKENS = new Set(
-  "body data final info outcome payload raw response result results temp tmp".split(" "),
-);
+const FORBIDDEN_NAME_TOKENS = new Set([
+  "body",
+  "data",
+  "final",
+  "info",
+  "outcome",
+  "payload",
+  "raw",
+  "response",
+  "result",
+  "results",
+  "temp",
+  "tmp",
+]);
 
 const hasForbiddenNameToken = (identifier: string): boolean =>
   identifier
     .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
     .replace(/([A-Z]+)([A-Z][a-z])/gu, "$1 $2")
     .split(/[^A-Za-z0-9]+/u)
-    .some((word) => FORBIDDEN_NAME_TOKENS.has(word.toLowerCase()));
+    .map((word) => word.toLowerCase())
+    .some((word) => FORBIDDEN_NAME_TOKENS.has(word));
 
 const isBindingName = (node: ts.Identifier): boolean => {
   const parent = node.parent;
@@ -290,6 +346,70 @@ const isTypeofComparison = (node: ts.Node): boolean =>
     ts.SyntaxKind.ExclamationEqualsToken,
   ].includes(node.operatorToken.kind) &&
   (ts.isTypeOfExpression(node.left) || ts.isTypeOfExpression(node.right));
+
+// The root name of a callee chain: `expect` for `expect(actual).not.toEqual`, `Schema` for `Schema.String.annotations`.
+const calleeRoot = (expression: ts.Expression): string => {
+  if (ts.isIdentifier(expression)) {
+    return expression.text;
+  }
+
+  if (ts.isPropertyAccessExpression(expression) || ts.isCallExpression(expression)) {
+    return calleeRoot(expression.expression);
+  }
+
+  return "";
+};
+
+const wrappedExpression = (expression: ts.Expression): ts.Expression | undefined => {
+  const isWrapper =
+    ts.isParenthesizedExpression(expression) ||
+    ts.isAwaitExpression(expression) ||
+    ts.isNonNullExpression(expression) ||
+    ts.isSpreadElement(expression) ||
+    ts.isYieldExpression(expression);
+  if (!isWrapper) {
+    return undefined;
+  }
+
+  return expression.expression;
+};
+
+const argumentCall = (argument: ts.Expression): ts.CallExpression | undefined => {
+  if (ts.isCallExpression(argument)) {
+    return argument;
+  }
+
+  const wrapped = wrappedExpression(argument);
+  if (wrapped === undefined) {
+    return undefined;
+  }
+
+  return argumentCall(wrapped);
+};
+
+const isPipeCall = (call: ts.CallExpression | ts.NewExpression): boolean =>
+  (ts.isPropertyAccessExpression(call.expression) && call.expression.name.text === "pipe") ||
+  (ts.isIdentifier(call.expression) && call.expression.text === "pipe");
+
+// Assertions, Effect pipeline steps, and Schemas built from Schemas are how Vitest and Effect are written.
+const isLibraryIdiom = (call: ts.CallExpression | ts.NewExpression, innerCall: ts.CallExpression): boolean => {
+  const outerRoot = calleeRoot(call.expression);
+  const innerRoot = calleeRoot(innerCall.expression);
+  return outerRoot === "expect" || isPipeCall(call) || (outerRoot === "Schema" && innerRoot === "Schema");
+};
+
+const isNestedCall = (node: ts.Node): boolean => {
+  const isCall = ts.isCallExpression(node) || ts.isNewExpression(node);
+  if (!isCall) {
+    return false;
+  }
+
+  const callArguments = node.arguments || [];
+  return callArguments.some((argument) => {
+    const innerCall = argumentCall(argument);
+    return innerCall !== undefined && !isLibraryIdiom(node, innerCall);
+  });
+};
 
 type NodeCheck = { node: ts.Node; file: string; sourceFile: ts.SourceFile; typeChecker: ts.TypeChecker };
 
@@ -431,6 +551,18 @@ const NODE_RULES: ReadonlyArray<NodeRule> = [
     matches: ({ node }) => isCallOn(node, { owner: "console", method: /./u }),
   },
   {
+    ruleId: "control.no-ternary",
+    kinds: [...MAINTAINED, "root"],
+    message: "Name the condition in a boolean and branch with `if` instead of `? :`.",
+    matches: ({ node }) => ts.isConditionalExpression(node),
+  },
+  {
+    ruleId: "syntax.no-nested-call",
+    kinds: [...MAINTAINED, "root"],
+    message: "Name the inner call's value on its own line, then pass the name.",
+    matches: ({ node }) => isNestedCall(node),
+  },
+  {
     ruleId: "syntax.no-nullish",
     kinds: [...MAINTAINED, "root"],
     message: "Decode absence and defaults at the owning boundary instead of using `??`.",
@@ -446,10 +578,12 @@ const FILE_RULES: ReadonlyArray<FileRule> = [
   {
     ruleId: "path.no-generic-bucket",
     message: "Use a filename that names the domain job.",
-    matches: (file) =>
-      /^(?:base|common|constants|core|helpers|index|misc|models|shared|types|utils)\.[cm]?[jt]sx?$/u.test(
-        posix.basename(file),
-      ),
+    matches: (file) => {
+      const fileName = posix.basename(file);
+      return /^(?:base|common|constants|core|helpers|index|misc|models|shared|types|utils)\.[cm]?[jt]sx?$/u.test(
+        fileName,
+      );
+    },
   },
   {
     ruleId: "path.source-directory-case",
@@ -480,19 +614,52 @@ const suppressionHasProof = (comment: string, file: string): boolean => {
   return file.includes(".test.") && Boolean(explanation && explanation.length >= 12);
 };
 
+type SourceComment = { text: string; line: number };
+
 // Scan lexical comments so directive-looking strings stay ordinary text.
-const unprovenSuppressionLines = (file: string, sourceFile: ts.SourceFile): ReadonlyArray<number> => {
+const commentsOf = (sourceFile: ts.SourceFile): ReadonlyArray<SourceComment> => {
   const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, sourceFile.languageVariant, sourceFile.text);
-  const lines: Array<number> = [];
+  const comments: Array<SourceComment> = [];
   for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
-    const text = scanner.getTokenText();
     const isComment = token === ts.SyntaxKind.SingleLineCommentTrivia || token === ts.SyntaxKind.MultiLineCommentTrivia;
-    if (isComment && SUPPRESSION_DIRECTIVE.test(text) && !suppressionHasProof(text, file)) {
-      lines.push(sourceFile.getLineAndCharacterOfPosition(scanner.getTokenPos()).line + 1);
+    if (isComment) {
+      const tokenStart = scanner.getTokenPos();
+      const position = sourceFile.getLineAndCharacterOfPosition(tokenStart);
+      comments.push({ text: scanner.getTokenText(), line: position.line + 1 });
     }
   }
 
-  return lines;
+  return comments;
+};
+
+const commentViolations = (file: string, sourceFile: ts.SourceFile): ReadonlyArray<CodeStyleViolation> => {
+  const comments = commentsOf(sourceFile);
+  const docComments = comments.filter((comment) => comment.text.startsWith("/**"));
+  const unprovenSuppressions = comments.filter(
+    (comment) => SUPPRESSION_DIRECTIVE.test(comment.text) && !suppressionHasProof(comment.text, file),
+  );
+  return [
+    ...docComments.map(({ line }) => ({
+      ruleId: "comment.no-doc-block",
+      file,
+      line,
+      message: "Delete the doc comment; let the name say it, or keep a `//` line for a hidden reason.",
+    })),
+    ...unprovenSuppressions.map(({ line }) => ({
+      ruleId: "type.no-suppression",
+      file,
+      line,
+      message: "State the negative type contract or link the narrow external defect.",
+    })),
+  ];
+};
+
+const ruleMessage = (rule: NodeRule, node: ts.Node): string => {
+  if (typeof rule.message === "string") {
+    return rule.message;
+  }
+
+  return rule.message(node);
 };
 
 const inspectFile = (request: {
@@ -506,17 +673,12 @@ const inspectFile = (request: {
   const violations: Array<CodeStyleViolation> = [];
   const visit = (node: ts.Node): void => {
     const check = { ...request, node };
-    const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-    violations.push(
-      ...nodeRules
-        .filter((rule) => rule.matches(check))
-        .map((rule) => ({
-          ruleId: rule.ruleId,
-          file,
-          line,
-          message: typeof rule.message === "string" ? rule.message : rule.message(node),
-        })),
-    );
+    const start = node.getStart(sourceFile);
+    const line = sourceFile.getLineAndCharacterOfPosition(start).line + 1;
+    const nodeViolations = nodeRules
+      .filter((rule) => rule.matches(check))
+      .map((rule) => ({ ruleId: rule.ruleId, file, line, message: ruleMessage(rule, node) }));
+    violations.push(...nodeViolations);
     ts.forEachChild(node, visit);
   };
 
@@ -525,21 +687,14 @@ const inspectFile = (request: {
     return violations;
   }
 
-  return [
-    ...violations,
-    ...FILE_RULES.filter((rule) => rule.matches(file, sourceFile)).map((rule) => ({
-      ruleId: rule.ruleId,
-      file,
-      line: 1,
-      message: rule.message,
-    })),
-    ...unprovenSuppressionLines(file, sourceFile).map((line) => ({
-      ruleId: "type.no-suppression",
-      file,
-      line,
-      message: "State the negative type contract or link the narrow external defect.",
-    })),
-  ];
+  const fileViolations = FILE_RULES.filter((rule) => rule.matches(file, sourceFile)).map((rule) => ({
+    ruleId: rule.ruleId,
+    file,
+    line: 1,
+    message: rule.message,
+  }));
+  const commentFindings = commentViolations(file, sourceFile);
+  return [...violations, ...fileViolations, ...commentFindings];
 };
 
 export const checkCodeStyle = (repositoryRoot: string): ReadonlyArray<CodeStyleViolation> => {
@@ -550,20 +705,19 @@ export const checkCodeStyle = (repositoryRoot: string): ReadonlyArray<CodeStyleV
     nodir: true,
     ignore: ["**/node_modules/**", "**/dist/**", "src/scripts/dev/**"],
   });
+  const rootNames = files.map((file) => join(repositoryRoot, file));
   const program = ts.createProgram({
-    rootNames: files.map((file) => join(repositoryRoot, file)),
+    rootNames,
     options: { allowJs: true, jsx: ts.JsxEmit.Preserve, noLib: true, noResolve: true, target: ts.ScriptTarget.Latest },
   });
   const typeChecker = program.getTypeChecker();
-
-  return files
-    .flatMap((file) => {
-      const sourceFile =
-        program.getSourceFile(join(repositoryRoot, file)) || failConfiguration(`could not parse ${file}`);
-      return inspectFile({ file, sourceFile, typeChecker });
-    })
-    .sort(
-      (left, right) =>
-        left.file.localeCompare(right.file) || left.line - right.line || left.ruleId.localeCompare(right.ruleId),
-    );
+  const violations = files.flatMap((file) => {
+    const filePath = join(repositoryRoot, file);
+    const sourceFile = program.getSourceFile(filePath) || failConfiguration(`could not parse ${file}`);
+    return inspectFile({ file, sourceFile, typeChecker });
+  });
+  return violations.sort(
+    (left, right) =>
+      left.file.localeCompare(right.file) || left.line - right.line || left.ruleId.localeCompare(right.ruleId),
+  );
 };

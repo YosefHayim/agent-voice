@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
-import { checkRuleCards, ruleCardIds } from "./checkRuleCards.js";
+import path from "node:path";
 
-const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+import { describe, expect, it } from "vitest";
+
+import { checkRuleCards, ruleCardIds } from "./checkRuleCards.js";
+import { repositoryRoot } from "./testFolder.js";
+
+const guidePath = path.join(repositoryRoot, "CODE-STYLE.md");
 
 const card = (request: { id: string; verify: string; assertion: string }) =>
   [
@@ -55,10 +57,12 @@ const validCards = [
   }),
 ];
 
+const validGuide = guideWith(validCards);
+
 const messagesFor = (guide: string) => checkRuleCards({ guide }).map((violation) => violation.message);
 
 describe("the repository style guide", () => {
-  const guide = readFileSync(join(repositoryRoot, "CODE-STYLE.md"), "utf8");
+  const guide = readFileSync(guidePath, "utf8");
 
   it("matches the rule-card format", () => {
     expect(checkRuleCards({ guide })).toEqual([]);
@@ -66,7 +70,8 @@ describe("the repository style guide", () => {
 
   it("points every Never entry at a real rule", () => {
     const cardIds = ruleCardIds(guide);
-    const neverSection = guide.slice(guide.indexOf("\n## Never"));
+    const neverStart = guide.indexOf("\n## Never");
+    const neverSection = guide.slice(neverStart);
     const referenced = [...neverSection.matchAll(/\[rule:([a-z0-9.-]+)\]/gu)].flatMap((match) => match[1] || []);
 
     expect(referenced.length).toBeGreaterThan(0);
@@ -74,8 +79,10 @@ describe("the repository style guide", () => {
   });
 
   it("shows the queued reply schema-first, with the handwritten shape only as the rejected case", () => {
-    const card = guide.slice(guide.indexOf("[rule:type.schema-owned-runtime]"));
-    const [chosen = "", rejected = ""] = card.slice(0, card.indexOf("\n```\n")).split("// ✗");
+    const cardStart = guide.indexOf("[rule:type.schema-owned-runtime]");
+    const schemaCard = guide.slice(cardStart);
+    const codeEnd = schemaCard.indexOf("\n```\n");
+    const [chosen = "", rejected = ""] = schemaCard.slice(0, codeEnd).split("// ✗");
 
     expect(chosen).toContain("export const queuedReplySchema = Schema.Struct({");
     expect(chosen).toContain("Schema.Schema.Type<typeof queuedReplySchema>");
@@ -86,28 +93,27 @@ describe("the repository style guide", () => {
 
 describe("rule-card format", () => {
   it("accepts a conforming guide", () => {
-    expect(checkRuleCards({ guide: guideWith(validCards) })).toEqual([]);
+    expect(checkRuleCards({ guide: validGuide })).toEqual([]);
   });
 
   it("lists rule IDs in document order", () => {
-    expect(ruleCardIds(guideWith(validCards))).toEqual(["function.arrow-only", "function.one-job"]);
+    expect(ruleCardIds(validGuide)).toEqual(["function.arrow-only", "function.one-job"]);
   });
 
   it("requires every listed section", () => {
-    const guide = guideWith(validCards).replace("## Never\n", "");
+    const guide = validGuide.replace("## Never\n", "");
 
     expect(messagesFor(guide)).toContain('CODE-STYLE.md needs a "## Never" section.');
   });
 
   it("requires the exact Rules heading, so a qualified one cannot hide every card", () => {
-    const guide = guideWith(validCards).replace("## Rules\n", "## Rules — draft\n");
-    expect(checkRuleCards({ guide }).map((violation) => violation.message)).toContain(
-      'CODE-STYLE.md needs a "## Rules" section.',
-    );
+    const guide = validGuide.replace("## Rules\n", "## Rules — draft\n");
+
+    expect(messagesFor(guide)).toContain('CODE-STYLE.md needs a "## Rules" section.');
   });
 
   it("requires a metadata line under each card heading", () => {
-    const guide = guideWith(validCards).replace("[rule:function.arrow-only] · verify: `pnpm style`\n", "");
+    const guide = validGuide.replace("[rule:function.arrow-only] · verify: `pnpm style`\n", "");
 
     expect(messagesFor(guide).join("\n")).toMatch(/needs a metadata line/u);
   });
@@ -146,13 +152,13 @@ describe("rule-card format", () => {
       expected: 'Rule function.arrow-only example needs a "// ✗" case.',
     },
   ])("requires $name in the example", ({ marker, expected }) => {
-    const guide = guideWith(validCards).replace(`${marker}\n`, "");
+    const guide = validGuide.replace(`${marker}\n`, "");
 
     expect(messagesFor(guide)).toContain(expected);
   });
 
   it("requires a Why line", () => {
-    const guide = guideWith(validCards).replace("Why: one reason.\n", "");
+    const guide = validGuide.replace("Why: one reason.\n", "");
 
     expect(messagesFor(guide)).toContain('Rule function.arrow-only needs a "Why:" line.');
   });
@@ -186,7 +192,7 @@ describe("rule-card format", () => {
   });
 
   it("ignores headings that appear inside example code", () => {
-    const guide = guideWith(validCards).replace("// ✓ good", "// ✓ good\n### not a card\n## not a section");
+    const guide = validGuide.replace("// ✓ good", "// ✓ good\n### not a card\n## not a section");
 
     expect(checkRuleCards({ guide })).toEqual([]);
   });

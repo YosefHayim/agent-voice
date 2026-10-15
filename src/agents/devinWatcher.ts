@@ -1,6 +1,4 @@
-/** `voxkey devin`: queue each finished Devin turn from its official ATIF export for speech. */
-
-import { Duration, Effect, Fiber, Option, Schema } from "effect";
+import { Effect, Fiber, Option, Ref, Schema } from "effect";
 import { readJsonFile } from "../files/stateFiles.js";
 import { queueReply } from "../speech/inbox.js";
 import { appendSpeechLog } from "../workers/workerLog.js";
@@ -15,40 +13,61 @@ const atifExportSchema = Schema.Struct({
   ),
 });
 
-export type AtifExport = Schema.Schema.Type<typeof atifExportSchema>;
+type AtifExport = Schema.Schema.Type<typeof atifExportSchema>;
 
-export const devinTurnSchema = Schema.Struct({ markdown: Schema.String, turnId: Schema.String });
+const devinTurnSchema = Schema.Struct({ markdown: Schema.String, turnId: Schema.String });
 
-export type DevinTurn = Schema.Schema.Type<typeof devinTurnSchema>;
+type DevinTurn = Schema.Schema.Type<typeof devinTurnSchema>;
+
+type WatchState = { readonly spokenTurn: string; readonly pendingTurn: string; readonly changedAt: number };
 
 const noTurn: DevinTurn = { markdown: "", turnId: "" };
 
-/** The agent messages after the latest user step, joined; the turn ID is the last agent step's ID. */
+// How long a turn ID must stay the same before the turn is queued.
+const TURN_SETTLE_MS = 800;
+
+const POLL_INTERVAL_MS = 200;
+
+// After Devin exits, long enough for a turn written as it exits to be seen, settle, and be queued.
+const EXIT_GRACE_MS = TURN_SETTLE_MS + 2 * POLL_INTERVAL_MS;
+
+const pollPause = Effect.sleep(POLL_INTERVAL_MS);
+
+const exitGrace = Effect.sleep(EXIT_GRACE_MS);
+
+const decodeString = Schema.decodeUnknownOption(Schema.String);
+
+// The agent messages after the latest user step, joined; the turn ID is the last agent step's ID.
 export const latestDevinTurn = (atif: AtifExport): DevinTurn => {
   const lastUser = atif.steps.map((step) => step.source).lastIndexOf("user");
   const agentSteps = atif.steps
     .slice(lastUser + 1)
     .filter((step) => step.source === "agent")
     .flatMap((step) => {
-      const message = Option.getOrElse(Schema.decodeUnknownOption(Schema.String)(step.message), () => "").trim();
-      return message === "" ? [] : [{ message, turnId: step.step_id || "" }];
+      const message = decodeString(step.message)
+        .pipe(Option.getOrElse(() => ""))
+        .trim();
+      if (message === "") {
+        return [];
+      }
+
+      return [{ message, turnId: step.step_id || "" }];
     });
+  const namedSteps = agentSteps.filter((step) => step.turnId !== "");
   return {
     markdown: agentSteps.map((step) => step.message).join("\n\n"),
-    turnId: [...agentSteps].reverse().find((step) => step.turnId !== "")?.turnId || "",
+    turnId: namedSteps.at(-1)?.turnId || "",
   };
 };
 
 const readTurn = (exportFile: string): DevinTurn =>
-  Option.getOrElse(
-    Option.map(readJsonFile({ path: exportFile, schema: atifExportSchema }), latestDevinTurn),
-    () => noTurn,
+  readJsonFile({ path: exportFile, schema: atifExportSchema }).pipe(
+    Option.map(latestDevinTurn),
+    Option.getOrElse(() => noTurn),
   );
 
-/**
- * Queue the pending turn when it is still the latest; returns the turn now spoken. A turn that cannot be queued
- * is logged and passed over, so the watcher keeps reading later turns.
- */
+// Returns the turn now spoken. A turn that cannot be queued is logged and passed over, so the watcher keeps reading
+// later turns.
 const confirmTurn = (request: {
   readonly exportFile: string;
   readonly pendingTurn: string;
@@ -72,44 +91,46 @@ const confirmTurn = (request: {
   return confirmed.turnId;
 };
 
-/** How long a turn ID must stay the same before the turn is queued. */
-const TURN_SETTLE_MS = 800;
+const trackTurn = (state: WatchState, turnId: string): WatchState => {
+  const isNewTurn = turnId !== "" && turnId !== state.spokenTurn && turnId !== state.pendingTurn;
+  if (!isNewTurn) {
+    return state;
+  }
 
-const POLL_INTERVAL_MS = 200;
+  return { ...state, pendingTurn: turnId, changedAt: Date.now() };
+};
 
-/** Debounced: a turn is queued only once its ID has been stable for 800 ms. Runs until interrupted. */
-export const watchDevinExport = (exportFile: string): Effect.Effect<never> =>
+const settleTurn = (exportFile: string, state: WatchState): WatchState => {
+  const hasSettled = state.pendingTurn !== "" && Date.now() - state.changedAt >= TURN_SETTLE_MS;
+  if (!hasSettled) {
+    return state;
+  }
+
+  const spokenTurn = confirmTurn({ exportFile, pendingTurn: state.pendingTurn, spokenTurn: state.spokenTurn });
+  return { ...state, spokenTurn, pendingTurn: "" };
+};
+
+const pollTurn = (exportFile: string, state: WatchState): WatchState => {
+  const latest = readTurn(exportFile);
+  const tracked = trackTurn(state, latest.turnId);
+  return settleTurn(exportFile, tracked);
+};
+
+const watchDevinExport = (exportFile: string): Effect.Effect<never> =>
   Effect.gen(function* () {
-    let spokenTurn = readTurn(exportFile).turnId;
-    let pendingTurn = "";
-    let changedAt = Date.now();
-    while (true) {
-      const turnId = readTurn(exportFile).turnId;
-      if (turnId !== "" && turnId !== spokenTurn && turnId !== pendingTurn) {
-        pendingTurn = turnId;
-        changedAt = Date.now();
-      }
-      if (pendingTurn !== "" && Date.now() - changedAt >= TURN_SETTLE_MS) {
-        spokenTurn = confirmTurn({ exportFile, pendingTurn, spokenTurn });
-        pendingTurn = "";
-      }
-      yield* Effect.sleep(Duration.millis(POLL_INTERVAL_MS));
-    }
+    const firstTurn = readTurn(exportFile);
+    const watch = yield* Ref.make<WatchState>({ spokenTurn: firstTurn.turnId, pendingTurn: "", changedAt: Date.now() });
+    const poll = Ref.update(watch, (state) => pollTurn(exportFile, state));
+    return yield* poll.pipe(Effect.zipLeft(pollPause), Effect.forever);
   });
 
-/**
- * Watch the export while `session` (Devin) runs, then long enough for a turn written as Devin exits to be seen,
- * settle, and be queued; the session's own value is returned. However the session ends (a Devin that never started
- * included), the watcher stops with it.
- */
+// The watcher stops with the session however it ends, a Devin that never started included.
 export const watchDevinSession = <Value, Failure>(request: {
   readonly exportFile: string;
   readonly session: Effect.Effect<Value, Failure>;
 }): Effect.Effect<Value, Failure> =>
   Effect.gen(function* () {
-    const watcher = yield* Effect.fork(watchDevinExport(request.exportFile));
-    return yield* Effect.ensuring(
-      Effect.zipLeft(request.session, Effect.sleep(Duration.millis(TURN_SETTLE_MS + 2 * POLL_INTERVAL_MS))),
-      Fiber.interrupt(watcher),
-    );
+    const watcher = yield* watchDevinExport(request.exportFile).pipe(Effect.fork);
+    const stopWatcher = Fiber.interrupt(watcher);
+    return yield* request.session.pipe(Effect.zipLeft(exitGrace), Effect.ensuring(stopWatcher));
   });

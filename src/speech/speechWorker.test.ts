@@ -1,30 +1,36 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { makeTestFolder } from "../scripts/testFolder.js";
 import { queueReply } from "./inbox.js";
 import { makeSpeechPlayer } from "./speechPlayer.js";
 import { speakNextReply } from "./speechWorker.js";
 import type { SupertonicEngine } from "./supertonic.js";
 
-const scratchRoot = fileURLToPath(new URL("../../.scratch/", import.meta.url));
-
 let home = "";
 let server: Server | undefined;
 
 beforeEach(() => {
-  mkdirSync(scratchRoot, { recursive: true });
-  home = mkdtempSync(path.join(scratchRoot, "worker-"));
+  home = makeTestFolder("speech-worker");
   vi.stubEnv("VOXKEY_HOME", home);
-  writeFileSync(path.join(home, "config.json"), JSON.stringify({ speechMode: "auto", speechMuted: false }));
+  const configFile = path.join(home, "config.json");
+  const config = JSON.stringify({ speechMode: "auto", speechMuted: false });
+  writeFileSync(configFile, config);
 });
 
 afterEach(async () => {
-  await new Promise((resolve) => (server === undefined ? resolve(undefined) : server.close(resolve)));
+  await new Promise((resolve) => {
+    if (server === undefined) {
+      resolve(undefined);
+      return;
+    }
+
+    server.close(resolve);
+  });
   server = undefined;
   vi.unstubAllEnvs();
   rmSync(home, { recursive: true, force: true });
@@ -39,7 +45,8 @@ describe("speakNextReply", () => {
     const player = silentPlayer();
     queueReply({ markdown: "Done.", source: "claude-code", agentReplyId: "r1", origin: { kind: "terminal" } });
 
-    await Effect.runPromise(speakNextReply(engine, player));
+    const speaking = speakNextReply(engine, player);
+    await Effect.runPromise(speaking);
 
     expect(player.play).toHaveBeenCalledOnce();
   });
@@ -60,7 +67,8 @@ describe("speakNextReply", () => {
       origin: { kind: "cmux", socketPath, workspaceId: "W1", surfaceId: "S1" },
     });
 
-    const step = await Effect.runPromise(speakNextReply(engine, player));
+    const speaking = speakNextReply(engine, player);
+    const step = await Effect.runPromise(speaking);
 
     expect(step).toBe("spoke");
     expect(player.play).not.toHaveBeenCalled();

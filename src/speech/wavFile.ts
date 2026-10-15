@@ -1,9 +1,10 @@
-/** 16-bit PCM WAV files: written for afplay and whisper fixtures, read back by tests and the bench. */
+import { pcmFromSamples } from "../dictation/clipAudio.js";
 
 export const encodeWav = (request: { readonly samples: Float32Array; readonly sampleRate: number }): Buffer => {
-  const bytes = Buffer.alloc(44 + request.samples.length * 2);
+  const pcm = pcmFromSamples(request.samples);
+  const bytes = Buffer.alloc(44 + pcm.length * 2);
   bytes.write("RIFF", 0, "ascii");
-  bytes.writeUInt32LE(36 + request.samples.length * 2, 4);
+  bytes.writeUInt32LE(36 + pcm.length * 2, 4);
   bytes.write("WAVEfmt ", 8, "ascii");
   bytes.writeUInt32LE(16, 16);
   bytes.writeUInt16LE(1, 20);
@@ -13,10 +14,10 @@ export const encodeWav = (request: { readonly samples: Float32Array; readonly sa
   bytes.writeUInt16LE(2, 32);
   bytes.writeUInt16LE(16, 34);
   bytes.write("data", 36, "ascii");
-  bytes.writeUInt32LE(request.samples.length * 2, 40);
-  request.samples.forEach((sample, index) => {
-    bytes.writeInt16LE(Math.max(-32_768, Math.min(32_767, Math.round(sample * 32_767))), 44 + index * 2);
-  });
+  bytes.writeUInt32LE(pcm.length * 2, 40);
+  for (const [index, sample] of pcm.entries()) {
+    bytes.writeInt16LE(sample, 44 + index * 2);
+  }
   return bytes;
 };
 
@@ -26,16 +27,18 @@ const wavChunks = (bytes: Buffer): ReadonlyArray<WavChunk> => {
   const chunks: Array<WavChunk> = [];
   let offset = 12;
   while (offset + 8 <= bytes.length) {
+    const id = bytes.toString("ascii", offset, offset + 4);
     const size = bytes.readUInt32LE(offset + 4);
-    chunks.push({ id: bytes.toString("ascii", offset, offset + 4), start: offset + 8, size });
+    chunks.push({ id, start: offset + 8, size });
     offset += 8 + size + (size % 2);
   }
   return chunks;
 };
 
-/** Mono 16-bit samples of a PCM WAV (the first channel when there are more), or undefined for another format. */
+// Keeps only the first channel: every reader wants mono.
 export const decodeWav = (bytes: Buffer): { readonly sampleRate: number; readonly pcm: Int16Array } | undefined => {
-  if (bytes.toString("ascii", 0, 4) !== "RIFF" || bytes.toString("ascii", 8, 12) !== "WAVE") {
+  const isWave = bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WAVE";
+  if (!isWave) {
     return undefined;
   }
 
@@ -47,11 +50,10 @@ export const decodeWav = (bytes: Buffer): { readonly sampleRate: number; readonl
   }
 
   const channels = bytes.readUInt16LE(format.start + 2);
-  const frameCount = Math.floor(Math.min(samples.size, bytes.length - samples.start) / (2 * channels));
-  return {
-    sampleRate: bytes.readUInt32LE(format.start + 4),
-    pcm: Int16Array.from({ length: frameCount }, (_unused, frame) =>
-      bytes.readInt16LE(samples.start + frame * 2 * channels),
-    ),
-  };
+  const sampleBytes = Math.min(samples.size, bytes.length - samples.start);
+  const frameCount = Math.floor(sampleBytes / (2 * channels));
+  const pcm = Int16Array.from({ length: frameCount }, (_unused, frame) =>
+    bytes.readInt16LE(samples.start + frame * 2 * channels),
+  );
+  return { sampleRate: bytes.readUInt32LE(format.start + 4), pcm };
 };

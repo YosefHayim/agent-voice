@@ -1,5 +1,3 @@
-/** The agents whose end-of-turn (Stop) hook can run `voxkey reply`, and where each keeps its hook settings. */
-
 import { Schema } from "effect";
 
 export const agentIdSchema = Schema.Literal("claude-code", "codex", "grok");

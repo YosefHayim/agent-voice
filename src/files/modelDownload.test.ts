@@ -1,17 +1,17 @@
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
-import { createServer, type Server } from "node:http";
+import { chmodSync, existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createServer, type Server, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Duration, Effect, Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
 import { downloadFile } from "./modelDownload.js";
 
-const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
-const scratchRoot = path.join(repositoryRoot, ".scratch");
-const modelDownloadModule = fileURLToPath(new URL("./modelDownload.js", import.meta.url));
+const modelDownloadUrl = new URL("./modelDownload.js", import.meta.url);
+const modelDownloadModule = fileURLToPath(modelDownloadUrl);
 
 let folder = "";
 let server: Server | undefined;
@@ -25,29 +25,40 @@ const LARGE_BYTES = 21_000_000;
 
 const half = Buffer.alloc(MODEL_BYTES / 2, 7);
 
+const largeModel = Buffer.alloc(LARGE_BYTES, 7);
+
+const decodeAddress = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }));
+
+const sendInHalves = (served: ServerResponse, delayMs: number): void => {
+  served.write(half);
+  setTimeout(() => served.end(half), delayMs);
+};
+
 // A local server stands in for Hugging Face; nothing leaves the Mac. The second half of a model arrives later, so a
 // file error lands while the download waits for more bytes (a small first chunk is buffered without waiting for
 // "drain"). /slow.bin takes 1.5 s, /stall.bin never finishes, and /large.bin is past the progress step.
 beforeEach(async () => {
-  mkdirSync(scratchRoot, { recursive: true });
-  folder = mkdtempSync(path.join(scratchRoot, "download-"));
+  folder = makeTestFolder("download");
   requests = [];
   server = createServer((request, served) => {
     requests.push(request.url || "");
     switch (request.url) {
       case "/large.bin":
-        served.end(Buffer.alloc(LARGE_BYTES, 7));
+        served.end(largeModel);
         return;
       case "/stall.bin":
         served.write(half);
         return;
+      case "/slow.bin":
+        sendInHalves(served, 1_500);
+        return;
       default:
-        served.write(half);
-        setTimeout(() => served.end(half), request.url === "/slow.bin" ? 1_500 : 200);
+        sendInHalves(served, 200);
     }
   });
   await new Promise((resolve) => server?.listen(0, "127.0.0.1", () => resolve(undefined)));
-  const { port } = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address());
+  const address = server.address();
+  const { port } = decodeAddress(address);
   origin = `http://127.0.0.1:${String(port)}`;
 });
 
@@ -62,10 +73,10 @@ const DOWNLOADER = `
 const [modulePath, url, destination] = process.argv.slice(1);
 const { Effect } = await import("effect");
 const { downloadFile } = await import(modulePath);
-await Effect.runPromise(downloadFile({ url, destination, onProgress: () => undefined }));
+await downloadFile({ url, destination, onProgress: () => undefined }).pipe(Effect.runPromise);
 `;
 
-/** Another process downloading `url` to `destination` with the same code, as a second `voxkey on` or worker would. */
+// Another process downloading the same file with the same code, as a second `voxkey on` or worker would.
 const startDownloader = (request: { readonly url: string; readonly destination: string }) => {
   const child = spawn(
     process.execPath,
@@ -83,13 +94,14 @@ const eventually = async (check: () => boolean): Promise<boolean> => {
   return check();
 };
 
+// A download that waits on a lock nobody will release fails the test instead of hanging it.
 const download = (request: { readonly url: string; readonly destination: string }) =>
-  // A download that waits on a lock nobody will release fails the test instead of hanging it.
-  Effect.runPromise(
-    Effect.timeoutFail(downloadFile({ ...request, onProgress: () => undefined }), {
+  downloadFile({ ...request, onProgress: () => undefined }).pipe(
+    Effect.timeoutFail({
       duration: Duration.seconds(10),
       onTimeout: () => new Error("the download is still blocked"),
     }),
+    Effect.runPromise,
   );
 
 describe("downloadFile", () => {
@@ -97,9 +109,11 @@ describe("downloadFile", () => {
     const destination = path.join(folder, "model.bin");
     const progress: Array<number> = [];
 
-    await Effect.runPromise(
-      downloadFile({ url: `${origin}/model.bin`, destination, onProgress: (bytes) => progress.push(bytes) }),
-    );
+    await downloadFile({
+      url: `${origin}/model.bin`,
+      destination,
+      onProgress: (bytes) => progress.push(bytes),
+    }).pipe(Effect.runPromise);
 
     expect(readFileSync(destination).length).toBe(MODEL_BYTES);
     expect(progress.at(-1)).toBe(MODEL_BYTES);
@@ -110,15 +124,11 @@ describe("downloadFile", () => {
   it("fails with a download error, instead of crashing, when the file cannot be written", async () => {
     chmodSync(folder, 0o500);
 
-    const failure = await Effect.runPromise(
-      Effect.flip(
-        downloadFile({
-          url: `${origin}/model.bin`,
-          destination: path.join(folder, "model.bin"),
-          onProgress: () => undefined,
-        }),
-      ),
-    );
+    const failure = await downloadFile({
+      url: `${origin}/model.bin`,
+      destination: path.join(folder, "model.bin"),
+      onProgress: () => undefined,
+    }).pipe(Effect.flip, Effect.runPromise);
 
     expect(failure._tag).toBe("ModelDownloadError");
     expect(failure.issue).toContain("EACCES");
@@ -127,17 +137,13 @@ describe("downloadFile", () => {
   it("fails with a download error, instead of crashing, when the progress callback throws mid-download or at the end", async () => {
     for (const name of ["large.bin", "model.bin"]) {
       const destination = path.join(folder, name);
-      const failure = await Effect.runPromise(
-        Effect.flip(
-          downloadFile({
-            url: `${origin}/${name}`,
-            destination,
-            onProgress: () => {
-              throw new Error("the progress line broke");
-            },
-          }),
-        ),
-      );
+      const failure = await downloadFile({
+        url: `${origin}/${name}`,
+        destination,
+        onProgress: () => {
+          throw new Error("the progress line broke");
+        },
+      }).pipe(Effect.flip, Effect.runPromise);
 
       expect(failure.issue).toBe("the progress line broke");
       expect([name, existsSync(destination), existsSync(`${destination}.partial`)]).toEqual([name, false, false]);

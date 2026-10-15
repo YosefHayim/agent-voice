@@ -1,18 +1,14 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { rmSync } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { makeTestFolder } from "../scripts/testFolder.js";
 import { dictationOwnsAudio, makeStatusWriter } from "./workerStatus.js";
-
-const scratchRoot = fileURLToPath(new URL("../../.scratch/", import.meta.url));
 
 let home = "";
 
 beforeEach(() => {
-  mkdirSync(scratchRoot, { recursive: true });
-  home = mkdtempSync(path.join(scratchRoot, "status-"));
+  home = makeTestFolder("status");
   vi.stubEnv("VOXKEY_HOME", home);
 });
 

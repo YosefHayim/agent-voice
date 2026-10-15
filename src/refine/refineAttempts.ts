@@ -1,12 +1,7 @@
-/**
- * Route-aware refine: try the preferred provider, rotate its models, then other providers on this Mac,
- * and offer the macOS picker when every attempt fails.
- */
-
-import { Effect, Option, Schema } from "effect";
+import { Effect, Either, Option, Schema } from "effect";
 
 import type { Config } from "../settings/configSchema.js";
-import { dedupe } from "./agentCli.js";
+import { containsAny, dedupe } from "./agentCli.js";
 import { CODEX_MODEL_FALLBACKS, isProviderInstalled, type ProviderId, providerModels } from "./providerModels.js";
 import {
   codexFailedModels,
@@ -19,7 +14,7 @@ import {
   saveRefineChoice,
 } from "./refineChoices.js";
 import { pickerEnabled, pickRefineTargetWithDialogs, SKIP_REFINE_LABEL } from "./refinePicker.js";
-import { refineWithProvider } from "./refineProviders.js";
+import { namedModel, refineWithProvider } from "./refineProviders.js";
 import { isModelUnavailableError, looksLikeFailedModelOutput } from "./refineReply.js";
 
 // Bounds so a dictation release never hangs on rotation.
@@ -27,7 +22,7 @@ const MAX_MODELS_PER_PROVIDER = 6;
 const MAX_CROSS_PROVIDER_ATTEMPTS = 4;
 const MAX_TOTAL_ATTEMPTS = 12;
 
-/** Order for trying other providers after the requested one fails. */
+// The order for trying other providers after the requested one fails.
 const FALLBACK_ORDER: ReadonlyArray<ProviderId> = ["codex", "opencode", "gemini", "grok", "pi", "ollama", "claude"];
 
 const LAST_RESORT_MODEL: Readonly<Record<ProviderId, string>> = {
@@ -44,72 +39,117 @@ const LAST_RESORT_MODEL: Readonly<Record<ProviderId, string>> = {
 const ROTATE_MARKERS = ["failed", "error", "timeout", "timed out", "connection", "refused", "not found", "empty"];
 
 export const shouldRotate = (detail: string): boolean =>
-  looksLikeFailedModelOutput(detail) || ROTATE_MARKERS.some((marker) => detail.toLowerCase().includes(marker));
+  looksLikeFailedModelOutput(detail) || containsAny(detail, ROTATE_MARKERS);
 
-/**
- * Codex try order: the preferred model, the last model that worked, then the fallbacks. Models that
- * already failed for this account go last, so a ChatGPT-account rejection (~3 s) is not paid every time.
- */
+// Models that already failed for this account go last, so a ChatGPT-account rejection (~3 s) is not paid every time.
 export const codexModelCandidates = (request: {
   readonly preferred: string;
   readonly lastGood: string;
   readonly failed: ReadonlySet<string>;
 }): ReadonlyArray<string> => {
   const preferred = request.preferred.trim() || DEFAULT_REFINE_MODEL;
-  const lastGoodUsable = request.lastGood !== "" && !request.failed.has(request.lastGood);
-  const head =
-    request.failed.has(preferred) && lastGoodUsable ? [request.lastGood, preferred] : [preferred, request.lastGood];
-  const ordered = dedupe([...head, ...CODEX_MODEL_FALLBACKS]);
-  const deferred = ordered.filter((name) => request.failed.has(name) && (name !== preferred || lastGoodUsable));
-  return [...ordered.filter((name) => !deferred.includes(name)), ...deferred];
+  const isLastGoodUsable = request.lastGood !== "" && !request.failed.has(request.lastGood);
+  const ordered = dedupe([preferred, request.lastGood, ...CODEX_MODEL_FALLBACKS]);
+  // A failed preferred model still goes first when no last-good model can stand in for it.
+  const isDeferred = (model: string): boolean => request.failed.has(model) && (model !== preferred || isLastGoodUsable);
+  const usable = ordered.filter((model) => !isDeferred(model));
+  const deferred = ordered.filter(isDeferred);
+  return [...usable, ...deferred];
 };
 
 const savedModelFor = (saved: Option.Option<SavedChoice>, provider: ProviderId): string =>
-  Option.getOrElse(
-    Option.map(
-      Option.filter(saved, (choice) => choice.provider === provider),
-      (choice) => choice.model,
-    ),
-    () => "",
+  saved.pipe(
+    Option.filter((choice) => choice.provider === provider),
+    Option.map((choice) => choice.model),
+    Option.getOrElse(() => ""),
   );
 
-/** Model IDs for one provider: the preferred one, the saved pick, then the discovered list. */
+const discoveredModels = (provider: ProviderId, preferred: string): Effect.Effect<ReadonlyArray<string>> => {
+  if (provider !== "codex") {
+    return providerModels(provider);
+  }
+
+  const lastGood = codexLastGoodModel();
+  const failed = codexFailedModels();
+  const candidates = codexModelCandidates({ preferred, lastGood, failed });
+  return Effect.succeed(candidates);
+};
+
+// The preferred model, the saved pick, then the discovered list.
 const modelCandidates = (provider: ProviderId, preferred: string): Effect.Effect<ReadonlyArray<string>> =>
   Effect.gen(function* () {
-    const head = ["", "default", "auto"].includes(preferred.trim()) ? [] : [preferred.trim()];
-    const saved = savedModelFor(readSavedChoice(), provider);
-    const discovered =
-      provider === "codex"
-        ? codexModelCandidates({ preferred, lastGood: codexLastGoodModel(), failed: codexFailedModels() })
-        : yield* providerModels(provider);
-    const candidates = dedupe([...head, saved, ...discovered]).slice(0, MAX_MODELS_PER_PROVIDER);
-    return candidates.length > 0 ? candidates : [LAST_RESORT_MODEL[provider]];
+    const chosenModel = namedModel(preferred, ["default", "auto"]);
+    const saved = readSavedChoice();
+    const savedModel = savedModelFor(saved, provider);
+    const discovered = yield* discoveredModels(provider, preferred);
+    const candidates = dedupe([chosenModel, savedModel, ...discovered]).slice(0, MAX_MODELS_PER_PROVIDER);
+    if (candidates.length === 0) {
+      return [LAST_RESORT_MODEL[provider]];
+    }
+
+    return candidates;
   });
 
 type AttemptTarget = { readonly provider: ProviderId; readonly model: string };
 
-const autoAttempts = (preferredModel: string): Effect.Effect<ReadonlyArray<AttemptTarget>> =>
+const providerTargets = (provider: ProviderId, preferred: string): Effect.Effect<ReadonlyArray<AttemptTarget>> =>
+  modelCandidates(provider, preferred).pipe(Effect.map((models) => models.map((model) => ({ provider, model }))));
+
+const installedProviderTargets = (
+  provider: ProviderId,
+  preferred: string,
+): Effect.Effect<ReadonlyArray<AttemptTarget>> => {
+  if (!isProviderInstalled(provider)) {
+    return Effect.succeed([]);
+  }
+
+  return providerTargets(provider, preferred);
+};
+
+// A fallback provider gets one attempt: its first candidate model.
+const fallbackTarget = (provider: ProviderId, saved: Option.Option<SavedChoice>): Effect.Effect<AttemptTarget> => {
+  const savedModel = savedModelFor(saved, provider);
+  return modelCandidates(provider, savedModel).pipe(
+    Effect.map((models) => ({ provider, model: models[0] || LAST_RESORT_MODEL[provider] })),
+  );
+};
+
+// The requested model belongs to the saved provider; any other provider starts from its discovered list.
+const autoStartModel = (
+  provider: ProviderId,
+  request: { readonly savedProvider: string; readonly requestedModel: string },
+): string => {
+  if (provider !== request.savedProvider) {
+    return "";
+  }
+
+  return request.requestedModel;
+};
+
+const autoAttempts = (requestedModel: string): Effect.Effect<ReadonlyArray<AttemptTarget>> =>
   Effect.gen(function* () {
     const saved = readSavedChoice();
-    const savedProvider = Option.getOrElse(
-      Option.map(saved, (choice) => choice.provider),
-      () => "",
+    const savedProvider = saved.pipe(
+      Option.map((choice) => choice.provider),
+      Option.getOrElse(() => ""),
     );
-    const order = [
+    const savedFirst = [
       ...FALLBACK_ORDER.filter((provider) => provider === savedProvider),
       ...FALLBACK_ORDER.filter((provider) => provider !== savedProvider),
-    ].filter(isProviderInstalled);
-    // The first provider gets its model list; each fallback provider one model, as in the non-auto queue.
-    const attempts: Array<AttemptTarget> = [];
-    for (const [index, provider] of order.slice(0, 1 + MAX_CROSS_PROVIDER_ATTEMPTS).entries()) {
-      const preferred = provider === savedProvider ? preferredModel : savedModelFor(saved, provider);
-      const models = yield* modelCandidates(provider, preferred);
-      attempts.push(...(index === 0 ? models : models.slice(0, 1)).map((model) => ({ provider, model })));
+    ];
+    const installed = savedFirst.filter(isProviderInstalled).slice(0, 1 + MAX_CROSS_PROVIDER_ATTEMPTS);
+    const [leadProvider, ...fallbackProviders] = installed;
+    if (leadProvider === undefined) {
+      return [];
     }
-    return attempts;
+
+    const leadModel = autoStartModel(leadProvider, { savedProvider, requestedModel });
+    const leadTargets = yield* providerTargets(leadProvider, leadModel);
+    const fallbackTargets = yield* Effect.forEach(fallbackProviders, (provider) => fallbackTarget(provider, saved));
+    return [...leadTargets, ...fallbackTargets];
   });
 
-/** (provider, model) attempts: the preferred provider's models first, then the first model of other installed providers. */
+// The preferred provider's models first, then the first model of each other installed provider.
 export const attemptQueue = (request: {
   readonly provider: Config["refineProvider"];
   readonly model: string;
@@ -120,23 +160,13 @@ export const attemptQueue = (request: {
     }
 
     const preferredProvider = request.provider;
-    const own = isProviderInstalled(preferredProvider)
-      ? (yield* modelCandidates(preferredProvider, request.model)).map((model) => ({
-          provider: preferredProvider,
-          model,
-        }))
-      : [];
+    const ownTargets = yield* installedProviderTargets(preferredProvider, request.model);
     const saved = readSavedChoice();
-    const others = FALLBACK_ORDER.filter(
+    const otherProviders = FALLBACK_ORDER.filter(
       (provider) => provider !== preferredProvider && isProviderInstalled(provider),
     ).slice(0, MAX_CROSS_PROVIDER_ATTEMPTS);
-    const cross = yield* Effect.forEach(others, (provider) =>
-      Effect.map(modelCandidates(provider, savedModelFor(saved, provider)), (models) => ({
-        provider,
-        model: models[0] || LAST_RESORT_MODEL[provider],
-      })),
-    );
-    return [...own, ...cross].slice(0, MAX_TOTAL_ATTEMPTS);
+    const fallbackTargets = yield* Effect.forEach(otherProviders, (provider) => fallbackTarget(provider, saved));
+    return [...ownTargets, ...fallbackTargets].slice(0, MAX_TOTAL_ATTEMPTS);
   });
 
 export class RefineFailed extends Schema.TaggedError<RefineFailed>()("RefineFailed", {
@@ -157,35 +187,50 @@ type RefineRequest = {
 };
 
 const savedEffort = (): string =>
-  Option.getOrElse(
-    Option.map(readSavedChoice(), (choice) => choice.effort),
-    () => "",
+  readSavedChoice().pipe(
+    Option.map((choice) => choice.effort),
+    Option.getOrElse(() => ""),
   );
 
-/** The model to start with: the configured one, else the saved pick for this provider, else Codex's default. */
-const startingModel = (request: RefineRequest): string =>
-  request.model.trim() ||
-  (request.provider === "auto" ? "" : savedModelFor(readSavedChoice(), request.provider)) ||
-  (request.provider === "codex" ? DEFAULT_REFINE_MODEL : "");
+// The configured model, else the saved pick for this provider, else Codex's default.
+const startingModel = (request: RefineRequest): string => {
+  const configuredModel = request.model.trim();
+  if (configuredModel !== "" || request.provider === "auto") {
+    return configuredModel;
+  }
+
+  const saved = readSavedChoice();
+  const savedModel = savedModelFor(saved, request.provider);
+  if (savedModel !== "") {
+    return savedModel;
+  }
+
+  if (request.provider === "codex") {
+    return DEFAULT_REFINE_MODEL;
+  }
+
+  return "";
+};
 
 const tryAttempts = (
   request: RefineRequest & { readonly attempts: ReadonlyArray<AttemptTarget>; readonly effort: string },
 ) =>
   Effect.gen(function* () {
-    const errors: Array<string> = [];
+    const failures: Array<string> = [];
     for (const target of request.attempts) {
       request.log(`refine try ${target.provider}/${target.model}`);
-      const attempt = yield* Effect.either(
-        refineWithProvider({ ...target, effort: request.effort, draft: request.draft }),
+      const attempt = yield* refineWithProvider({ ...target, effort: request.effort, draft: request.draft }).pipe(
+        Effect.either,
       );
-      if (attempt._tag === "Right") {
+      if (Either.isRight(attempt)) {
         saveRefineChoice({ provider: target.provider, model: target.model, effort: request.effort });
-        return { refined: Option.some(attempt.right), errors };
+        return { refined: Option.some(attempt.right), failures };
       }
 
       const detail = attempt.left.detail;
-      errors.push(`${target.provider}/${target.model}: ${detail.slice(0, 400)}`);
-      if (target.provider === "codex" && isModelUnavailableError(detail)) {
+      failures.push(`${target.provider}/${target.model}: ${detail.slice(0, 400)}`);
+      const isUnavailableCodexModel = target.provider === "codex" && isModelUnavailableError(detail);
+      if (isUnavailableCodexModel) {
         markCodexModelFailed(target.model);
       }
 
@@ -193,10 +238,11 @@ const tryAttempts = (
         break;
       }
     }
-    return { refined: Option.none<string>(), errors };
+
+    return { refined: Option.none<string>(), failures };
   });
 
-/** Refine with rotation; when every attempt fails, the picker (if allowed) can choose a model or skip refine. */
+// Refine with rotation; when every attempt fails, the picker (if allowed) can choose a model or skip refine.
 export const refinePrompt = (request: RefineRequest): Effect.Effect<string, RefineFailed> =>
   Effect.gen(function* () {
     const draft = request.draft.trim();
@@ -205,7 +251,8 @@ export const refinePrompt = (request: RefineRequest): Effect.Effect<string, Refi
     }
 
     const effort = request.effort.trim().toLowerCase() || savedEffort() || DEFAULT_REFINE_EFFORT;
-    const attempts = yield* attemptQueue({ provider: request.provider, model: startingModel(request) });
+    const model = startingModel(request);
+    const attempts = yield* attemptQueue({ provider: request.provider, model });
     if (attempts.length === 0) {
       return yield* new RefineFailed({
         detail: "No refine provider found on PATH (install codex, claude, grok, ollama, …).",
@@ -217,8 +264,9 @@ export const refinePrompt = (request: RefineRequest): Effect.Effect<string, Refi
       return tried.refined.value;
     }
 
-    const joined = (tried.errors.join("; ") || "all refine attempts failed").slice(0, 2_000);
-    if (!(request.allowPicker && pickerEnabled())) {
+    const joined = (tried.failures.join("; ") || "all refine attempts failed").slice(0, 2_000);
+    const isPickerAllowed = request.allowPicker && pickerEnabled();
+    if (!isPickerAllowed) {
       return yield* new RefineFailed({ detail: `refine failed after fallbacks: ${joined}` });
     }
 

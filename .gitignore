@@ -4,9 +4,12 @@ node_modules/
 # build
 dist/
 
+# environment
+.env
+
 # testing
 coverage/
-.scratch/
+.test-home/
 
 # editor and OS
 .DS_Store

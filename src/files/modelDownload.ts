@@ -1,13 +1,6 @@
-/**
- * Download one model file over HTTPS to `<file>.partial`, then rename it into place. One download of a file runs at
- * a time across processes: a second caller waits on `<file>.lock`, then reuses the file the first one finished.
- */
-
 import { createWriteStream, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
-import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { ReadableStream } from "node:stream/web";
 
 import { Effect, Schema } from "effect";
 
@@ -30,11 +23,8 @@ type DownloadRequest = {
 
 const PROGRESS_STEP_BYTES = 20_000_000;
 
-/**
- * Counts the bytes on their way to the file and reports them every PROGRESS_STEP_BYTES and once at the end. A
- * callback that throws errors the stream, which fails the copy as a network error would, so the `.partial` file is
- * still removed.
- */
+// A callback that throws errors the stream, which fails the copy as a network error would, so the `.partial` file
+// is still removed.
 const progressCounter = (onProgress: (receivedBytes: number) => void): TransformStream<Uint8Array, Uint8Array> => {
   let received = 0;
   let reported = 0;
@@ -51,7 +41,6 @@ const progressCounter = (onProgress: (receivedBytes: number) => void): Transform
   });
 };
 
-/** Fetch into `<destination>.partial`, then rename it into place; a failed copy removes the `.partial` file. */
 const fetchIntoPlace = async (request: DownloadRequest & { readonly signal: AbortSignal }): Promise<void> => {
   const partial = `${request.destination}.partial`;
   const reply = await fetch(request.url, { signal: request.signal, redirect: "follow" });
@@ -60,11 +49,12 @@ const fetchIntoPlace = async (request: DownloadRequest & { readonly signal: Abor
   }
 
   try {
-    const counted = reply.body.pipeThrough(progressCounter(request.onProgress));
+    const counter = progressCounter(request.onProgress);
+    const counted = reply.body.pipeThrough(counter);
+    const file = createWriteStream(partial);
     // pipeline listens for errors on every stream before data flows, so a file that cannot be opened or written
-    // rejects here instead of raising an unhandled stream error. The web stream type from fetch and
-    // node:stream/web describe the same object (external type).
-    await pipeline(Readable.fromWeb(counted as ReadableStream<Uint8Array>), createWriteStream(partial));
+    // rejects here instead of raising an unhandled stream error.
+    await pipeline(counted, file);
   } catch (error) {
     rmSync(partial, { force: true });
     throw error;
@@ -72,34 +62,41 @@ const fetchIntoPlace = async (request: DownloadRequest & { readonly signal: Abor
   renameSync(partial, request.destination);
 };
 
-/** Which file is at the path now (device and inode), or "" when none is. */
+// Device and inode, so a file renamed into place by another process reads as a different file.
 const fileIdentity = (filePath: string): string => {
   const stats = statSync(filePath, { throwIfNoEntry: false });
-  return stats === undefined ? "" : `${String(stats.dev)}:${String(stats.ino)}`;
+  if (stats === undefined) {
+    return "";
+  }
+
+  return `${String(stats.dev)}:${String(stats.ino)}`;
 };
 
-/**
- * Download unless another process does: the `.partial` file is written by one lock holder at a time, a crashed
- * holder's lock ends with its process (and the next holder overwrites its `.partial`), and a caller that waited
- * reuses the file the holder renamed into place instead of downloading it again.
- */
-export const downloadFile = (request: DownloadRequest): Effect.Effect<void, ModelDownloadError> => {
-  const failed = (error: unknown) =>
-    new ModelDownloadError({ url: request.url, issue: error instanceof Error ? error.message : String(error) });
-  return Effect.scoped(
-    Effect.gen(function* () {
-      yield* Effect.try({
-        try: () => mkdirSync(path.dirname(request.destination), { recursive: true }),
-        catch: failed,
-      });
-      const before = yield* Effect.try({ try: () => fileIdentity(request.destination), catch: failed });
-      yield* Effect.mapError(waitForLock(`${request.destination}.lock`), failed);
-      const current = yield* Effect.try({ try: () => fileIdentity(request.destination), catch: failed });
-      if (current !== "" && current !== before) {
-        return;
-      }
+const issueOf = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
 
-      yield* Effect.tryPromise({ try: (signal) => fetchIntoPlace({ ...request, signal }), catch: failed });
-    }),
-  );
+  return String(error);
+};
+
+// One download of a file runs at a time across processes: a second caller waits on `<file>.lock`, then reuses the
+// file the first one renamed into place. A crashed holder's lock ends with its process, and the next holder
+// overwrites its `.partial` file.
+export const downloadFile = (request: DownloadRequest): Effect.Effect<void, ModelDownloadError> => {
+  const failed = (error: unknown) => new ModelDownloadError({ url: request.url, issue: issueOf(error) });
+  const folder = path.dirname(request.destination);
+  const lockPath = `${request.destination}.lock`;
+  return Effect.gen(function* () {
+    yield* Effect.try({ try: () => mkdirSync(folder, { recursive: true }), catch: failed });
+    const before = yield* Effect.try({ try: () => fileIdentity(request.destination), catch: failed });
+    yield* waitForLock(lockPath).pipe(Effect.mapError(failed));
+    const current = yield* Effect.try({ try: () => fileIdentity(request.destination), catch: failed });
+    const isFinishedByAnother = current !== "" && current !== before;
+    if (isFinishedByAnother) {
+      return;
+    }
+
+    yield* Effect.tryPromise({ try: (signal) => fetchIntoPlace({ ...request, signal }), catch: failed });
+  }).pipe(Effect.scoped);
 };
