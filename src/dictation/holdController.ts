@@ -1,16 +1,13 @@
-/**
- * Turns the 8 ms Shift samples into dictation: feed debounced edges and "another key" events to the pure
- * hold table, and carry out its actions on the clip buffer, the queue, the pill, and narration.
- */
+// Turns the 8 ms Shift samples into dictation: debounced edges and "another key" events go to the pure hold
+// table, and its actions run on the clip buffer, the queue, the pill, and speech.
 
-import { Duration, Effect } from "effect";
-
-import { readConfig, readConfigOrDefaults, saveConfig } from "../config/configFile.js";
-import { isNarrationSpeaking, queueReply } from "../narration/inbox.js";
+import { Effect } from "effect";
 import { refinePrompt } from "../refine/refineAttempts.js";
-import { appendDictationLog } from "../worker/workerLog.js";
-import { stopNarrationSpeech } from "../worker/workerProcesses.js";
-import type { StatusWriter } from "../worker/workerStatus.js";
+import { readConfig, readConfigOrDefaults, saveConfig } from "../settings/configFile.js";
+import { isSpeaking, queueReply } from "../speech/inbox.js";
+import { appendDictationLog } from "../workers/workerLog.js";
+import { stopSpeech } from "../workers/workerProcesses.js";
+import type { StatusWriter } from "../workers/workerStatus.js";
 import { readClipboard, writeClipboard } from "./caret.js";
 import type { DictationQueue } from "./dictationQueue.js";
 import {
@@ -28,23 +25,24 @@ import type { Keyboard } from "./keyboard.js";
 import type { LiveCaption } from "./livePreview.js";
 import type { ClipBuffer } from "./microphone.js";
 
-/** Stop speech in the narration worker; true when something was being spoken. */
-const stopNarration = (): boolean => {
-  const speaking = isNarrationSpeaking();
-  stopNarrationSpeech();
-  return speaking;
+const stopTappedSpeech = (status: StatusWriter) => {
+  const wasSpeaking = isSpeaking();
+  stopSpeech();
+  if (!wasSpeaking) {
+    return;
+  }
+
+  status.write("inactive", "Speech stopped");
 };
 
-/** Double-tap Shift in clipboard refine mode: refine the copied prompt, copy it back, and read it aloud. */
-const refineClipboard = (status: StatusWriter) =>
+const refineCopiedPrompt = (status: StatusWriter) =>
   Effect.gen(function* () {
     const config = yield* readConfigOrDefaults;
-    status.write(
-      "refining",
-      `Refining copied prompt (${config.refineProvider}/${config.refineModel || "default model"})…`,
-    );
+    const model = config.refineModel || "default model";
+    status.write("refining", `Refining copied prompt (${config.refineProvider}/${model})…`);
+    const draft = yield* readClipboard;
     const refined = yield* refinePrompt({
-      draft: yield* readClipboard,
+      draft,
       provider: config.refineProvider,
       model: config.refineModel || "",
       effort: config.refineEffort || "",
@@ -53,27 +51,43 @@ const refineClipboard = (status: StatusWriter) =>
     });
     yield* writeClipboard(refined);
     status.write("done", "Refined prompt copied — press ⌘V to paste");
-    if (config.narrationMode !== "off") {
-      queueReply({ markdown: refined, source: "refine", agentReplyId: "", origin: { kind: "terminal" } });
+    if (config.speechMode === "off") {
+      return;
     }
-  }).pipe(
-    Effect.catchAll((failure) => Effect.sync(() => status.write("done", `Refine failed: ${failure.message}`))),
-    Effect.zipRight(Effect.sleep("4 seconds")),
-    Effect.zipRight(Effect.sync(() => status.write("inactive", ""))),
-  );
 
-/** Double-tap Shift outside clipboard refine mode: flip `narration-muted` in config.json. */
-const toggleNarrationMute = (status: StatusWriter) =>
+    queueReply({ markdown: refined, source: "refine", agentReplyId: "", origin: { kind: "terminal" } });
+  }).pipe(Effect.catchAll((failure) => Effect.sync(() => status.write("done", `Refine failed: ${failure.message}`))));
+
+// The outcome stays on the pill for a few seconds.
+const refineClipboard = (status: StatusWriter) =>
+  Effect.gen(function* () {
+    yield* refineCopiedPrompt(status);
+    yield* Effect.sleep("4 seconds");
+    status.write("inactive", "");
+  });
+
+const toggleSpeechMute = (status: StatusWriter) =>
   Effect.gen(function* () {
     const config = yield* readConfig;
-    const muted = !config.narrationMuted;
-    yield* saveConfig({ ...config, narrationMuted: muted });
-    // A reply can be mid-claim, with no .speaking file yet, so the double tap did not count as stopping speech.
-    if (muted) {
-      stopNarrationSpeech();
+    const muted = !config.speechMuted;
+    yield* saveConfig({ ...config, speechMuted: muted });
+    if (!muted) {
+      status.write("inactive", "Speech unmuted");
+      return;
     }
-    status.write("inactive", muted ? "Narration muted (double-tap Shift to unmute)" : "Narration unmuted");
+
+    // A reply can be mid-claim, with no .speaking file yet, so the double tap did not count as stopping speech.
+    stopSpeech();
+    status.write("inactive", "Speech muted (double-tap Shift to unmute)");
   }).pipe(Effect.catchAll((failure) => Effect.sync(() => status.write("inactive", `Mute failed: ${failure.message}`))));
+
+const shiftSample = (keyboard: Keyboard): "down" | "up" => {
+  if (keyboard.shiftDown()) {
+    return "down";
+  }
+
+  return "up";
+};
 
 export const makeHoldController = (request: {
   readonly keyboard: Keyboard;
@@ -94,13 +108,15 @@ export const makeHoldController = (request: {
   const cancelClip = () => {
     clip.cancel();
     caption.clear();
-    if (announcedListening) {
-      status.write("inactive", "");
-      announcedListening = false;
+    if (!announcedListening) {
+      return;
     }
+
+    status.write("inactive", "");
+    announcedListening = false;
   };
 
-  /** Freeze the samples and enqueue them; the queue never blocks the next hold. */
+  // The queue never blocks the next hold.
   const endClip = (clipGeneration: number) =>
     Effect.suspend(() => {
       finishing = undefined;
@@ -115,46 +131,47 @@ export const makeHoldController = (request: {
       return queue.offer({ samples, fallbackCaption, generation: clipGeneration });
     });
 
-  /** Keep listening after release so the last word is not clipped, unless a newer hold already took over. */
+  // Keeps listening after release so the last word is not clipped, unless a newer hold already took over.
   const finishClip = (clipGeneration: number) =>
     Effect.gen(function* () {
       const config = yield* readConfigOrDefaults;
-      yield* Effect.sleep(Duration.millis(Math.round(config.dictationKeepListeningSeconds * 1_000)));
-      if (finishing === clipGeneration) {
-        yield* endClip(clipGeneration);
+      const keepListeningMs = Math.round(config.dictationKeepListeningSeconds * 1_000);
+      yield* Effect.sleep(keepListeningMs);
+      if (finishing !== clipGeneration) {
+        return;
       }
+
+      yield* endClip(clipGeneration);
     });
 
   const onTap = Effect.gen(function* () {
-    const now = Date.now();
-    const tap = classifyTap({ lastTapAt, now });
+    const tap = classifyTap({ lastTapAt, now: Date.now() });
     lastTapAt = tap.rememberedTapAt;
     if (!tap.double) {
-      if (stopNarration()) {
-        status.write("inactive", "Narration stopped");
-      }
+      stopTappedSpeech(status);
       return;
     }
 
     const config = yield* readConfigOrDefaults;
     const clipboardRefine = config.refineMode === "clipboard" || config.refineMode === "both";
-    switch (doubleTapAction({ narrationSpeaking: isNarrationSpeaking(), clipboardRefine })) {
-      case "stopNarration":
-        stopNarration();
-        status.write("inactive", "Narration stopped");
+    const action = doubleTapAction({ isSpeaking: isSpeaking(), clipboardRefine });
+    switch (action) {
+      case "stopSpeaking":
+        stopSpeech();
+        status.write("inactive", "Speech stopped");
         return;
       case "refineClipboard":
-        yield* Effect.forkDaemon(refineClipboard(status));
+        yield* refineClipboard(status).pipe(Effect.forkDaemon);
         return;
       case "toggleMute":
-        yield* toggleNarrationMute(status);
+        yield* toggleSpeechMute(status);
         return;
     }
   });
 
   const startListening = Effect.sync(() => {
-    if (isNarrationSpeaking()) {
-      stopNarration();
+    if (isSpeaking()) {
+      stopSpeech();
     }
     if (!clip.isRecording()) {
       clip.begin();
@@ -190,13 +207,13 @@ export const makeHoldController = (request: {
         return Effect.sync(cancelClip);
       case "tap":
         deadline = undefined;
-        return Effect.zipRight(Effect.sync(cancelClip), onTap);
+        return Effect.sync(cancelClip).pipe(Effect.zipRight(onTap));
       case "stop":
         announcedListening = false;
         finishing = generation;
         appendDictationLog(`hold stop gen=${String(generation)}`);
         status.write("finishing", "Decoding…");
-        return Effect.asVoid(Effect.fork(finishClip(generation)));
+        return finishClip(generation).pipe(Effect.fork, Effect.asVoid);
       case "none":
         return Effect.void;
     }
@@ -211,29 +228,38 @@ export const makeHoldController = (request: {
 
   // Shift plus another key is typing or a shortcut, never a hold.
   const sampleEvents = (): ReadonlyArray<HoldEvent> => {
-    const [next, events] = sampleShift(tracker, {
-      shift: keyboard.shiftDown() ? "down" : "up",
-      otherKeys: keyboard.otherKeysDown,
-    });
+    const shift = shiftSample(keyboard);
+    const [next, events] = sampleShift(tracker, { shift, otherKeys: keyboard.otherKeysDown });
     tracker = next;
     return events;
   };
 
-  const timerEvents = (): ReadonlyArray<HoldEvent> =>
-    deadline !== undefined && state === "waiting" && Date.now() >= deadline ? ["holdElapsed"] : [];
+  const timerEvents = (): ReadonlyArray<HoldEvent> => {
+    const isHoldElapsed = deadline !== undefined && state === "waiting" && Date.now() >= deadline;
+    if (!isHoldElapsed) {
+      return [];
+    }
+
+    return ["holdElapsed"];
+  };
 
   // Recording with no Shift hold and no release tail means a signal was lost: never leave the mic on.
   const safetyNet = Effect.sync(() => {
-    if (clip.isRecording() && finishing === undefined && (state === "idle" || state === "shortcut")) {
-      appendDictationLog("recording stopped: no Shift hold");
-      cancelClip();
+    const isHeld = state === "waiting" || state === "listening";
+    const isLost = clip.isRecording() && finishing === undefined && !isHeld;
+    if (!isLost) {
+      return;
     }
+
+    appendDictationLog("recording stopped: no Shift hold");
+    cancelClip();
   });
 
-  /** One 8 ms sample of the keyboard. */
-  const poll: Effect.Effect<void> = Effect.suspend(() =>
-    Effect.zipRight(Effect.forEach([...sampleEvents(), ...timerEvents()], apply, { discard: true }), safetyNet),
-  );
+  const poll: Effect.Effect<void> = Effect.gen(function* () {
+    const events = [...sampleEvents(), ...timerEvents()];
+    yield* Effect.forEach(events, apply, { discard: true });
+    yield* safetyNet;
+  });
 
   return { poll };
 };

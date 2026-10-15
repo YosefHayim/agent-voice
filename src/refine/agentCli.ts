@@ -1,5 +1,3 @@
-/** Finding and running agent CLIs (codex, claude, grok, …) with argument arrays and a hard timeout. */
-
 import { spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -7,7 +5,7 @@ import path from "node:path";
 
 import { Effect, Option, Schema } from "effect";
 
-export const cliRunSchema = Schema.Struct({
+const cliRunSchema = Schema.Struct({
   exitCode: Schema.Number,
   stdout: Schema.String,
   stderr: Schema.String,
@@ -40,11 +38,13 @@ const extraBinFolders = (): ReadonlyArray<string> => {
   ];
 };
 
-/** PATH for child processes: the inherited PATH followed by the usual user and Homebrew bin folders. */
-export const searchPath = (): string =>
-  [...new Set([...(process.env.PATH || "/usr/bin:/bin").split(":"), ...extraBinFolders()])]
-    .filter((folder) => folder !== "")
-    .join(":");
+const searchPath = (): string => {
+  const inheritedPath = process.env.PATH || "/usr/bin:/bin";
+  const inheritedFolders = inheritedPath.split(":");
+  const extraFolders = extraBinFolders();
+  const folders = new Set([...inheritedFolders, ...extraFolders]);
+  return [...folders].filter((folder) => folder !== "").join(":");
+};
 
 const isExecutableFile = (candidate: string): boolean => {
   try {
@@ -55,24 +55,30 @@ const isExecutableFile = (candidate: string): boolean => {
   }
 };
 
-export const findCli = (name: string): Option.Option<string> =>
-  Option.fromNullable(
-    searchPath()
-      .split(":")
-      .map((folder) => path.join(folder, name))
-      .find(isExecutableFile),
-  );
+export const findCli = (name: string): Option.Option<string> => {
+  const folders = searchPath().split(":");
+  const candidates = folders.map((folder) => path.join(folder, name));
+  const executable = candidates.find(isExecutableFile);
+  return Option.fromNullable(executable);
+};
 
-/** The first of `names` that is installed, e.g. `gemini` before `agy`. */
 export const findFirstCli = (
   names: ReadonlyArray<string>,
-): Option.Option<{ readonly name: string; readonly path: string }> =>
-  Option.firstSomeOf(names.map((name) => Option.map(findCli(name), (found) => ({ name, path: found }))));
+): Option.Option<{ readonly name: string; readonly path: string }> => {
+  const installed = names.map((name) => findCli(name).pipe(Option.map((cliPath) => ({ name, path: cliPath }))));
+  return Option.firstSomeOf(installed);
+};
 
-/**
- * Run a CLI with stdin closed (several agent CLIs block on "reading additional input from stdin"
- * when a pipe is inherited), from HOME, with colors off, killed after `timeoutMs`.
- */
+// A child killed by a signal closes without an exit code.
+const exitCodeOf = (code: number | null): number => {
+  if (code === null) {
+    return 1;
+  }
+
+  return code;
+};
+
+// stdin stays closed: several agent CLIs block on "reading additional input from stdin" when a pipe is inherited.
 export const runCli = (request: {
   readonly executable: string;
   readonly args: ReadonlyArray<string>;
@@ -85,27 +91,29 @@ export const runCli = (request: {
       env: { ...process.env, ...request.environment, NO_COLOR: "1", PATH: searchPath() },
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const stdout: Array<Buffer> = [];
-    const stderr: Array<Buffer> = [];
+    const stdoutChunks: Array<Buffer> = [];
+    const stderrChunks: Array<Buffer> = [];
+    const failRun = (issue: string): void => {
+      const failedRun = Effect.fail(new CliRunError({ executable: request.executable, issue }));
+      resume(failedRun);
+    };
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      resume(Effect.fail(new CliRunError({ executable: request.executable, issue: "timed out" })));
+      failRun("timed out");
     }, request.timeoutMs);
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
     child.on("error", (error) => {
       clearTimeout(timer);
-      resume(Effect.fail(new CliRunError({ executable: request.executable, issue: error.message })));
+      failRun(error.message);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      resume(
-        Effect.succeed({
-          exitCode: code === null ? 1 : code,
-          stdout: Buffer.concat(stdout).toString("utf8"),
-          stderr: Buffer.concat(stderr).toString("utf8"),
-        }),
-      );
+      const exitCode = exitCodeOf(code);
+      const stdout = Buffer.concat(stdoutChunks).toString("utf8");
+      const stderr = Buffer.concat(stderrChunks).toString("utf8");
+      const finishedRun = Effect.succeed({ exitCode, stdout, stderr });
+      resume(finishedRun);
     });
     return Effect.sync(() => {
       clearTimeout(timer);
@@ -113,29 +121,36 @@ export const runCli = (request: {
     });
   });
 
-/** Trimmed stdout, else trimmed stderr. */
 export const cliOutputText = (run: CliRun): string => run.stdout.trim() || run.stderr.trim();
 
-/** Both streams of a failed run, stderr first: partial stdout must never hide the error that explains the exit. */
+// stderr comes first: partial stdout must never hide the error that explains the exit.
 export const cliFailureText = (run: CliRun): string =>
   [run.stderr.trim(), run.stdout.trim()].filter((text) => text !== "").join("\n");
 
-/** Non-blank lines of stdout and stderr; a CLI that is missing, fails to start, or times out has none. */
+export const containsAny = (text: string, markers: ReadonlyArray<string>): boolean => {
+  const lowercase = text.toLowerCase();
+  return markers.some((marker) => lowercase.includes(marker));
+};
+
+export const nonBlankLines = (text: string): ReadonlyArray<string> =>
+  text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+
+// A CLI that is missing, fails to start, or times out has no lines.
 export const runCliLines = (request: {
   readonly executable: string;
   readonly args: ReadonlyArray<string>;
   readonly timeoutMs: number;
 }): Effect.Effect<ReadonlyArray<string>> =>
   runCli(request).pipe(
-    Effect.map((run) =>
-      `${run.stdout}\n${run.stderr}`
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line !== ""),
-    ),
+    Effect.map((run) => nonBlankLines(`${run.stdout}\n${run.stderr}`)),
     Effect.orElseSucceed(() => []),
   );
 
-/** Stripped, non-empty names in first-seen order. */
-export const dedupe = (names: ReadonlyArray<string>): ReadonlyArray<string> =>
-  [...new Set(names.map((name) => name.trim()))].filter((name) => name !== "");
+export const dedupe = (names: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const trimmedNames = names.map((name) => name.trim());
+  const uniqueNames = new Set(trimmedNames);
+  return [...uniqueNames].filter((name) => name !== "");
+};

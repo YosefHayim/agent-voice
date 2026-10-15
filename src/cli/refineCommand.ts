@@ -1,17 +1,12 @@
-/** `voxkey refine <prompt>`: refine one prompt with an agent CLI and print it (optionally read it or send it to cmux). */
-
 import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
-
-import { readConfig } from "../config/configFile.js";
-import { refineProviders } from "../config/configSchema.js";
-import { ensureSupertonicModels } from "../models/supertonicModels.js";
-import { makeSpeechPlayer, speakMarkdown } from "../narration/speechPlayer.js";
-import { loadSupertonic } from "../narration/supertonic.js";
 import { deliverToCmux } from "../refine/cmuxDelivery.js";
 import { discoverProviders, REASONING_EFFORTS } from "../refine/providerModels.js";
 import { refinePrompt } from "../refine/refineAttempts.js";
+import { readConfig } from "../settings/configFile.js";
+import { refineProviders } from "../settings/configSchema.js";
 import { CliUsageError } from "./cliUsageError.js";
+import { speakAloud } from "./speakCommand.js";
 import * as TerminalUI from "./TerminalUI.js";
 
 const refineOptions = {
@@ -46,11 +41,12 @@ const refineOptions = {
 export const refineCommand = Command.make("refine", refineOptions, (args) =>
   Effect.gen(function* () {
     if (args.listProviders) {
-      yield* TerminalUI.json({ providers: yield* discoverProviders({ refresh: true }) });
-      return;
+      const providers = yield* discoverProviders({ refresh: true });
+      return yield* TerminalUI.json({ providers });
     }
 
-    if (Option.isNone(args.prompt) || args.prompt.value.trim() === "") {
+    const draft = Option.getOrElse(args.prompt, () => "");
+    if (draft.trim() === "") {
       return yield* new CliUsageError({ issue: "Pass the prompt to refine, or --list-providers." });
     }
 
@@ -63,7 +59,7 @@ export const refineCommand = Command.make("refine", refineOptions, (args) =>
       refineCmuxPressEnter: args.pressEnter || saved.refineCmuxPressEnter,
     };
     const refined = yield* refinePrompt({
-      draft: args.prompt.value,
+      draft,
       provider: config.refineProvider,
       model: Option.getOrElse(args.model, () => config.refineModel || ""),
       effort: Option.getOrElse(args.effort, () => config.refineEffort || ""),
@@ -72,16 +68,14 @@ export const refineCommand = Command.make("refine", refineOptions, (args) =>
     });
     yield* TerminalUI.text(refined);
     if (args.speak) {
-      const engine = yield* loadSupertonic(yield* ensureSupertonicModels(() => undefined));
-      yield* speakMarkdown({
-        engine,
-        player: makeSpeechPlayer(),
-        markdown: refined,
-        voice: { voice: config.narrationVoice, wordsPerMinute: config.narrationWordsPerMinute },
-      });
+      yield* speakAloud(refined, config);
     }
-    if (config.refineSendTo !== "caret") {
-      yield* TerminalUI.detail(yield* deliverToCmux({ text: refined, config }));
+
+    if (config.refineSendTo === "caret") {
+      return;
     }
+
+    const delivery = yield* deliverToCmux({ text: refined, config });
+    yield* TerminalUI.detail(delivery);
   }),
 ).pipe(Command.withDescription("Refine one prompt with an agent CLI (codex, claude, grok, …) and print the result"));

@@ -1,100 +1,112 @@
-/** `voxkey config list | get | set | unset | pick-refine`: the settings in ~/.voxkey/config.json, applied at once. */
-
 import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
-
-import { readConfig, saveConfig } from "../config/configFile.js";
+import { selectWhisperModel } from "../dictation/whisperModels.js";
+import { type DiscoveredProvider, discoverProviders, REASONING_EFFORTS } from "../refine/providerModels.js";
+import { saveRefineChoice } from "../refine/refineChoices.js";
+import { pickerModels, pickRefineTargetWithDialogs, type RefinePick } from "../refine/refinePicker.js";
+import { readConfig, saveConfig } from "../settings/configFile.js";
 import {
   type Config,
   configSettings,
   defaultConfig,
   settingValueFromText,
   withSettingValue,
-} from "../config/configSchema.js";
-import { readEnvironment } from "../config/environmentVariables.js";
-import { selectWhisperModel } from "../models/whisperModels.js";
-import { discoverProviders, REASONING_EFFORTS } from "../refine/providerModels.js";
-import { saveRefineChoice } from "../refine/refineChoices.js";
-import { pickerModels, pickRefineTargetWithDialogs, type RefinePick } from "../refine/refinePicker.js";
-import { isWorkerRunning, startNarrationWorker, stopNarrationSpeech } from "../worker/workerProcesses.js";
+} from "../settings/configSchema.js";
+import { readEnvironment } from "../settings/environmentVariables.js";
+import { isWorkerRunning, startSpeechWorker, stopSpeech } from "../workers/workerProcesses.js";
 import { CliUsageError } from "./cliUsageError.js";
-import { describeNarration, prepareModels, restartWorkers } from "./onCommand.js";
+import { describeSpeech, prepareModels, restartWorkers } from "./onCommand.js";
 import * as TerminalUI from "./TerminalUI.js";
 
 type ConfigSetting = (typeof configSettings)[number];
 
-const findSetting = (name: string): Effect.Effect<ConfigSetting, CliUsageError> => {
-  const setting = configSettings.find((candidate) => candidate.name === name || candidate.key === name);
-  return setting === undefined
-    ? Effect.fail(new CliUsageError({ issue: `Unknown setting "${name}". See \`voxkey config list\`.` }))
-    : Effect.succeed(setting);
-};
+const findSetting = (name: string) =>
+  Effect.gen(function* () {
+    const setting = configSettings.find((candidate) => candidate.name === name || candidate.key === name);
+    if (setting === undefined) {
+      return yield* new CliUsageError({ issue: `Unknown setting "${name}". See \`voxkey config list\`.` });
+    }
+
+    return setting;
+  });
 
 const shownValue = (config: Config, setting: ConfigSetting): string => {
   const value: unknown = config[setting.key];
-  return value === undefined ? "(not set)" : JSON.stringify(value);
+  if (value === undefined) {
+    return "(not set)";
+  }
+
+  return JSON.stringify(value);
 };
 
-const nameArgument = Args.text({ name: "setting" }).pipe(Args.withDescription("Setting name, e.g. narration-mode"));
+const choicesNote = (setting: ConfigSetting): string => {
+  if (setting.choices.length === 0) {
+    return "";
+  }
 
-const listCommand = Command.make(
-  "list",
-  { json: Options.boolean("json").pipe(Options.withDescription("Print one JSON document")) },
-  (args) =>
-    Effect.gen(function* () {
-      const config = yield* readConfig;
-      if (args.json) {
-        yield* TerminalUI.json(config);
-        return;
-      }
+  return ` (${setting.choices.join(" | ")})`;
+};
 
-      yield* Effect.forEach(configSettings, (setting) => {
-        const choices = setting.choices.length === 0 ? "" : ` (${setting.choices.join(" | ")})`;
-        return TerminalUI.note(`${shownValue(config, setting)}${choices}\n${setting.description}`, setting.name);
-      });
-    }),
+const showSetting = (config: Config, setting: ConfigSetting) => {
+  const message = `${shownValue(config, setting)}${choicesNote(setting)}\n${setting.description}`;
+  return TerminalUI.note(setting.name, message);
+};
+
+const nameArgument = Args.text({ name: "setting" }).pipe(Args.withDescription("Setting name, e.g. speech-mode"));
+
+const jsonOption = Options.boolean("json").pipe(Options.withDescription("Print one JSON document"));
+
+const listCommand = Command.make("list", { json: jsonOption }, (args) =>
+  Effect.gen(function* () {
+    const config = yield* readConfig;
+    if (args.json) {
+      return yield* TerminalUI.json(config);
+    }
+
+    yield* Effect.forEach(configSettings, (setting) => showSetting(config, setting));
+  }),
 ).pipe(Command.withDescription("Show every setting with its value and meaning"));
 
 const getCommand = Command.make("get", { name: nameArgument }, (args) =>
   Effect.gen(function* () {
     const setting = yield* findSetting(args.name);
-    yield* TerminalUI.text(shownValue(yield* readConfig, setting));
+    const config = yield* readConfig;
+    const value = shownValue(config, setting);
+    yield* TerminalUI.text(value);
   }),
 ).pipe(Command.withDescription("Print one setting's value"));
 
-/** Apply a saved change at once: a new language reloads Whisper, and narration starts or stops. */
 const applyChange = (previous: Config, next: Config) =>
   Effect.gen(function* () {
     const environment = readEnvironment();
-    const modelChanged =
-      selectWhisperModel({ environment, config: previous }).key !==
-      selectWhisperModel({ environment, config: next }).key;
-    const dictationRunning = isWorkerRunning("dictation");
-    if (modelChanged && dictationRunning) {
+    const previousModel = selectWhisperModel({ environment, config: previous });
+    const nextModel = selectWhisperModel({ environment, config: next });
+    const isDictationRunning = isWorkerRunning("dictation");
+    const isModelChanged = previousModel.key !== nextModel.key;
+    const isSpeechTurnedOn = previous.speechMode === "off" && next.speechMode !== "off";
+    const isSpeechTurnedOff = previous.speechMode !== "off" && next.speechMode === "off";
+    const isNewlyMuted = !previous.speechMuted && next.speechMuted;
+    if (isModelChanged && isDictationRunning) {
       yield* prepareModels(next);
       yield* restartWorkers;
-      yield* TerminalUI.detail(`Dictation restarted with ${selectWhisperModel({ environment, config: next }).label}.`);
-      return;
+      return yield* TerminalUI.detail(`Dictation restarted with ${nextModel.label}.`);
     }
 
-    if (previous.narrationMode === "off" && next.narrationMode !== "off" && dictationRunning) {
+    if (isSpeechTurnedOn && isDictationRunning) {
       yield* prepareModels(next);
-      startNarrationWorker();
-      yield* TerminalUI.detail(`Narration started. ${describeNarration(next)}`);
-      return;
+      startSpeechWorker();
+      return yield* TerminalUI.detail(`Speech started. ${describeSpeech(next)}`);
     }
 
-    if (previous.narrationMode !== "off" && next.narrationMode === "off") {
-      // The worker reads the mode only between replies, so a reply being read is stopped now.
-      stopNarrationSpeech();
-      yield* TerminalUI.detail("Narration stops within a second; dictation keeps running.");
-      return;
+    // The worker reads the mode only between replies, so a reply being read is stopped now.
+    if (isSpeechTurnedOff) {
+      stopSpeech();
+      return yield* TerminalUI.detail("Speech stops within a second; dictation keeps running.");
     }
 
-    if (!previous.narrationMuted && next.narrationMuted) {
-      stopNarrationSpeech();
-      yield* TerminalUI.detail("Narration muted; the reply being read stops now.");
-      return;
+    if (isNewlyMuted) {
+      stopSpeech();
+      return yield* TerminalUI.detail("Speech muted; the reply being read stops now.");
     }
 
     yield* TerminalUI.detail("Applies from the next dictation or reply.");
@@ -109,25 +121,35 @@ const saveSetting = (request: { readonly setting: ConfigSetting; readonly value:
     yield* applyChange(previous, next);
   });
 
-const setCommand = Command.make(
-  "set",
-  { name: nameArgument, value: Args.text({ name: "value" }).pipe(Args.withDescription("The new value")) },
-  (args) =>
-    Effect.gen(function* () {
-      const setting = yield* findSetting(args.name);
-      yield* saveSetting({ setting, value: yield* settingValueFromText({ setting, text: args.value }) });
-    }),
+const valueArgument = Args.text({ name: "value" }).pipe(Args.withDescription("The new value"));
+
+const setCommand = Command.make("set", { name: nameArgument, value: valueArgument }, (args) =>
+  Effect.gen(function* () {
+    const setting = yield* findSetting(args.name);
+    const value = yield* settingValueFromText({ setting, text: args.value });
+    yield* saveSetting({ setting, value });
+  }),
 ).pipe(Command.withDescription("Change one setting, e.g. `voxkey config set dictation-language he`"));
 
 const unsetCommand = Command.make("unset", { name: nameArgument }, (args) =>
   Effect.gen(function* () {
     const setting = yield* findSetting(args.name);
     const fallback: unknown = defaultConfig[setting.key];
-    yield* saveSetting({ setting, value: fallback === undefined ? Option.none() : Option.some(fallback) });
+    const value = Option.fromNullable(fallback);
+    yield* saveSetting({ setting, value });
   }),
 ).pipe(Command.withDescription("Put one setting back to its default"));
 
-/** Provider, model, and effort from a terminal menu of the agent CLIs found on this Mac. */
+const pickEffort = (provider: DiscoveredProvider, config: Config) =>
+  Effect.gen(function* () {
+    if (!provider.effort) {
+      return "";
+    }
+
+    const choices = REASONING_EFFORTS.map((name) => ({ title: name, value: name }));
+    return yield* TerminalUI.selectOne({ message: "Reasoning effort", choices, initial: config.refineEffort || "low" });
+  });
+
 const pickInTerminal = (config: Config) =>
   Effect.gen(function* () {
     const providers = yield* discoverProviders({ refresh: true });
@@ -144,59 +166,66 @@ const pickInTerminal = (config: Config) =>
       })),
       initial: providers.find((found) => found.id === config.refineProvider),
     });
+    const models = pickerModels({
+      provider: provider.id,
+      providers,
+      preferred: { provider: config.refineProvider, model: config.refineModel || "" },
+    });
     const model = yield* TerminalUI.selectOne({
       message: `Model for ${provider.id}`,
-      choices: pickerModels({
-        provider: provider.id,
-        providers,
-        preferred: { provider: config.refineProvider, model: config.refineModel || "" },
-      }).map((name) => ({
-        title: name,
-        value: name,
-      })),
+      choices: models.map((name) => ({ title: name, value: name })),
     });
-    const effort = provider.effort
-      ? yield* TerminalUI.selectOne({
-          message: "Reasoning effort",
-          choices: REASONING_EFFORTS.map((name) => ({ title: name, value: name })),
-          initial: config.refineEffort || "low",
-        })
-      : "";
+    const effort = yield* pickEffort(provider, config);
     return Option.some({ provider: provider.id, model, effort });
   });
 
-const pickRefineCommand = Command.make(
-  "pick-refine",
-  { gui: Options.boolean("gui").pipe(Options.withDescription("Use macOS dialogs instead of the terminal menu")) },
-  (args) =>
-    Effect.gen(function* () {
-      const config = yield* readConfig;
-      const useDialogs = args.gui || !(yield* TerminalUI.isInteractiveTerminal);
-      const picked = useDialogs
-        ? yield* pickRefineTargetWithDialogs({
-            reason: "",
-            preferredProvider: config.refineProvider,
-            preferredModel: config.refineModel || "",
-            preferredEffort: config.refineEffort || "",
-            offerSkip: false,
-          })
-        : yield* pickInTerminal(config);
-      if (Option.isNone(picked)) {
-        return yield* new CliUsageError({ issue: "No refine provider picked (none found, or cancelled)." });
-      }
+const pickRefineTarget = (request: { readonly config: Config; readonly gui: boolean }) =>
+  Effect.gen(function* () {
+    const isInteractive = yield* TerminalUI.isInteractiveTerminal;
+    const useDialogs = request.gui || !isInteractive;
+    if (!useDialogs) {
+      return yield* pickInTerminal(request.config);
+    }
 
-      const effort = REASONING_EFFORTS.find((name) => name === picked.value.effort);
-      const next = yield* withSettingValue({
-        config: { ...config, refineProvider: picked.value.provider, refineModel: picked.value.model },
-        key: "refineEffort",
-        value: Option.fromNullable(effort),
-      });
-      yield* saveConfig(next);
-      saveRefineChoice(picked.value);
-      yield* TerminalUI.success(
-        `refine → ${picked.value.provider}/${picked.value.model}${effort === undefined ? "" : ` effort ${effort}`}`,
-      );
-    }),
+    return yield* pickRefineTargetWithDialogs({
+      reason: "",
+      preferredProvider: request.config.refineProvider,
+      preferredModel: request.config.refineModel || "",
+      preferredEffort: request.config.refineEffort || "",
+      offerSkip: false,
+    });
+  });
+
+const pickSummary = (pick: RefinePick, effort: string | undefined): string => {
+  const target = `refine → ${pick.provider}/${pick.model}`;
+  if (effort === undefined) {
+    return target;
+  }
+
+  return `${target} effort ${effort}`;
+};
+
+const guiOption = Options.boolean("gui").pipe(
+  Options.withDescription("Use macOS dialogs instead of the terminal menu"),
+);
+
+const pickRefineCommand = Command.make("pick-refine", { gui: guiOption }, (args) =>
+  Effect.gen(function* () {
+    const config = yield* readConfig;
+    const picked = yield* pickRefineTarget({ config, gui: args.gui });
+    if (Option.isNone(picked)) {
+      return yield* new CliUsageError({ issue: "No refine provider picked (none found, or cancelled)." });
+    }
+
+    const effort = REASONING_EFFORTS.find((name) => name === picked.value.effort);
+    const pickedConfig = { ...config, refineProvider: picked.value.provider, refineModel: picked.value.model };
+    const effortValue = Option.fromNullable(effort);
+    const next = yield* withSettingValue({ config: pickedConfig, key: "refineEffort", value: effortValue });
+    yield* saveConfig(next);
+    saveRefineChoice(picked.value);
+    const summary = pickSummary(picked.value, effort);
+    yield* TerminalUI.success(summary);
+  }),
 ).pipe(Command.withDescription("Pick the refine provider, model, and effort from the agent CLIs on this Mac"));
 
 export const configCommand = Command.make("config").pipe(

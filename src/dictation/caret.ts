@@ -1,13 +1,12 @@
-/**
- * Put text at the caret: key events for dictation-length text (a failed ⌘V would type a bare "v"), the
- * clipboard and ⌘V for long refined prompts, restoring the previous clipboard right after.
- */
+// Dictation-length text goes in as key events, because a failed Command-V would type a bare "v".
+// A long refined prompt goes through the clipboard, and the previous clipboard comes back right after.
 
 import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
 
-import { Effect, Schema } from "effect";
+import { Effect, Either, Schema } from "effect";
 
-import { appendDictationLog } from "../worker/workerLog.js";
+import { appendDictationLog } from "../workers/workerLog.js";
 import type { Keyboard } from "./keyboard.js";
 
 export class CaretError extends Schema.TaggedError<CaretError>()("CaretError", {
@@ -18,28 +17,40 @@ export class CaretError extends Schema.TaggedError<CaretError>()("CaretError", {
   }
 }
 
-/** Above this length the clipboard is faster than key events. */
+// Above this length the clipboard is faster than key events.
 const CLIPBOARD_CHARACTERS = 800;
 
-export const readClipboard: Effect.Effect<string, CaretError> = Effect.async((resume) => {
-  execFile("pbpaste", { encoding: "utf8" }, (error, stdout) =>
-    resume(
-      error === null ? Effect.succeed(stdout) : Effect.fail(new CaretError({ issue: `pbpaste: ${error.message}` })),
-    ),
-  );
+const runFile = promisify(execFile);
+
+export const readClipboard: Effect.Effect<string, CaretError> = Effect.tryPromise({
+  try: async () => {
+    const output = await runFile("pbpaste", { encoding: "utf8" });
+    return output.stdout;
+  },
+  catch: (error) => new CaretError({ issue: `pbpaste: ${String(error)}` }),
 });
 
 export const writeClipboard = (text: string): Effect.Effect<void, CaretError> =>
   Effect.async((resume) => {
     const child = spawn("pbcopy", [], { stdio: ["pipe", "ignore", "ignore"] });
-    child.on("error", (error) => resume(Effect.fail(new CaretError({ issue: `pbcopy: ${error.message}` }))));
-    child.on("exit", (code) =>
-      resume(code === 0 ? Effect.void : Effect.fail(new CaretError({ issue: `pbcopy exited ${String(code)}` }))),
-    );
+    child.on("error", (error) => resume(new CaretError({ issue: `pbcopy: ${error.message}` })));
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resume(Effect.void);
+        return;
+      }
+
+      resume(new CaretError({ issue: `pbcopy exited ${String(code)}` }));
+    });
     child.stdin.end(text);
   });
 
-/** Wait (up to `maxMs`) for the dictation Shift to be up, releasing it once, so it cannot corrupt typed text. */
+const commandVWithSystemEvents: Effect.Effect<void, CaretError> = Effect.tryPromise({
+  try: () => runFile("osascript", ["-e", 'tell application "System Events" to keystroke "v" using command down']),
+  catch: (error) => new CaretError({ issue: String(error) }),
+}).pipe(Effect.asVoid);
+
+// Releases the dictation Shift once and waits for it to read up, so it cannot capitalize the typed text.
 const waitForShiftUp = (keyboard: Keyboard, maxMs: number) =>
   Effect.gen(function* () {
     const deadline = Date.now() + maxMs;
@@ -51,35 +62,51 @@ const waitForShiftUp = (keyboard: Keyboard, maxMs: number) =>
     yield* Effect.sleep("25 millis");
   });
 
-const commandVWithSystemEvents: Effect.Effect<void, CaretError> = Effect.async((resume) => {
-  execFile("osascript", ["-e", 'tell application "System Events" to keystroke "v" using command down'], (error) =>
-    resume(error === null ? Effect.void : Effect.fail(new CaretError({ issue: error.message }))),
-  );
-});
+// Restores only while the clipboard still holds the pasted text, so anything copied meanwhile stays.
+const restoreClipboard = (request: { readonly pasted: string; readonly previous: string }) =>
+  Effect.gen(function* () {
+    yield* Effect.sleep("400 millis");
+    const current = yield* readClipboard;
+    if (current !== request.pasted) {
+      return;
+    }
 
-// Confirm the pasteboard holds the text before ⌘V: a raced pbcopy would otherwise paste something else.
+    yield* writeClipboard(request.previous);
+  }).pipe(Effect.ignore);
+
+// The pasteboard is read back before Command-V, because a raced pbcopy would paste something else.
 const pasteText = (keyboard: Keyboard, text: string) =>
   Effect.gen(function* () {
     const previous = yield* Effect.either(readClipboard);
     yield* writeClipboard(text);
-    if ((yield* readClipboard) !== text) {
+    const copied = yield* readClipboard;
+    if (copied !== text) {
       return yield* new CaretError({ issue: "the clipboard did not take the text" });
     }
 
     yield* commandVWithSystemEvents.pipe(Effect.orElse(() => Effect.sync(() => keyboard.pressCommandV())));
-    if (previous._tag === "Right") {
-      // Restore only while the clipboard still holds the pasted text: anything copied meanwhile stays.
-      yield* Effect.forkDaemon(
-        Effect.sleep("400 millis").pipe(
-          Effect.zipRight(readClipboard),
-          Effect.flatMap((current) => (current === text ? writeClipboard(previous.right) : Effect.void)),
-          Effect.ignore,
-        ),
-      );
+    if (Either.isLeft(previous)) {
+      return;
     }
+
+    yield* restoreClipboard({ pasted: text, previous: previous.right }).pipe(Effect.forkDaemon);
   });
 
-/** Type `text` into the focused field, then press Enter when asked. */
+const putText = (keyboard: Keyboard, text: string) =>
+  Effect.gen(function* () {
+    const length = [...text].length;
+    if (length <= CLIPBOARD_CHARACTERS) {
+      keyboard.typeUnicode(text);
+      appendDictationLog(`type_path chars=${String(length)} keys`);
+      return;
+    }
+
+    yield* pasteText(keyboard, text).pipe(
+      Effect.tap(() => Effect.sync(() => appendDictationLog(`type_path chars=${String(length)} clipboard`))),
+      Effect.orElse(() => Effect.sync(() => keyboard.typeUnicode(text))),
+    );
+  });
+
 export const typeAtCaret = (request: {
   readonly keyboard: Keyboard;
   readonly text: string;
@@ -91,18 +118,11 @@ export const typeAtCaret = (request: {
     }
 
     yield* waitForShiftUp(request.keyboard, 900);
-    const length = [...request.text].length;
-    if (length <= CLIPBOARD_CHARACTERS) {
-      request.keyboard.typeUnicode(request.text);
-      appendDictationLog(`type_path chars=${String(length)} keys`);
-    } else {
-      yield* pasteText(request.keyboard, request.text).pipe(
-        Effect.tap(() => Effect.sync(() => appendDictationLog(`type_path chars=${String(length)} clipboard`))),
-        Effect.orElse(() => Effect.sync(() => request.keyboard.typeUnicode(request.text))),
-      );
+    yield* putText(request.keyboard, request.text);
+    if (!request.pressEnter) {
+      return;
     }
-    if (request.pressEnter) {
-      yield* waitForShiftUp(request.keyboard, 400);
-      request.keyboard.pressReturn();
-    }
+
+    yield* waitForShiftUp(request.keyboard, 400);
+    request.keyboard.pressReturn();
   });

@@ -1,10 +1,10 @@
-import { chmodSync, mkdirSync, mkdtempSync, type PathLike, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, type PathLike, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { Effect, Exit } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { makeTestFolder } from "../scripts/testFolder.js";
 import { type DiscoveredProvider, discoverProviders } from "./providerModels.js";
 import { attemptQueue, codexModelCandidates, refinePrompt, shouldRotate } from "./refineAttempts.js";
 import { codexFailedModels } from "./refineChoices.js";
@@ -28,8 +28,6 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-const scratchRoot = fileURLToPath(new URL("../../.scratch/", import.meta.url));
-
 const PROVIDER_BINARIES = ["codex", "claude", "gemini", "agy", "grok", "agent", "ollama", "opencode", "pi", "pie"];
 
 let home = "";
@@ -43,15 +41,15 @@ const writeFakeCli = (name: string, script: string) => {
 };
 
 beforeEach(() => {
-  mkdirSync(scratchRoot, { recursive: true });
-  home = mkdtempSync(path.join(scratchRoot, "refine-"));
+  home = makeTestFolder("refine");
   bin = path.join(home, "bin");
   mkdirSync(bin);
   for (const name of PROVIDER_BINARIES) {
     writeFakeCli(name, "exit 0");
   }
+  const voxkeyHome = path.join(home, ".voxkey");
   vi.stubEnv("HOME", home);
-  vi.stubEnv("VOXKEY_HOME", path.join(home, ".voxkey"));
+  vi.stubEnv("VOXKEY_HOME", voxkeyHome);
   vi.stubEnv("PATH", `${bin}:/usr/bin:/bin`);
 });
 
@@ -61,25 +59,31 @@ afterEach(() => {
 });
 
 // A fake codex that writes its reply to the `-o` file, or fails for the models listed in BAD_MODELS.
-const fakeCodex = (request: { readonly reply: string; readonly badModels: ReadonlyArray<string> }) =>
-  writeFakeCli(
-    "codex",
-    [
-      'out=""; model=""; prev=""',
-      'for arg in "$@"; do',
-      '  if [ "$prev" = "-o" ]; then out="$arg"; fi',
-      '  if [ "$prev" = "-m" ]; then model="$arg"; fi',
-      '  prev="$arg"',
-      "done",
-      `case " ${request.badModels.join(" ")} " in *" $model "*) echo "ERROR: The '$model' model is not supported when using Codex with a ChatGPT account."; exit 1;; esac`,
-      `printf '%s' '${request.reply}' > "$out"`,
-    ].join("\n"),
-  );
+const fakeCodex = (request: { readonly reply: string; readonly badModels: ReadonlyArray<string> }) => {
+  const script = [
+    'out=""; model=""; prev=""',
+    'for arg in "$@"; do',
+    '  if [ "$prev" = "-o" ]; then out="$arg"; fi',
+    '  if [ "$prev" = "-m" ]; then model="$arg"; fi',
+    '  prev="$arg"',
+    "done",
+    `case " ${request.badModels.join(" ")} " in *" $model "*) echo "ERROR: The '$model' model is not supported when using Codex with a ChatGPT account."; exit 1;; esac`,
+    `printf '%s' '${request.reply}' > "$out"`,
+  ].join("\n");
+  writeFakeCli("codex", script);
+};
 
-const refine = (draft: string) =>
-  Effect.runPromiseExit(
-    refinePrompt({ draft, provider: "codex", model: "", effort: "", allowPicker: false, log: () => undefined }),
-  );
+const refine = (draft: string) => {
+  const refining = refinePrompt({
+    draft,
+    provider: "codex",
+    model: "",
+    effort: "",
+    allowPicker: false,
+    log: () => undefined,
+  });
+  return Effect.runPromiseExit(refining);
+};
 
 describe("codexModelCandidates", () => {
   it("tries the preferred model first, then the last good one, then the fallbacks", () => {
@@ -108,7 +112,8 @@ describe("refine rotation", () => {
   it("puts the preferred provider's models first, then one model from each other installed provider", async () => {
     writeFakeCli("pi", 'echo "openai-codex  gpt-5.4-mini  272K"; echo "openrouter  slow  128K"');
     writeFakeCli("opencode", 'echo "opencode/big-pickle"');
-    const queue = await Effect.runPromise(attemptQueue({ provider: "pi", model: "default" }));
+    const queuing = attemptQueue({ provider: "pi", model: "default" });
+    const queue = await Effect.runPromise(queuing);
 
     expect(queue[0]).toEqual({ provider: "pi", model: "openai-codex/gpt-5.4-mini" });
     expect(queue.map((attempt) => attempt.provider)).toEqual(
@@ -119,7 +124,8 @@ describe("refine rotation", () => {
 
   it("auto tries the first provider's models, then one model from each of four fallback providers", async () => {
     writeFakeCli("opencode", 'printf "a/one\\na/two\\na/three\\na/four\\n"');
-    const queue = await Effect.runPromise(attemptQueue({ provider: "auto", model: "" }));
+    const queuing = attemptQueue({ provider: "auto", model: "" });
+    const queue = await Effect.runPromise(queuing);
     const providers = queue.map((attempt) => attempt.provider);
 
     expect(providers.filter((provider) => provider === "codex")).toHaveLength(6);
@@ -129,7 +135,8 @@ describe("refine rotation", () => {
   it("rejects a CLI that exits non-zero instead of typing its error text", async () => {
     writeFakeCli("grok", 'echo "network unreachable, try again later" >&2; exit 1');
     const attempt = { provider: "grok" as const, model: "", effort: "", draft: "make a branch for the login fix" };
-    const exit = await Effect.runPromiseExit(refineWithProvider(attempt));
+    const refining = refineWithProvider(attempt);
+    const exit = await Effect.runPromiseExit(refining);
 
     expect(Exit.isFailure(exit)).toBe(true);
   });
@@ -137,7 +144,8 @@ describe("refine rotation", () => {
   it("keeps a failed CLI's stderr in the failure even when it printed to stdout, so the error still rotates", async () => {
     writeFakeCli("grok", 'echo "Here is a cleaner prompt:"; echo "connection refused by the model host" >&2; exit 1');
     const attempt = { provider: "grok" as const, model: "", effort: "", draft: "make a branch for the login fix" };
-    const failure = await Effect.runPromise(Effect.flip(refineWithProvider(attempt)));
+    const failing = refineWithProvider(attempt).pipe(Effect.flip);
+    const failure = await Effect.runPromise(failing);
 
     expect(failure.detail).toBe("connection refused by the model host\nHere is a cleaner prompt:");
     expect(shouldRotate(failure.detail)).toBe(true);
@@ -148,7 +156,9 @@ describe("refine rotation", () => {
     const refined = await refine("uh run `pnpm verify` and like open a pr dont merge");
 
     expect(refined).toEqual(Exit.succeed("finish-and-push: run `pnpm verify` then open a PR"));
-    const choice = JSON.parse(readFileSync(path.join(home, ".voxkey", "refine-choice.json"), "utf8"));
+    const choiceFile = path.join(home, ".voxkey", "refine-choice.json");
+    const choiceText = readFileSync(choiceFile, "utf8");
+    const choice = JSON.parse(choiceText);
     expect(choice).toMatchObject({ provider: "codex", model: "gpt-5.3-codex-spark", effort: "low" });
   });
 
@@ -164,7 +174,8 @@ describe("refine rotation", () => {
     for (const name of PROVIDER_BINARIES) {
       writeFakeCli(name, 'echo \'{"error":{"code":402,"message":"requires more credits"}}\'');
     }
-    expect(Exit.isFailure(await refine("make a branch and open a pull request"))).toBe(true);
+    const refined = await refine("make a branch and open a pull request");
+    expect(Exit.isFailure(refined)).toBe(true);
   });
 });
 
@@ -172,9 +183,11 @@ describe("discoverProviders", () => {
   it("lists models from the same CLI refine runs: gemini before agy, and pie when pi is missing", async () => {
     writeFakeCli("gemini", 'echo "  -m, --model   e.g. gemini-2.5-pro"');
     writeFakeCli("agy", 'echo "claude-sonnet-4-5Claude Sonnet 4.5"');
-    rmSync(path.join(bin, "pi"));
+    const fakePi = path.join(bin, "pi");
+    rmSync(fakePi);
     writeFakeCli("pie", 'echo "openai-codex  gpt-5.4-mini  272K"');
-    const providers = await Effect.runPromise(discoverProviders({ refresh: true }));
+    const discovering = discoverProviders({ refresh: true });
+    const providers = await Effect.runPromise(discovering);
 
     expect(providers.find((provider) => provider.id === "gemini")?.models).toEqual(["gemini-2.5-pro"]);
     expect(providers.find((provider) => provider.id === "pi")).toMatchObject({
@@ -185,7 +198,8 @@ describe("discoverProviders", () => {
 
   it("lists installed providers with their models", async () => {
     writeFakeCli("ollama", 'echo "NAME ID SIZE"; echo "llama3.2:latest abc 2.0 GB"');
-    const providers = await Effect.runPromise(discoverProviders({ refresh: true }));
+    const discovering = discoverProviders({ refresh: true });
+    const providers = await Effect.runPromise(discovering);
     const ollama = providers.find((provider) => provider.id === "ollama");
 
     expect(ollama).toEqual({
@@ -223,11 +237,11 @@ describe("pickerModels", () => {
   });
 
   it("never offers a model saved for another provider as a Codex model", () => {
-    mkdirSync(path.join(home, ".voxkey"), { recursive: true });
-    writeFileSync(
-      path.join(home, ".voxkey", "refine-choice.json"),
-      JSON.stringify({ provider: "claude", model: "opus", effort: "", updatedAt: 1 }),
-    );
+    const voxkeyHome = path.join(home, ".voxkey");
+    const choiceFile = path.join(voxkeyHome, "refine-choice.json");
+    const savedChoice = JSON.stringify({ provider: "claude", model: "opus", effort: "", updatedAt: 1 });
+    mkdirSync(voxkeyHome, { recursive: true });
+    writeFileSync(choiceFile, savedChoice);
 
     expect(
       pickerModels({ provider: "codex", providers, preferred: { provider: "claude", model: "opus" } }),

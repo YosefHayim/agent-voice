@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkCodeStyle } from "./checkCodeStyle.js";
+import { makeTestFolder } from "./testFolder.js";
 
 const repositories: Array<string> = [];
 
@@ -35,20 +35,24 @@ const guideWith = (ruleIds: ReadonlyArray<string>): string =>
     .concat("\n");
 
 const repositoryWith = (files: Readonly<Record<string, string>>): string => {
-  const scratchRoot = fileURLToPath(new URL("../../.scratch/", import.meta.url));
-  mkdirSync(scratchRoot, { recursive: true });
-  const repositoryRoot = mkdtempSync(join(scratchRoot, "style-"));
+  const repositoryRoot = makeTestFolder("style");
   repositories.push(repositoryRoot);
-  Object.entries({ "CODE-STYLE.md": guideWith(["function.arrow-only"]), ...files }).forEach(([path, source]) => {
-    mkdirSync(dirname(join(repositoryRoot, path)), { recursive: true });
-    writeFileSync(join(repositoryRoot, path), source);
+  const guide = guideWith(["function.arrow-only"]);
+  Object.entries({ "CODE-STYLE.md": guide, ...files }).forEach(([path, source]) => {
+    const filePath = join(repositoryRoot, path);
+    const folder = dirname(filePath);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(filePath, source);
   });
   return repositoryRoot;
 };
 
 // "file:line ruleId" keeps each expectation on one line.
-const findings = (files: Readonly<Record<string, string>>): ReadonlyArray<string> =>
-  checkCodeStyle(repositoryWith(files)).map((violation) => `${violation.file}:${violation.line} ${violation.ruleId}`);
+const findings = (files: Readonly<Record<string, string>>): ReadonlyArray<string> => {
+  const repositoryRoot = repositoryWith(files);
+  const violations = checkCodeStyle(repositoryRoot);
+  return violations.map((violation) => `${violation.file}:${violation.line} ${violation.ruleId}`);
+};
 
 afterEach(() => {
   repositories.splice(0).forEach((repositoryRoot) => {
@@ -125,12 +129,12 @@ const REJECTED: ReadonlyArray<SingleFileCase & { ruleId: string; line?: number }
   },
   {
     name: "a positional boolean",
-    source: 'export const render = (value: string, enabled: boolean) => (enabled ? value : "");\n',
+    source: "export const render = (value: string, enabled: boolean) => [value, enabled];\n",
     ruleId: "function.input-shape",
   },
   {
     name: "a positional boolean default",
-    source: 'export const render = (value: string, enabled = false) => (enabled ? value : "");\n',
+    source: "export const render = (value: string, enabled = false) => [value, enabled];\n",
     ruleId: "function.input-shape",
   },
   { name: "an interface", source: "export interface Config { debug: boolean }\n", ruleId: "type.no-interface" },
@@ -228,7 +232,7 @@ const REJECTED: ReadonlyArray<SingleFileCase & { ruleId: string; line?: number }
   ].map((source) => ({ name: `input mutation in ${source.trim()}`, source, ruleId: "mutation.no-input" })),
   {
     name: "a hand-rolled typeof reader",
-    source: 'export const text = (value: unknown) => (typeof value === "string" ? value : "");\n',
+    source: 'export const isText = (value: unknown) => typeof value === "string";\n',
     ruleId: "type.decode-once",
   },
   { name: "Promise.all", source: "export const apply = () => Promise.all(tasks);\n", ruleId: "effect.no-promise-all" },
@@ -250,6 +254,44 @@ const REJECTED: ReadonlyArray<SingleFileCase & { ruleId: string; line?: number }
     path: "vitest.config.ts",
     source: "export const timeout = override ?? 30_000;\n",
     ruleId: "syntax.no-nullish",
+  },
+  { name: "a ternary", source: 'export const marker = muted ? "muted" : "speaking";\n', ruleId: "control.no-ternary" },
+  {
+    name: "a ternary in tooling",
+    path: "src/scripts/example.ts",
+    source: "export const exitCode = failed ? 1 : 0;\n",
+    ruleId: "control.no-ternary",
+  },
+  {
+    name: "a doc comment",
+    source: "/** Loads the catalog. */\nexport const load = () => [];\n",
+    ruleId: "comment.no-doc-block",
+  },
+  {
+    name: "a call passed to a call",
+    source: "export const reply = speak(read(file));\n",
+    ruleId: "syntax.no-nested-call",
+  },
+  {
+    name: "an awaited call passed to a call",
+    source: "export const reply = async () => speak(await read(file));\n",
+    ruleId: "syntax.no-nested-call",
+  },
+  {
+    name: "a spread call passed to a call",
+    source: "export const words = collect(...read(file));\n",
+    ruleId: "syntax.no-nested-call",
+  },
+  {
+    name: "a call passed to a constructor",
+    source: 'export const words = new Set(text.split(" "));\n',
+    ruleId: "syntax.no-nested-call",
+  },
+  {
+    name: "a nested call inside an assertion",
+    path: "src/install/example.test.ts",
+    source: "expect(speak(read(file))).toBe(true);\n",
+    ruleId: "syntax.no-nested-call",
   },
 ];
 
@@ -347,6 +389,25 @@ const ACCEPTED: ReadonlyArray<SingleFileCase> = [
     source: 'console.log("checking");\nexport const executions = Promise.all(tasks);\nEffect.runPromise(program);\n',
   },
   { name: "a string that contains ??", source: 'export const unknownTty = "??";\n' },
+  {
+    name: "a line comment",
+    source: "// Kept before playback, so a restart never replays it.\nexport const load = () => [];\n",
+  },
+  { name: "a string that contains a doc-comment marker", source: 'export const marker = "/** not a comment */";\n' },
+  {
+    name: "calls inside an assertion and its matcher",
+    path: "src/install/example.test.ts",
+    source: "expect(read(file)).toEqual(Option.some(1));\n",
+  },
+  {
+    name: "Effect steps inside pipe",
+    source: "export const program = load.pipe(Effect.map(render), Effect.catchAll(recover));\n",
+  },
+  {
+    name: "a Schema built from Schemas",
+    source:
+      "export const decode = Schema.decodeUnknownOption(Schema.parseJson(Schema.Array(Schema.String.annotations({}))));\n",
+  },
 ];
 
 describe("checkCodeStyle", () => {

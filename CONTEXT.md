@@ -7,12 +7,12 @@ How voxkey runs on a Mac. Words are defined in `LANGUAGE.md`.
 | Process | Started by | Lives | Does |
 | --- | --- | --- | --- |
 | `voxkey <command>` | the user | one command | everything in `src/cli/` |
-| dictation worker (`voxkey worker dictation`) | `voxkey on`, or `voxkey reply` after a reboot | until `voxkey off` / `reset` | loads Whisper, opens the mic, polls Shift every 8 ms, runs the queue, starts the pill and the narration worker |
-| narration worker (`voxkey worker narration`) | the dictation worker, `voxkey reply`, or `config set narration-mode` | until narration is off or `voxkey off` | inbox → Supertonic → `afplay` |
+| dictation worker (`voxkey worker dictation`) | `voxkey on`, or `voxkey reply` after a reboot | until `voxkey off` / `reset` | loads Whisper, opens the mic, polls Shift every 8 ms, runs the queue, starts the pill and the speech worker |
+| speech worker (`voxkey worker speech`) | the dictation worker, `voxkey reply`, or `config set speech-mode` | until speech is off or `voxkey off` | inbox → Supertonic → `afplay` |
 | pill (`osascript -l JavaScript`) | the dictation worker | until that worker exits | shows `status.json` at the bottom of the screen |
 | `voxkey reply` | an agent's Stop hook | one turn | queues the reply, wakes the workers, prints nothing, exits 0 |
 
-Workers are spawned detached in their own process groups and log to `~/.voxkey/*-worker.log`. A worker holds its kind's lock (`*.lock`, an exclusive lock the kernel takes in `open` and drops when the worker exits, even by SIGKILL, so exactly one starter wins and no stale lock is ever taken over; plus `*.pid`); a pid file counts, and its pid is signalled, only while `ps` shows that pid running the worker's (or the pill's) command line. `voxkey off` removes the agent hooks first, then writes `stop`, sends SIGTERM to each worker group a pid file names, and SIGKILLs any of them still alive after 4 s and the pill. Then, with no SIGTERM first, it SIGKILLs every other voxkey worker or pill that `ps` shows by command line (a stray no pid file names). A tap or a new hold sends SIGUSR2 to the narration worker to stop speech at once.
+Workers are spawned detached in their own process groups and log to `~/.voxkey/*-worker.log`. A worker holds its kind's lock (`*.lock`, an exclusive lock the kernel takes in `open` and drops when the worker exits, even by SIGKILL, so exactly one starter wins and no stale lock is ever taken over; plus `*.pid`); a pid file counts, and its pid is signalled, only while `ps` shows that pid running the worker's (or the pill's) command line. `voxkey off` removes the agent hooks first, then writes `stop`, sends SIGTERM to each worker group a pid file names, and SIGKILLs any of them still alive after 4 s and the pill. Then, with no SIGTERM first, it SIGKILLs every other voxkey worker or pill that `ps` shows by command line (a stray no pid file names). A tap or a new hold sends SIGUSR2 to the speech worker to stop speech at once.
 
 ## Files
 
@@ -28,4 +28,4 @@ macOS grants these to the app that runs voxkey (usually the terminal):
 
 ## Network
 
-Only model downloads (Hugging Face) and whatever the chosen refine CLI does. Dictation and narration never leave the Mac.
+Only model downloads (Hugging Face) and whatever the chosen refine CLI does. Dictation and speech never leave the Mac.

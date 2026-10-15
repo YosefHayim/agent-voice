@@ -69,7 +69,11 @@ const rulesSectionRange = (request: { lines: ReadonlyArray<string>; fenced: Read
     (text, index) => index > start && text.startsWith("## ") && !request.fenced.has(index),
   );
 
-  return { start, end: nextSection < 0 ? request.lines.length : nextSection };
+  if (nextSection < 0) {
+    return { start, end: request.lines.length };
+  }
+
+  return { start, end: nextSection };
 };
 
 const ruleCardRanges = (request: {
@@ -182,19 +186,29 @@ const validateCard = (request: ValidateCardRequest): ReadonlyArray<RuleCardViola
   return violations;
 };
 
+const cardRuleId = (request: { lines: ReadonlyArray<string>; card: CardRange }): ReadonlyArray<string> => {
+  const metadataIndex = firstContentIndex({ lines: request.lines, from: request.card.start + 1, to: request.card.end });
+  const metadataLine = request.lines[metadataIndex] || "";
+  const ruleId = METADATA_PATTERN.exec(metadataLine)?.[1];
+  if (ruleId === undefined) {
+    return [];
+  }
+
+  return [ruleId];
+};
+
 const cardRuleIds = (request: { lines: ReadonlyArray<string>; cards: ReadonlyArray<CardRange> }) =>
-  request.cards
-    .map((card) =>
-      METADATA_PATTERN.exec(
-        request.lines[firstContentIndex({ lines: request.lines, from: card.start + 1, to: card.end })] || "",
-      ),
-    )
-    .flatMap((match) => (match?.[1] === undefined ? [] : [match[1]]));
+  request.cards.flatMap((card) => cardRuleId({ lines: request.lines, card }));
 
 // The rules section is found by its exact heading (see rulesSectionRange); the others may carry a qualifier, as in
 // "Golden path — adding a feature". A "## Rules — …" heading would otherwise pass here while every card went unchecked.
-const hasSection = (headings: ReadonlyArray<SectionHeading>, section: string): boolean =>
-  headings.some((heading) => (section === "Rules" ? heading.title === section : heading.title.startsWith(section)));
+const hasSection = (headings: ReadonlyArray<SectionHeading>, section: string): boolean => {
+  if (section === "Rules") {
+    return headings.some((heading) => heading.title === section);
+  }
+
+  return headings.some((heading) => heading.title.startsWith(section));
+};
 
 const missingSectionViolations = (headings: ReadonlyArray<SectionHeading>): ReadonlyArray<RuleCardViolation> =>
   REQUIRED_SECTIONS.filter((section) => !hasSection(headings, section)).map((section) => ({
@@ -242,7 +256,9 @@ export const checkRuleCards = (request: CheckRuleCardsRequest): ReadonlyArray<Ru
   const cards = ruleCardRanges({ lines, fenced, section });
   const cardViolations = cards.flatMap((card) => validateCard({ lines, card }));
 
-  return [...sectionProblems, ...cardViolations, ...duplicateCardViolations(cardRuleIds({ lines, cards }))].sort(
+  const ruleIds = cardRuleIds({ lines, cards });
+  const duplicateViolations = duplicateCardViolations(ruleIds);
+  return [...sectionProblems, ...cardViolations, ...duplicateViolations].sort(
     (left, right) => left.line - right.line || left.ruleId.localeCompare(right.ruleId),
   );
 };

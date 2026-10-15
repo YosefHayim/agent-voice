@@ -9,7 +9,7 @@
     "enabled": true,
     "rules": {
       "preset": "recommended",
-      "style": { "noNonNullAssertion": "off", "noNestedTernary": "error" },
+      "style": { "noNonNullAssertion": "off" },
       "suspicious": { "noFocusedTests": "error" }
     }
   }

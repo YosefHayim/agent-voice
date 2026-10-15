@@ -1,18 +1,15 @@
-import { mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
+import { readFileSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { makeTestFolder } from "../scripts/testFolder.js";
 import { codexFailedModels, markCodexModelFailed, saveRefineChoice } from "./refineChoices.js";
-
-const scratchRoot = fileURLToPath(new URL("../../.scratch/", import.meta.url));
 
 let home = "";
 
 beforeEach(() => {
-  mkdirSync(scratchRoot, { recursive: true });
-  home = mkdtempSync(path.join(scratchRoot, "choices-"));
+  home = makeTestFolder("choices");
   vi.stubEnv("VOXKEY_HOME", home);
 });
 
@@ -26,7 +23,8 @@ describe("Codex failed models", () => {
     markCodexModelFailed("gpt-5.3-codex-spark");
     markCodexModelFailed("o4-mini");
     markCodexModelFailed("gpt-5.3-codex-spark");
-    expect(readFileSync(path.join(home, "refine-codex-failed.txt"), "utf8")).toBe("gpt-5.3-codex-spark\no4-mini\n");
+    const failedList = path.join(home, "refine-codex-failed.txt");
+    expect(readFileSync(failedList, "utf8")).toBe("gpt-5.3-codex-spark\no4-mini\n");
 
     saveRefineChoice({ provider: "codex", model: "o4-mini", effort: "low" });
     expect([...codexFailedModels()]).toEqual(["gpt-5.3-codex-spark"]);

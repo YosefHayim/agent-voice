@@ -1,11 +1,8 @@
-/**
- * Judging an agent CLI's refine reply: it is rejected when it is empty, a CLI help dump, an auth or
- * quota error, an error envelope, or when it dropped a protected literal (code, path, URL, quoted text).
- */
-
 import { Either, Option, Schema } from "effect";
 
-export const REFINE_INSTRUCTIONS = `You refine messy freeform or spoken drafts into a single paste-ready prompt for a coding agent.
+import { containsAny, nonBlankLines } from "./agentCli.js";
+
+const REFINE_INSTRUCTIONS = `You refine messy freeform or spoken drafts into a single paste-ready prompt for a coding agent.
 
 Rules:
 1. Preserve exact intent, facts, constraints, code, commands, paths, URLs, quoted literals, and acceptance criteria.
@@ -85,54 +82,42 @@ const QUOTA_OR_LIMIT_MARKERS = [
   "insufficient credits",
 ];
 
-const containsAny = (text: string, markers: ReadonlyArray<string>): boolean => {
-  const lower = text.toLowerCase();
-  return markers.some((marker) => lower.includes(marker));
-};
+const PAYMENT_ERROR_MARKERS = ['"code":402', '"code": 402', "invalid_request_error"];
 
-/** A CLI `--help` dump (e.g. OpenCode's yargs help printed with exit 0), not a refined prompt. */
+const HELP_ANCHORS = ["positionals:", "options:", "show help", "[boolean]"];
+
+// A CLI --help dump (say, OpenCode's yargs help printed with exit 0), not a refined prompt.
 export const looksLikeCliHelp = (text: string): boolean => {
-  const blob = text.trim().toLowerCase();
-  if (blob === "") {
-    return false;
-  }
-
-  const helpAnchors = ["positionals:", "options:", "show help", "[boolean]"].filter((anchor) => blob.includes(anchor));
-  return (
-    helpAnchors.length >= 3 ||
-    (blob.includes("run opencode with a message") && blob.includes("positionals:")) ||
-    blob.startsWith("opencode run [message") ||
-    blob.includes("opencode run [message..]")
-  );
+  const lowercase = text.trim().toLowerCase();
+  const helpAnchors = HELP_ANCHORS.filter((anchor) => lowercase.includes(anchor));
+  const isOpencodeHelp =
+    (lowercase.includes("run opencode with a message") && lowercase.includes("positionals:")) ||
+    lowercase.startsWith("opencode run [message") ||
+    lowercase.includes("opencode run [message..]");
+  return helpAnchors.length >= 3 || isOpencodeHelp;
 };
 
-export const looksLikeAuthFailure = (text: string): boolean => containsAny(text.trim(), AUTH_OR_CONFIG_MARKERS);
+export const looksLikeAuthFailure = (text: string): boolean => containsAny(text, AUTH_OR_CONFIG_MARKERS);
 
 export const isModelUnavailableError = (message: string): boolean => containsAny(message, MODEL_UNAVAILABLE_MARKERS);
 
 export const isQuotaOrLimitError = (message: string): boolean => containsAny(message, QUOTA_OR_LIMIT_MARKERS);
 
-/**
- * True when CLI output is an error envelope rather than a prompt. Several agents (pi, OpenRouter
- * wrappers) print 402 or JSON errors with exit code 0, and those must never be typed at the caret.
- */
+// Several agents (pi, OpenRouter wrappers) print 402 or JSON errors with exit code 0; those must never reach the caret.
 export const looksLikeFailedModelOutput = (text: string): boolean => {
-  const blob = text.trim();
-  const lower = blob.toLowerCase();
-  return (
-    blob === "" ||
-    looksLikeCliHelp(blob) ||
-    looksLikeAuthFailure(blob) ||
-    isQuotaOrLimitError(blob) ||
-    isModelUnavailableError(blob) ||
-    lower.startsWith("402") ||
-    lower.includes('"code":402') ||
-    lower.includes('"code": 402') ||
-    lower.includes("invalid_request_error") ||
-    (blob.startsWith("{") &&
-      (lower.includes('"error"') ||
-        (lower.includes('"code"') && (lower.includes("message") || lower.includes("credits")))))
-  );
+  const trimmed = text.trim();
+  const lowercase = trimmed.toLowerCase();
+  const isKnownFailure =
+    trimmed === "" ||
+    looksLikeCliHelp(trimmed) ||
+    looksLikeAuthFailure(trimmed) ||
+    isQuotaOrLimitError(trimmed) ||
+    isModelUnavailableError(trimmed);
+  const isPaymentError = lowercase.startsWith("402") || containsAny(lowercase, PAYMENT_ERROR_MARKERS);
+  const hasErrorFields =
+    lowercase.includes('"error"') || (lowercase.includes('"code"') && containsAny(lowercase, ["message", "credits"]));
+  const isJsonError = trimmed.startsWith("{") && hasErrorFields;
+  return isKnownFailure || isPaymentError || isJsonError;
 };
 
 const NOT_WORD_CHARACTER_BEFORE = "(?<![\\p{L}\\p{N}_])";
@@ -146,25 +131,31 @@ const LITERAL_PATTERNS = [
   new RegExp(`${NOT_WORD_CHARACTER_BEFORE}(?:'[^'\\n]+'|"[^"\\n]+")`, "gu"),
 ];
 
-/**
- * Code, URLs, paths, and quoted text in the draft, each counted once, in pattern order. Of two overlapping matches
- * the longer one wins (earlier patterns on a tie), so a quote that contains a URL or a path is protected whole.
- */
+type LiteralMatch = { readonly start: number; readonly end: number; readonly literal: string };
+
+const literalMatches = (text: string, pattern: RegExp): ReadonlyArray<LiteralMatch> =>
+  [...text.matchAll(pattern)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+    literal: match[0],
+  }));
+
+const lengthOf = (match: LiteralMatch): number => match.end - match.start;
+
+const overlaps = (left: LiteralMatch, right: LiteralMatch): boolean => left.start < right.end && right.start < left.end;
+
+// Of two overlapping matches the longer one wins (earlier patterns on a tie), so a quote that holds a URL stays whole.
 export const promptLiterals = (text: string): ReadonlyArray<string> => {
-  const candidates = LITERAL_PATTERNS.flatMap((pattern) =>
-    [...text.matchAll(pattern)].map((match) => ({
-      start: match.index,
-      end: match.index + match[0].length,
-      literal: match[0],
-    })),
-  );
-  const longestFirst = [...candidates].sort((left, right) => right.end - right.start - (left.end - left.start));
-  const kept: Array<(typeof candidates)[number]> = [];
+  const candidates = LITERAL_PATTERNS.flatMap((pattern) => literalMatches(text, pattern));
+  const longestFirst = [...candidates].sort((left, right) => lengthOf(right) - lengthOf(left));
+  const kept: Array<LiteralMatch> = [];
   for (const candidate of longestFirst) {
-    if (!kept.some((taken) => candidate.start < taken.end && taken.start < candidate.end)) {
+    const isOverlapping = kept.some((taken) => overlaps(candidate, taken));
+    if (!isOverlapping) {
       kept.push(candidate);
     }
   }
+
   return candidates.filter((candidate) => kept.includes(candidate)).map((candidate) => candidate.literal);
 };
 
@@ -183,115 +174,161 @@ export class RefineReplyRejected extends Schema.TaggedError<RefineReplyRejected>
 
 const withoutWholeReplyFence = (text: string): string => {
   const lines = text.split("\n");
-  return text.startsWith("```") && text.endsWith("```") && lines.length >= 2
-    ? lines.slice(1, -1).join("\n").trim()
-    : text;
+  const isFenced = text.startsWith("```") && text.endsWith("```") && lines.length >= 2;
+  if (!isFenced) {
+    return text;
+  }
+
+  return lines.slice(1, -1).join("\n").trim();
 };
 
-/** The refined prompt with a whole-reply code fence removed, or why it cannot replace the draft. */
 export const checkRefinedPrompt = (request: {
   readonly draft: string;
   readonly refined: string;
 }): Either.Either<string, RefineReplyRejected> => {
-  const clean = withoutWholeReplyFence(request.refined.trim());
-  if (clean === "") {
+  const trimmed = request.refined.trim();
+  const refinedPrompt = withoutWholeReplyFence(trimmed);
+  if (refinedPrompt === "") {
     return Either.left(new RefineReplyRejected({ reason: "empty" }));
   }
 
-  if (looksLikeCliHelp(clean)) {
+  if (looksLikeCliHelp(refinedPrompt)) {
     return Either.left(new RefineReplyRejected({ reason: "cliHelp" }));
   }
 
-  const dropped = promptLiterals(request.draft).find((literal) => !clean.includes(literal));
-  return dropped === undefined
-    ? Either.right(clean)
-    : Either.left(new RefineReplyRejected({ reason: "droppedLiteral", literal: dropped }));
+  const literals = promptLiterals(request.draft);
+  const dropped = literals.find((literal) => !refinedPrompt.includes(literal));
+  if (dropped !== undefined) {
+    return Either.left(new RefineReplyRejected({ reason: "droppedLiteral", literal: dropped }));
+  }
+
+  return Either.right(refinedPrompt);
 };
 
-const recordOf = Schema.decodeUnknownOption(Schema.Record({ key: Schema.String, value: Schema.Unknown }));
+type JsonObject = Readonly<Record<string, unknown>>;
+
+const decodeJson = Schema.decodeUnknownOption(Schema.parseJson());
+const decodeObject = Schema.decodeUnknownOption(Schema.Record({ key: Schema.String, value: Schema.Unknown }));
+const decodeString = Schema.decodeUnknownOption(Schema.String);
+const decodeArray = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown));
+const decodeTextBlock = Schema.decodeUnknownOption(Schema.Struct({ text: Schema.String }));
+
+const DOCUMENT_TEXT_KEYS = ["result", "text", "content", "message", "output", "response"];
+const EVENT_TEXT_KEYS = ["result", "text", "content", "message", "output"];
 
 const textOf = (value: unknown): Option.Option<string> =>
-  Option.filter(
-    Option.map(Schema.decodeUnknownOption(Schema.String)(value), (text) => text.trim()),
-    (text) => text !== "",
+  decodeString(value).pipe(
+    Option.map((text) => text.trim()),
+    Option.filter((text) => text !== ""),
   );
 
-const textBlocks = (value: unknown): ReadonlyArray<string> =>
-  Option.match(Schema.decodeUnknownOption(Schema.Array(Schema.Unknown))(value), {
-    onNone: () => [],
-    onSome: (blocks) =>
-      blocks.flatMap((block) =>
-        Option.toArray(Schema.decodeUnknownOption(Schema.Struct({ text: Schema.String }))(block)).map(
-          (decoded) => decoded.text,
-        ),
-      ),
-  });
+const stringOf = (value: unknown): string => decodeString(value).pipe(Option.getOrElse(() => ""));
 
-const joinedBlocks = (value: unknown): Option.Option<string> => textOf(textBlocks(value).join("\n"));
+const blockText = (block: unknown): ReadonlyArray<string> =>
+  decodeTextBlock(block).pipe(
+    Option.map((decoded) => decoded.text),
+    Option.toArray,
+  );
 
-/** Text of an OpenCode-style `{type, part: {type, text}}` event. */
-const partText = (event: Readonly<Record<string, unknown>>): Option.Option<string> =>
-  Option.flatMap(recordOf(event.part), (part) => {
-    const partType = Option.getOrElse(Schema.decodeUnknownOption(Schema.String)(part.type), () => "");
-    const eventType = Option.getOrElse(Schema.decodeUnknownOption(Schema.String)(event.type), () => "");
-    return partType !== "" && partType !== "text" && eventType !== "text" ? Option.none() : textOf(part.text);
-  });
+const joinedBlocks = (value: unknown): Option.Option<string> => {
+  const blocks = decodeArray(value).pipe(Option.getOrElse(() => []));
+  const joined = blocks.flatMap(blockText).join("\n");
+  return textOf(joined);
+};
+
+// OpenCode streams {type, part: {type, text}} events; only text parts hold the reply.
+const isTextPart = (event: JsonObject, part: JsonObject): boolean => {
+  const partType = stringOf(part.type);
+  const eventType = stringOf(event.type);
+  return partType === "" || partType === "text" || eventType === "text";
+};
+
+const partText = (event: JsonObject): Option.Option<string> =>
+  decodeObject(event.part).pipe(
+    Option.filter((part) => isTextPart(event, part)),
+    Option.flatMap((part) => textOf(part.text)),
+  );
 
 const nestedText = (value: unknown): Option.Option<string> =>
-  Option.flatMap(recordOf(value), (nested) => Option.orElse(textOf(nested.text), () => textOf(nested.content)));
-
-/** The text of one whole JSON reply, or none so the JSONL scan runs. */
-const documentText = (document: Readonly<Record<string, unknown>>): Option.Option<string> => {
-  for (const key of ["result", "text", "content", "message", "output", "response"]) {
-    const found = Option.orElse(textOf(document[key]), () => nestedText(document[key]));
-    if (Option.isSome(found)) {
-      return found;
-    }
-  }
-
-  return Option.orElse(partText(document), () => joinedBlocks(document.content));
-};
-
-const eventText = (event: Readonly<Record<string, unknown>>): Option.Option<string> => {
-  const direct = ["result", "text", "content", "message", "output"].flatMap((key) =>
-    Option.toArray(textOf(event[key])),
+  decodeObject(value).pipe(
+    Option.flatMap((nested) => textOf(nested.text).pipe(Option.orElse(() => textOf(nested.content)))),
   );
-  const message = recordOf(event.message);
-  const messageText = Option.flatMap(message, (decoded) =>
-    Option.orElse(textOf(decoded.content), () => joinedBlocks(decoded.content)),
-  );
-  return Option.orElse(
-    Option.orElse(messageText, () => partText(event)),
-    () => Option.fromNullable(direct.at(-1)),
+
+const fieldText = (document: JsonObject, key: string): Option.Option<string> =>
+  textOf(document[key]).pipe(Option.orElse(() => nestedText(document[key])));
+
+const documentText = (document: JsonObject): Option.Option<string> => {
+  const keyTexts = DOCUMENT_TEXT_KEYS.map((key) => fieldText(document, key));
+  return Option.firstSomeOf(keyTexts).pipe(
+    Option.orElse(() => partText(document)),
+    Option.orElse(() => joinedBlocks(document.content)),
   );
 };
 
-const parseJsonOption = Schema.decodeUnknownOption(Schema.parseJson());
-
-/** Best-effort final text from an agent's JSON or JSONL output. */
-export const replyTextFromJson = (output: string): string => {
-  const blob = output.trim();
-  const whole = parseJsonOption(blob);
-  const wholeText = Option.orElse(Option.flatMap(whole, textOf), () =>
-    Option.flatMap(Option.flatMap(whole, recordOf), documentText),
+const messageText = (event: JsonObject): Option.Option<string> =>
+  decodeObject(event.message).pipe(
+    Option.flatMap((message) => textOf(message.content).pipe(Option.orElse(() => joinedBlocks(message.content)))),
   );
-  if (blob === "" || Option.isSome(wholeText)) {
-    return Option.getOrElse(wholeText, () => "");
-  }
 
-  const events = blob
-    .split("\n")
-    .map((line) => line.trim())
+const eventText = (event: JsonObject): Option.Option<string> => {
+  const directTexts = EVENT_TEXT_KEYS.flatMap((key) => textOf(event[key]).pipe(Option.toArray));
+  const lastDirectText = directTexts.at(-1);
+  return messageText(event).pipe(
+    Option.orElse(() => partText(event)),
+    Option.orElse(() => Option.fromNullable(lastDirectText)),
+  );
+};
+
+const wholeReplyText = (output: string): Option.Option<string> => {
+  const whole = decodeJson(output);
+  const wholeDocumentText = whole.pipe(Option.flatMap(decodeObject), Option.flatMap(documentText));
+  return whole.pipe(
+    Option.flatMap(textOf),
+    Option.orElse(() => wholeDocumentText),
+  );
+};
+
+const jsonLineEvents = (output: string): ReadonlyArray<JsonObject> =>
+  nonBlankLines(output)
     .filter((line) => line.startsWith("{"))
-    .flatMap((line) => Option.toArray(Option.flatMap(parseJsonOption(line), recordOf)));
-  const parts = events.flatMap((event) => Option.toArray(partText(event)));
-  const longest = parts.reduce((best, part) => (part.length > best.length ? part : best), "");
-  if (parts.length > 0) {
-    // Streamed parts are often cumulative: prefer the longest when it already holds the rest.
-    return parts.every((part) => longest.startsWith(part) || longest.includes(part))
-      ? longest
-      : parts.join("\n").trim();
+    .flatMap((line) => decodeJson(line).pipe(Option.flatMap(decodeObject), Option.toArray));
+
+const longerText = (best: string, part: string): string => {
+  if (part.length > best.length) {
+    return part;
   }
 
-  return events.flatMap((event) => Option.toArray(eventText(event))).at(-1) || "";
+  return best;
+};
+
+// Streamed parts are often cumulative: the longest wins when it already holds the rest.
+const joinedParts = (parts: ReadonlyArray<string>): string => {
+  const longest = parts.reduce(longerText, "");
+  const holdsEveryPart = parts.every((part) => longest.includes(part));
+  if (holdsEveryPart) {
+    return longest;
+  }
+
+  return parts.join("\n").trim();
+};
+
+export const replyTextFromJson = (output: string): string => {
+  const trimmed = output.trim();
+  if (trimmed === "") {
+    return "";
+  }
+
+  const wholeText = wholeReplyText(trimmed);
+  if (Option.isSome(wholeText)) {
+    return wholeText.value;
+  }
+
+  const events = jsonLineEvents(trimmed);
+  const parts = events.flatMap((event) => partText(event).pipe(Option.toArray));
+  if (parts.length > 0) {
+    return joinedParts(parts);
+  }
+
+  const eventTexts = events.flatMap((event) => eventText(event).pipe(Option.toArray));
+  return eventTexts.at(-1) || "";
 };

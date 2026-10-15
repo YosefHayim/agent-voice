@@ -75,11 +75,11 @@ describe("newlyPressed", () => {
 
 describe("debounceShift", () => {
   // [sample index, edge] for every edge, so the exact debounce lengths are locked down.
-  const run = (samples: ReadonlyArray<boolean>) => {
+  const run = (samples: ReadonlyArray<"down" | "up">) => {
     let debounce = initialShiftDebounce;
     const edges: Array<readonly [number, string]> = [];
     for (const [index, sample] of samples.entries()) {
-      const [next, edge] = debounceShift(debounce, sample ? "down" : "up");
+      const [next, edge] = debounceShift(debounce, sample);
       debounce = next;
       if (edge !== "none") {
         edges.push([index, edge]);
@@ -89,15 +89,15 @@ describe("debounceShift", () => {
   };
 
   it("reports Shift down on the second down sample and up on the fourth up sample", () => {
-    expect(run([true, true, true, false, false, false, false])).toEqual([
+    expect(run(["down", "down", "down", "up", "up", "up", "up"])).toEqual([
       [1, "shiftDown"],
       [6, "shiftUp"],
     ]);
   });
 
   it("ignores a one-sample blip in either direction", () => {
-    expect(run([true, false, false, false, false])).toEqual([]);
-    expect(run([true, true, false, true, true, false, false, false, false])).toEqual([
+    expect(run(["down", "up", "up", "up", "up"])).toEqual([]);
+    expect(run(["down", "down", "up", "down", "down", "up", "up", "up", "up"])).toEqual([
       [1, "shiftDown"],
       [8, "shiftUp"],
     ]);
@@ -115,7 +115,8 @@ describe("sampleShift", () => {
     for (const [index, [shift, keys]] of samples.entries()) {
       const [next, produced] = sampleShift(tracker, { shift, otherKeys: () => keys });
       tracker = next;
-      events.push(...produced.map((event) => [index, event] as const));
+      const indexed = produced.map((event) => [index, event] as const);
+      events.push(...indexed);
     }
     return events;
   };
@@ -171,8 +172,8 @@ describe("taps", () => {
   });
 
   it("stops speech first, then refines the clipboard, else toggles the mute", () => {
-    expect(doubleTapAction({ narrationSpeaking: true, clipboardRefine: true })).toBe("stopNarration");
-    expect(doubleTapAction({ narrationSpeaking: false, clipboardRefine: true })).toBe("refineClipboard");
-    expect(doubleTapAction({ narrationSpeaking: false, clipboardRefine: false })).toBe("toggleMute");
+    expect(doubleTapAction({ isSpeaking: true, clipboardRefine: true })).toBe("stopSpeaking");
+    expect(doubleTapAction({ isSpeaking: false, clipboardRefine: true })).toBe("refineClipboard");
+    expect(doubleTapAction({ isSpeaking: false, clipboardRefine: false })).toBe("toggleMute");
   });
 });

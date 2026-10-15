@@ -1,16 +1,13 @@
-/** Deliver refined prompts into cmux: a new focused workspace, or the focused (resumable) surface. */
-
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
 import { Effect, Option, Schema } from "effect";
-
-import type { Config } from "../config/configSchema.js";
-import { writePrivateFile } from "../state/stateFiles.js";
-import { stateFolder } from "../state/statePaths.js";
-import { cliFailureText, findCli, runCli } from "./agentCli.js";
+import { writePrivateFile } from "../files/stateFiles.js";
+import type { Config } from "../settings/configSchema.js";
+import { stateFolder } from "../settings/voxkeyHome.js";
+import { cliFailureText, findCli, nonBlankLines, runCli } from "./agentCli.js";
 
 export class CmuxDeliveryFailed extends Schema.TaggedError<CmuxDeliveryFailed>()("CmuxDeliveryFailed", {
   step: Schema.String,
@@ -29,56 +26,86 @@ const KNOWN_CMUX_PATHS = [
   "/opt/homebrew/bin/cmux",
 ];
 
-const cmuxExecutable = (): string =>
-  Option.getOrElse(findCli("cmux"), () => KNOWN_CMUX_PATHS.find((candidate) => existsSync(candidate)) || "cmux");
+const knownCmuxPath = (): string => KNOWN_CMUX_PATHS.find((candidate) => existsSync(candidate)) || "cmux";
+
+const cmuxExecutable = (): string => findCli("cmux").pipe(Option.getOrElse(knownCmuxPath));
 
 const recordOf = Schema.decodeUnknownOption(Schema.Record({ key: Schema.String, value: Schema.Unknown }));
 
 const parseJson = Schema.decodeUnknownOption(Schema.parseJson());
 
-/** The first of `keys` that holds a non-empty string. */
+const decodeString = Schema.decodeUnknownOption(Schema.String);
+
+const nonEmptyString = (value: unknown): Option.Option<string> =>
+  decodeString(value).pipe(Option.filter((text) => text !== ""));
+
 const firstString = (value: unknown, keys: ReadonlyArray<string>): Option.Option<string> =>
-  Option.flatMap(recordOf(value), (record) =>
-    Option.firstSomeOf(
-      keys.map((key) => Option.filter(Schema.decodeUnknownOption(Schema.String)(record[key]), (text) => text !== "")),
-    ),
+  recordOf(value).pipe(
+    Option.flatMap((record) => {
+      const candidates = keys.map((key) => nonEmptyString(record[key]));
+      return Option.firstSomeOf(candidates);
+    }),
   );
 
-/** Run cmux and decode its JSON reply (the last JSON line, since cmux may print notices first). */
+// cmux may print notices before its JSON line.
+const cmuxReply = (stdout: string): unknown => {
+  const jsonLines = nonBlankLines(stdout).filter((line) => line.startsWith("{"));
+  const lastJsonLine = jsonLines.at(-1) || "";
+  const wholeText = stdout.trim();
+  return parseJson(wholeText).pipe(
+    Option.orElse(() => parseJson(lastJsonLine)),
+    Option.getOrNull,
+  );
+};
+
 const cmuxJson = (request: { readonly args: ReadonlyArray<string>; readonly step: string }) =>
   Effect.gen(function* () {
+    const executable = cmuxExecutable();
     const cliRun = yield* runCli({
-      executable: cmuxExecutable(),
+      executable,
       args: request.args,
       timeoutMs: CMUX_TIMEOUT_MS,
       environment: { CMUX_QUIET: "1" },
     }).pipe(Effect.mapError((error) => new CmuxDeliveryFailed({ step: request.step, detail: error.message })));
     if (cliRun.exitCode !== 0) {
-      return yield* new CmuxDeliveryFailed({ step: request.step, detail: cliFailureText(cliRun) || "failed" });
+      const detail = cliFailureText(cliRun) || "failed";
+      return yield* new CmuxDeliveryFailed({ step: request.step, detail });
     }
 
-    const lastJsonLine = cliRun.stdout
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("{"))
-      .at(-1);
-    return Option.getOrElse(
-      Option.orElse(parseJson(cliRun.stdout.trim()), () => parseJson(lastJsonLine || "")),
-      () => null,
-    );
+    return cmuxReply(cliRun.stdout);
   });
 
-/** cmux addresses a surface by `surface_ref` (`surface:N`) or by `surface_id` (UUID). */
+// cmux addresses a surface by `surface_ref` (`surface:N`) or by `surface_id` (UUID).
+const surfaceKey = (surface: string): string => {
+  if (surface.startsWith("surface:")) {
+    return "surface_ref";
+  }
+
+  return "surface_id";
+};
+
 export const surfaceParams = (
   surface: string,
   fields: Readonly<Record<string, string>>,
-): Readonly<Record<string, string>> => ({
-  [surface.startsWith("surface:") ? "surface_ref" : "surface_id"]: surface,
-  ...fields,
-});
+): Readonly<Record<string, string>> => {
+  const key = surfaceKey(surface);
+  return { [key]: surface, ...fields };
+};
 
-const rpc = (method: string, params: Readonly<Record<string, string>>) =>
-  cmuxJson({ args: ["rpc", method, JSON.stringify(params)], step: `rpc ${method}` });
+const rpc = (method: string, params: Readonly<Record<string, string>>) => {
+  const paramsJson = JSON.stringify(params);
+  return cmuxJson({ args: ["rpc", method, paramsJson], step: `rpc ${method}` });
+};
+
+// Some cmux builds name the key "return" instead of "enter".
+const pressEnterKey = (surface: string): Effect.Effect<void> => {
+  const enterParams = surfaceParams(surface, { key: "enter" });
+  const returnParams = surfaceParams(surface, { key: "return" });
+  return rpc("surface.send_key", enterParams).pipe(
+    Effect.orElse(() => rpc("surface.send_key", returnParams)),
+    Effect.ignore,
+  );
+};
 
 const sendTextToSurface = (request: {
   readonly surface: string;
@@ -86,68 +113,80 @@ const sendTextToSurface = (request: {
   readonly pressEnter: boolean;
 }) =>
   Effect.gen(function* () {
-    yield* rpc("surface.send_text", surfaceParams(request.surface, { text: request.text }));
+    const textParams = surfaceParams(request.surface, { text: request.text });
+    yield* rpc("surface.send_text", textParams);
     if (request.pressEnter) {
-      // Some cmux builds name the key "return" instead of "enter".
-      yield* rpc("surface.send_key", surfaceParams(request.surface, { key: "enter" })).pipe(
-        Effect.orElse(() => rpc("surface.send_key", surfaceParams(request.surface, { key: "return" }))),
-        Effect.ignore,
-      );
+      yield* pressEnterKey(request.surface);
     }
   });
 
-/** The focused (else calling) surface from `cmux identify`. */
-const identifyFocus = Effect.map(
-  cmuxJson({ args: ["identify", "--json", "--id-format", "both"], step: "identify" }),
-  (identity) =>
-    Option.getOrElse(
-      Option.flatMap(recordOf(identity), (record) =>
-        Option.orElse(Option.fromNullable(record.focused), () => Option.fromNullable(record.caller)),
-      ),
-      () => identity,
-    ),
+const focusedOrCaller = (identity: unknown): unknown =>
+  recordOf(identity).pipe(
+    Option.flatMap((record) => {
+      const focused = Option.fromNullable(record.focused);
+      return focused.pipe(Option.orElse(() => Option.fromNullable(record.caller)));
+    }),
+    Option.getOrElse(() => identity),
+  );
+
+const identifyFocus = cmuxJson({ args: ["identify", "--json", "--id-format", "both"], step: "identify" }).pipe(
+  Effect.map(focusedOrCaller),
 );
 
 const workspaceListSchema = Schema.Struct({
   workspaces: Schema.Array(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
 });
 
+const decodeWorkspaceList = Schema.decodeUnknownOption(workspaceListSchema);
+
+const workspacesIn = (listing: unknown): ReadonlyArray<unknown> =>
+  decodeWorkspaceList(listing).pipe(
+    Option.map((decoded) => decoded.workspaces),
+    Option.getOrElse(() => []),
+  );
+
+const listWorkspaces = cmuxJson({ args: ["workspace", "list", "--json"], step: "workspace list" }).pipe(
+  Effect.map(workspacesIn),
+  Effect.orElseSucceed(() => []),
+);
+
+const focusedWorkspaceId = (focus: unknown): string =>
+  firstString(focus, ["workspace_id", "workspace_ref"]).pipe(Option.getOrElse(() => ""));
+
 const workspaceDirectory = (workspace: unknown) => firstString(workspace, ["current_directory"]);
 
-/** The focused workspace's folder, else the first workspace's, else HOME. */
+const isFocusedWorkspace = (workspace: unknown, focusId: string): boolean => {
+  const id = firstString(workspace, ["id", "workspace_id", "ref"]).pipe(Option.getOrElse(() => ""));
+  if (id === "" || focusId === "") {
+    return false;
+  }
+
+  return id === focusId || id.endsWith(focusId) || focusId.endsWith(id);
+};
+
+const firstWorkspaceDirectory = (workspaces: ReadonlyArray<unknown>): Option.Option<string> => {
+  const directories = workspaces.map(workspaceDirectory);
+  return Option.firstSomeOf(directories);
+};
+
 const deliveryFolder = Effect.gen(function* () {
-  const listing = yield* Effect.option(cmuxJson({ args: ["workspace", "list", "--json"], step: "workspace list" }));
-  const workspaces = Option.getOrElse(
-    Option.map(
-      Option.flatMap(listing, Schema.decodeUnknownOption(workspaceListSchema)),
-      (decoded) => decoded.workspaces,
-    ),
-    () => [],
+  const workspaces = yield* listWorkspaces;
+  const focusId = yield* identifyFocus.pipe(
+    Effect.map(focusedWorkspaceId),
+    Effect.orElseSucceed(() => ""),
   );
-  const focusId = Option.getOrElse(
-    Option.flatMap(yield* Effect.option(identifyFocus), (focus) =>
-      firstString(focus, ["workspace_id", "workspace_ref"]),
-    ),
-    () => "",
+  const focused = workspaces.find((workspace) => isFocusedWorkspace(workspace, focusId));
+  return Option.fromNullable(focused).pipe(
+    Option.flatMap(workspaceDirectory),
+    Option.orElse(() => firstWorkspaceDirectory(workspaces)),
+    Option.getOrElse(homedir),
   );
-  const isFocused = (workspace: unknown) => {
-    const id = Option.getOrElse(firstString(workspace, ["id", "workspace_id", "ref"]), () => "");
-    return focusId !== "" && id !== "" && (id === focusId || id.endsWith(focusId) || focusId.endsWith(id));
-  };
-  const focused = workspaces.find(isFocused);
-  const chosen = Option.orElse(Option.flatMap(Option.fromNullable(focused), workspaceDirectory), () =>
-    Option.firstSomeOf(workspaces.map(workspaceDirectory)),
-  );
-  return Option.getOrElse(chosen, () => homedir());
 });
 
-/** Safe inside a single-quoted shell string: ' becomes '\''. */
+// Safe inside a single-quoted shell string: ' becomes '\''.
 export const shellSingleQuote = (text: string): string => `'${text.replaceAll("'", "'\\''")}'`;
 
-/**
- * The template with each placeholder replaced by one shell-quoted word, in a single pass, so a folder or file name
- * with spaces or `$(...)` stays one literal argument and a placeholder inside the prompt text is never expanded.
- */
+// One pass, so a folder with spaces or `$(...)` stays one literal word and a placeholder inside the prompt is never expanded.
 export const expandCommandTemplate = (request: {
   readonly template: string;
   readonly prompt: string;
@@ -165,33 +204,54 @@ export const expandCommandTemplate = (request: {
 };
 
 export const workspaceTitle = (text: string): string => {
-  const firstLine = [...(text.split("\n")[0] || "").trim()].slice(0, 40).join("");
-  return firstLine === "" ? "refine" : `refine: ${firstLine}`;
+  const firstLine = text.split("\n")[0] || "";
+  const characters = [...firstLine.trim()];
+  const shortLine = characters.slice(0, 40).join("");
+  if (shortLine === "") {
+    return "refine";
+  }
+
+  return `refine: ${shortLine}`;
 };
 
 const writePromptFile = (text: string): string => {
-  const promptFile = path.join(stateFolder("prompts"), `prompt-${randomUUID()}.txt`);
+  const promptsFolder = stateFolder("prompts");
+  const promptFile = path.join(promptsFolder, `prompt-${randomUUID()}.txt`);
   writePrivateFile({ path: promptFile, flags: "w", contents: `${text}\n` });
   return promptFile;
 };
 
-const deliverToNewWorkspace = (request: { readonly text: string; readonly config: Config }) =>
-  Effect.gen(function* () {
-    const folder = yield* deliveryFolder;
-    const create = ["workspace", "create", "--name", workspaceTitle(request.text), "--cwd", folder, "--focus", "true"];
-    if (request.config.refineCmuxCommand !== "") {
-      const command = expandCommandTemplate({
-        template: request.config.refineCmuxCommand,
-        prompt: request.text,
-        promptFile: writePromptFile(request.text),
-        folder,
-      });
-      const created = yield* cmuxJson({ args: [...create, "--command", command, "--json"], step: "workspace create" });
-      const workspace = Option.getOrElse(firstString(created, ["workspace_ref", "workspace_id"]), () => "?");
-      return `cmux-new ran a command in workspace ${workspace}`;
-    }
+const createWorkspaceArgs = (text: string, folder: string): ReadonlyArray<string> => {
+  const title = workspaceTitle(text);
+  return ["workspace", "create", "--name", title, "--cwd", folder, "--focus", "true"];
+};
 
-    const created = yield* cmuxJson({ args: [...create, "--json"], step: "workspace create" });
+const runInNewWorkspace = (request: { readonly text: string; readonly template: string; readonly folder: string }) =>
+  Effect.gen(function* () {
+    const promptFile = writePromptFile(request.text);
+    const command = expandCommandTemplate({
+      template: request.template,
+      prompt: request.text,
+      promptFile,
+      folder: request.folder,
+    });
+    const createArgs = createWorkspaceArgs(request.text, request.folder);
+    const created = yield* cmuxJson({
+      args: [...createArgs, "--command", command, "--json"],
+      step: "workspace create",
+    });
+    const workspace = firstString(created, ["workspace_ref", "workspace_id"]).pipe(Option.getOrElse(() => "?"));
+    return `cmux-new ran a command in workspace ${workspace}`;
+  });
+
+const pasteInNewWorkspace = (request: {
+  readonly text: string;
+  readonly folder: string;
+  readonly pressEnter: boolean;
+}) =>
+  Effect.gen(function* () {
+    const createArgs = createWorkspaceArgs(request.text, request.folder);
+    const created = yield* cmuxJson({ args: [...createArgs, "--json"], step: "workspace create" });
     const surface = firstString(created, ["surface_id", "surface_ref"]);
     if (Option.isNone(surface)) {
       return yield* new CmuxDeliveryFailed({ step: "workspace create", detail: "no surface id in the reply" });
@@ -199,17 +259,29 @@ const deliverToNewWorkspace = (request: { readonly text: string; readonly config
 
     // Give the new terminal a moment to accept input.
     yield* Effect.sleep("350 millis");
-    yield* sendTextToSurface({
-      surface: surface.value,
+    yield* sendTextToSurface({ surface: surface.value, text: request.text, pressEnter: request.pressEnter });
+    return `cmux-new pasted into surface ${surface.value}`;
+  });
+
+const deliverToNewWorkspace = (request: { readonly text: string; readonly config: Config }) =>
+  Effect.gen(function* () {
+    const folder = yield* deliveryFolder;
+    const template = request.config.refineCmuxCommand;
+    if (template !== "") {
+      return yield* runInNewWorkspace({ text: request.text, template, folder });
+    }
+
+    return yield* pasteInNewWorkspace({
       text: request.text,
+      folder,
       pressEnter: request.config.refineCmuxPressEnter,
     });
-    return `cmux-new pasted into surface ${surface.value}`;
   });
 
 const deliverToFocusedSurface = (request: { readonly text: string; readonly config: Config }) =>
   Effect.gen(function* () {
-    const surface = firstString(yield* identifyFocus, ["surface_id", "surface_ref"]);
+    const focus = yield* identifyFocus;
+    const surface = firstString(focus, ["surface_id", "surface_ref"]);
     if (Option.isNone(surface)) {
       return yield* new CmuxDeliveryFailed({ step: "identify", detail: "no focused surface" });
     }
@@ -222,7 +294,7 @@ const deliverToFocusedSurface = (request: { readonly text: string; readonly conf
     return `cmux-resume sent to surface ${surface.value}`;
   });
 
-/** Send refined text where `refineSendTo` says; returns a one-line summary for the dictation log. */
+// Returns a one-line summary for the dictation log.
 export const deliverToCmux = (request: {
   readonly text: string;
   readonly config: Config;

@@ -115,9 +115,8 @@ describe("replyTextFromJson", () => {
     expect(replyTextFromJson('"plain"')).toBe("plain");
     expect(replyTextFromJson('{"content":[{"type":"text","text":"A"},{"type":"text","text":"B"}]}')).toBe("A\nB");
     expect(replyTextFromJson('{"response":{"text":"nested"}}')).toBe("nested");
-    expect(
-      replyTextFromJson(['{"message":{"content":"first"}}', '{"message":{"content":[{"text":"second"}]}}'].join("\n")),
-    ).toBe("second");
+    const messageLines = ['{"message":{"content":"first"}}', '{"message":{"content":[{"text":"second"}]}}'].join("\n");
+    expect(replyTextFromJson(messageLines)).toBe("second");
     expect(replyTextFromJson("not json")).toBe("");
   });
 });

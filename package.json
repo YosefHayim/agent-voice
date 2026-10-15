@@ -14,7 +14,7 @@
     "!dist/**/*.test.js"
   ],
   "scripts": {
-    "cli": "tsx src/cli/main.ts",
+    "cli": "tsx src/scripts/cliFromSource.ts",
     "prepare": "husky",
     "prebuild": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc && node -e \"require('node:fs').chmodSync('dist/src/cli/main.js',0o755)\"",
@@ -68,7 +68,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.2",
-    "@effect/vitest": "0.30.0",
     "@types/node": "22.20.0",
     "glob": "13.0.6",
     "husky": "9.1.7",
