@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import { Effect } from "effect";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { makeTestFolder } from "../scripts/testFolder.js";
 import { decodeWav } from "../speech/wavFile.js";
@@ -31,25 +31,31 @@ const installedModel = (): string | undefined => {
 
 const modelFile = installedModel();
 
-const folder = makeTestFolder("whisper");
-afterAll(() => rmSync(folder, { recursive: true, force: true }));
-
-const spokenFixture = (text: string): Float32Array => {
-  const aiff = path.join(folder, "spoken.aiff");
-  const wav = path.join(folder, "spoken.wav");
-  execFileSync("say", ["-o", aiff, text]);
-  execFileSync("afconvert", ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", aiff, wav]);
-  const wavBytes = readFileSync(wav);
-  const decoded = decodeWav(wavBytes);
-  if (decoded === undefined || decoded.sampleRate !== 16_000) {
-    throw new Error("afconvert did not write 16 kHz PCM");
-  }
-
-  return samplesFromPcm(decoded.pcm);
-};
-
 describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisper transcription (smoke)", () => {
   const modelPath = modelFile || "";
+  let folder = "";
+
+  beforeAll(() => {
+    folder = makeTestFolder("whisper");
+  });
+
+  afterAll(() => {
+    rmSync(folder, { recursive: true, force: true });
+  });
+
+  const spokenFixture = (text: string): Float32Array => {
+    const aiff = path.join(folder, "spoken.aiff");
+    const wav = path.join(folder, "spoken.wav");
+    execFileSync("say", ["-o", aiff, text]);
+    execFileSync("afconvert", ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", aiff, wav]);
+    const wavBytes = readFileSync(wav);
+    const decoded = decodeWav(wavBytes);
+    if (decoded === undefined || decoded.sampleRate !== 16_000) {
+      throw new Error("afconvert did not write 16 kHz PCM");
+    }
+
+    return samplesFromPcm(decoded.pcm);
+  };
 
   it("transcribes a spoken WAV fixture and formats it for the caret", async () => {
     const samples = spokenFixture("Check the worktrees folder and push every branch.");
