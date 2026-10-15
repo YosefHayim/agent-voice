@@ -7,7 +7,7 @@ import { availableParallelism } from "node:os";
 import path from "node:path";
 
 import { Effect, Option, Schema } from "effect";
-import type { Config } from "../config/configSchema.js";
+import type { Config } from "../settings/configSchema.js";
 import {
   pcmFromSamples,
   prepareForWhisper,

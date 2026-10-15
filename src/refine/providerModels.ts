@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { Effect, Option, Schema } from "effect";
 
-import { readJsonFile, readTextIfReadable } from "../state/stateFiles.js";
+import { readJsonFile, readTextIfReadable } from "../files/stateFiles.js";
 import { dedupe, findFirstCli, runCliLines } from "./agentCli.js";
 import { codexLastGoodModel } from "./refineChoices.js";
 

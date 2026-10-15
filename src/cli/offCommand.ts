@@ -3,8 +3,8 @@
 import { Command } from "@effect/cli";
 import { Effect } from "effect";
 
-import { unregisterReplyHooks } from "../agentHooks/hookRegistration.js";
-import { resetWorkers } from "../worker/workerProcesses.js";
+import { unregisterReplyHooks } from "../agents/hookRegistration.js";
+import { resetWorkers } from "../workers/workerProcesses.js";
 import { showHookChanges } from "./onCommand.js";
 import * as TerminalUI from "./TerminalUI.js";
 
@@ -18,4 +18,4 @@ export const offCommand = Command.make("off", {}, () =>
     yield* resetWorkers;
     yield* TerminalUI.outro("voxkey is off. Your config and models stay in ~/.voxkey.");
   }),
-).pipe(Command.withDescription("Stop dictation and narration and remove voxkey's agent hooks (everything else stays)"));
+).pipe(Command.withDescription("Stop dictation and speech and remove voxkey's agent hooks (everything else stays)"));

@@ -118,15 +118,15 @@ export const sampleShift = (
   return [next, debounce.isDown && typed ? ["otherDown"] : []];
 };
 
-export type TapAction = "stopNarration" | "refineClipboard" | "toggleMute";
+export type TapAction = "stopSpeaking" | "refineClipboard" | "toggleMute";
 
 /** A double tap stops speech first; otherwise it refines the clipboard (clipboard refine) or toggles the mute. */
 export const doubleTapAction = (request: {
-  readonly narrationSpeaking: boolean;
+  readonly isSpeaking: boolean;
   readonly clipboardRefine: boolean;
 }): TapAction => {
-  if (request.narrationSpeaking) {
-    return "stopNarration";
+  if (request.isSpeaking) {
+    return "stopSpeaking";
   }
 
   return request.clipboardRefine ? "refineClipboard" : "toggleMute";

@@ -5,7 +5,7 @@
 
 import { Effect, Option, Schema } from "effect";
 
-import type { Config } from "../config/configSchema.js";
+import type { Config } from "../settings/configSchema.js";
 import { dedupe } from "./agentCli.js";
 import { CODEX_MODEL_FALLBACKS, isProviderInstalled, type ProviderId, providerModels } from "./providerModels.js";
 import {

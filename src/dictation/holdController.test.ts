@@ -5,18 +5,18 @@ import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { readConfig } from "../config/configFile.js";
-import { stopNarrationSpeech } from "../worker/workerProcesses.js";
-import { makeStatusWriter } from "../worker/workerStatus.js";
+import { readConfig } from "../settings/configFile.js";
+import { stopSpeech } from "../workers/workerProcesses.js";
+import { makeStatusWriter } from "../workers/workerStatus.js";
 import { makeHoldController } from "./holdController.js";
 import type { Keyboard } from "./keyboard.js";
 import { makeLiveCaption } from "./livePreview.js";
 import { makeClipBuffer } from "./microphone.js";
 
-// The real one signals the narration worker named in narration.pid; the tests only count the stops.
-vi.mock("../worker/workerProcesses.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../worker/workerProcesses.js")>()),
-  stopNarrationSpeech: vi.fn(),
+// The real one signals the speech worker named in speech.pid; the tests only count the stops.
+vi.mock("../workers/workerProcesses.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../workers/workerProcesses.js")>()),
+  stopSpeech: vi.fn(),
 }));
 
 const scratchRoot = fileURLToPath(new URL("../../.scratch/", import.meta.url));
@@ -28,7 +28,7 @@ beforeEach(() => {
   home = mkdtempSync(path.join(scratchRoot, "hold-"));
   vi.stubEnv("VOXKEY_HOME", home);
   vi.stubEnv("VOXKEY_CONFIG_FILE", undefined);
-  vi.mocked(stopNarrationSpeech).mockClear();
+  vi.mocked(stopSpeech).mockClear();
 });
 
 afterEach(() => {
@@ -67,26 +67,26 @@ const doubleTapShift = async () => {
 
 const savedMute = async () => {
   const config = await Effect.runPromise(readConfig);
-  return config.narrationMuted;
+  return config.speechMuted;
 };
 
 describe("double-tap Shift", () => {
-  it("mutes narration and stops speech that is about to start", async () => {
-    writeFileSync(path.join(home, "config.json"), JSON.stringify({ narrationMuted: false }));
+  it("mutes speech and stops speech that is about to start", async () => {
+    writeFileSync(path.join(home, "config.json"), JSON.stringify({ speechMuted: false }));
 
     await doubleTapShift();
 
     expect(await savedMute()).toBe(true);
     // The first tap always stops speech; muting stops it again for a reply claimed between the taps.
-    expect(stopNarrationSpeech).toHaveBeenCalledTimes(2);
+    expect(stopSpeech).toHaveBeenCalledTimes(2);
   });
 
-  it("unmutes narration without a second stop", async () => {
-    writeFileSync(path.join(home, "config.json"), JSON.stringify({ narrationMuted: true }));
+  it("unmutes speech without a second stop", async () => {
+    writeFileSync(path.join(home, "config.json"), JSON.stringify({ speechMuted: true }));
 
     await doubleTapShift();
 
     expect(await savedMute()).toBe(false);
-    expect(stopNarrationSpeech).toHaveBeenCalledTimes(1);
+    expect(stopSpeech).toHaveBeenCalledTimes(1);
   });
 });

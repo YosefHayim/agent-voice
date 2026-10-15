@@ -4,8 +4,8 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import { Effect, Either, Option, Schema } from "effect";
-import { makePrivateFolder, readTextIfReadable, removeIfPresent } from "../state/stateFiles.js";
-import { stateFolder } from "../state/statePaths.js";
+import { makePrivateFolder, readTextIfReadable, removeIfPresent } from "../files/stateFiles.js";
+import { stateFolder } from "../settings/voxkeyHome.js";
 import { type CliRun, cliFailureText, cliOutputText, findCli, runCli } from "./agentCli.js";
 import { providerIdSchema } from "./providerModels.js";
 import {

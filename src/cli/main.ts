@@ -5,7 +5,7 @@ import { CliConfig, Command, ValidationError } from "@effect/cli";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Effect, ParseResult } from "effect";
 
-import { runReplyHookFromArguments } from "../agentHooks/replyHook.js";
+import { runReplyHookFromArguments } from "../agents/replyHook.js";
 import { CliUsageError } from "./cliUsageError.js";
 import { configCommand } from "./configCommand.js";
 import { devinCommand } from "./devinCommand.js";

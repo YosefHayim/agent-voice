@@ -2,7 +2,7 @@
 
 import { Effect, Option, Schema } from "effect";
 
-import { readEnvironment } from "../config/environmentVariables.js";
+import { readEnvironment } from "../settings/environmentVariables.js";
 import { dedupe, runCli } from "./agentCli.js";
 import {
   CODEX_MODEL_FALLBACKS,

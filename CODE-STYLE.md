@@ -26,11 +26,11 @@ Every rule is one card with the same five slots in the same order. A card that d
 Every authored file and directory name states the domain job it performs.
 
 ```ts
-// ✓ src/narration/inbox.ts
+// ✓ src/speech/inbox.ts
 export const claimNextReply = (config: Config) => Effect.void;
 
 // ✗ also index, types, utils, helpers, common, shared, misc, constants, models, base, core
-// src/narration/utils.ts
+// src/speech/utils.ts
 export const doStuff = (input: unknown) => input;
 ```
 
@@ -186,11 +186,11 @@ Adjacent function declarations are separated by a blank line, and Biome collapse
 // ✓
 const isSpeaking = () => speakingFiles().length > 0;
 
-const isMuted = () => existsSync(stateFile("narration-muted"));
+const isMuted = () => existsSync(stateFile("speech-muted"));
 
 // ✗
 const isSpeaking = () => speakingFiles().length > 0;
-const isMuted = () => existsSync(stateFile("narration-muted"));
+const isMuted = () => existsSync(stateFile("speech-muted"));
 ```
 
 Why: the blank line is the boundary between units.
@@ -230,13 +230,13 @@ Failed prerequisites return early, and `else` appears only when both branches ar
 
 ```ts
 // ✓
-if (config.narrationMode === "off") {
+if (config.speechMode === "off") {
   return;
 }
 yield* queueReply(reply);
 
 // ✗ else after a terminal branch
-if (config.narrationMode === "off") return;
+if (config.speechMode === "off") return;
 else yield* queueReply(reply);
 ```
 
@@ -355,7 +355,7 @@ yield* rememberSpoken(reply);
 yield* rememberSpoken(reply);
 ```
 
-Why: narration repeats syntax and drifts, while a hidden constraint stops a future edit from breaking an invariant.
+Why: speech repeats syntax and drifts, while a hidden constraint stops a future edit from breaking an invariant.
 
 ### Schema owns runtime objects
 [rule:type.schema-owned-runtime] · verify: `pnpm style`
@@ -363,7 +363,7 @@ Why: narration repeats syntax and drifts, while a hidden constraint stops a futu
 Data crossing a process, file, CLI, environment, agent-hook, or catalog boundary is an Effect Schema first, with its TypeScript type derived.
 
 ```ts
-// ✓ src/narration/inbox.ts
+// ✓ src/speech/inbox.ts
 export const queuedReplySchema = Schema.Struct({
   markdown: Schema.String.annotations({ description: "Complete agent reply as Markdown." }),
   source: Schema.String.annotations({ description: "Agent ID that produced the reply." }),
@@ -404,7 +404,7 @@ const decodeConfig = Schema.decodeUnknown(configSchema);
 const encodeConfig = Schema.encode(configSchema);
 
 // ✗ a second default table beside the Schema
-const CONFIG_DEFAULTS = { narrationVoice: "F4" };
+const CONFIG_DEFAULTS = { speechVoice: "F4" };
 ```
 
 Why: parallel serializers and default tables drift from the contract they protect.
@@ -449,7 +449,7 @@ Authored TypeScript never uses the nullish coalescing operator.
 const config = yield* readConfig;
 
 // ✗
-const voice = flags.voice ?? config.narrationVoice ?? "F4";
+const voice = flags.voice ?? config.speechVoice ?? "F4";
 ```
 
 Why: one decoded boundary owns absence and defaults instead of fallback syntax spread through the logic.
@@ -544,9 +544,9 @@ Authored modules export their own capability and never exist only to re-export s
 
 ```ts
 // ✓
-import { claimNextReply } from "../narration/inbox.js";
+import { claimNextReply } from "../speech/inbox.js";
 
-// ✗ src/narration/index.ts
+// ✗ src/speech/index.ts
 export * from "./inbox.js";
 ```
 
@@ -674,7 +674,7 @@ export const replyHook = queueAgentReply.pipe(Effect.catchAllCause(() => Effect.
 export const replyHook = queueAgentReply;
 ```
 
-Why: a narration bug must never block or confuse the coding agent.
+Why: a speech bug must never block or confuse the coding agent.
 
 ### One owned hook entry
 [rule:hook.one-entry] · verify: `pnpm test`
@@ -828,7 +828,7 @@ export const holdTransition = (state: HoldState, event: HoldEvent): readonly [Ho
 
 ## Golden path — adding a feature
 
-1. Put the pure decision in the capability folder that owns it (`dictation`, `narration`, `refine`, `agentHooks`, …) with a colocated test.
+1. Put the pure decision in the capability folder that owns it (`dictation`, `speech`, `refine`, `agentHooks`, …) with a colocated test.
 2. Put the mechanism (native call, process, file) beside it and load native modules lazily.
 3. Add any setting to `src/config/configSchema.ts` with a title and description; add any environment variable to `src/config/environmentVariables.ts`.
 4. Add or extend one command file in `src/cli/`, rendering through `TerminalUI`.
@@ -839,7 +839,7 @@ export const holdTransition = (state: HoldState, event: HoldEvent): readonly [Ho
 
 - `src/dictation/holdKey.ts` — a pure decision with a table of unit cases.
 - `src/agentHooks/hookSettings.ts` — byte-preserving edits of a user file, verified before the write.
-- `src/narration/inbox.ts` — Schema-owned files and pure ordering rules.
+- `src/speech/inbox.ts` — Schema-owned files and pure ordering rules.
 - `src/cli/TerminalUI.ts` — the single presentation owner.
 
 ## Never

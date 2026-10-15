@@ -3,7 +3,7 @@
 import { Command } from "@effect/cli";
 import { Effect } from "effect";
 
-import { resetWorkers } from "../worker/workerProcesses.js";
+import { resetWorkers } from "../workers/workerProcesses.js";
 import * as TerminalUI from "./TerminalUI.js";
 
 export const resetCommand = Command.make("reset", {}, () =>

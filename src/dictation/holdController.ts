@@ -1,16 +1,15 @@
 /**
  * Turns the 8 ms Shift samples into dictation: feed debounced edges and "another key" events to the pure
- * hold table, and carry out its actions on the clip buffer, the queue, the pill, and narration.
+ * hold table, and carry out its actions on the clip buffer, the queue, the pill, and speech.
  */
 
 import { Duration, Effect } from "effect";
-
-import { readConfig, readConfigOrDefaults, saveConfig } from "../config/configFile.js";
-import { isNarrationSpeaking, queueReply } from "../narration/inbox.js";
 import { refinePrompt } from "../refine/refineAttempts.js";
-import { appendDictationLog } from "../worker/workerLog.js";
-import { stopNarrationSpeech } from "../worker/workerProcesses.js";
-import type { StatusWriter } from "../worker/workerStatus.js";
+import { readConfig, readConfigOrDefaults, saveConfig } from "../settings/configFile.js";
+import { isSpeaking, queueReply } from "../speech/inbox.js";
+import { appendDictationLog } from "../workers/workerLog.js";
+import { stopSpeech } from "../workers/workerProcesses.js";
+import type { StatusWriter } from "../workers/workerStatus.js";
 import { readClipboard, writeClipboard } from "./caret.js";
 import type { DictationQueue } from "./dictationQueue.js";
 import {
@@ -28,10 +27,10 @@ import type { Keyboard } from "./keyboard.js";
 import type { LiveCaption } from "./livePreview.js";
 import type { ClipBuffer } from "./microphone.js";
 
-/** Stop speech in the narration worker; true when something was being spoken. */
-const stopNarration = (): boolean => {
-  const speaking = isNarrationSpeaking();
-  stopNarrationSpeech();
+/** Stop speech in the speech worker; true when something was being spoken. */
+const stopSpeaking = (): boolean => {
+  const speaking = isSpeaking();
+  stopSpeech();
   return speaking;
 };
 
@@ -53,7 +52,7 @@ const refineClipboard = (status: StatusWriter) =>
     });
     yield* writeClipboard(refined);
     status.write("done", "Refined prompt copied — press ⌘V to paste");
-    if (config.narrationMode !== "off") {
+    if (config.speechMode !== "off") {
       queueReply({ markdown: refined, source: "refine", agentReplyId: "", origin: { kind: "terminal" } });
     }
   }).pipe(
@@ -62,17 +61,17 @@ const refineClipboard = (status: StatusWriter) =>
     Effect.zipRight(Effect.sync(() => status.write("inactive", ""))),
   );
 
-/** Double-tap Shift outside clipboard refine mode: flip `narration-muted` in config.json. */
-const toggleNarrationMute = (status: StatusWriter) =>
+/** Double-tap Shift outside clipboard refine mode: flip `speech-muted` in config.json. */
+const toggleSpeechMute = (status: StatusWriter) =>
   Effect.gen(function* () {
     const config = yield* readConfig;
-    const muted = !config.narrationMuted;
-    yield* saveConfig({ ...config, narrationMuted: muted });
+    const muted = !config.speechMuted;
+    yield* saveConfig({ ...config, speechMuted: muted });
     // A reply can be mid-claim, with no .speaking file yet, so the double tap did not count as stopping speech.
     if (muted) {
-      stopNarrationSpeech();
+      stopSpeech();
     }
-    status.write("inactive", muted ? "Narration muted (double-tap Shift to unmute)" : "Narration unmuted");
+    status.write("inactive", muted ? "Speech muted (double-tap Shift to unmute)" : "Speech unmuted");
   }).pipe(Effect.catchAll((failure) => Effect.sync(() => status.write("inactive", `Mute failed: ${failure.message}`))));
 
 export const makeHoldController = (request: {
@@ -130,31 +129,31 @@ export const makeHoldController = (request: {
     const tap = classifyTap({ lastTapAt, now });
     lastTapAt = tap.rememberedTapAt;
     if (!tap.double) {
-      if (stopNarration()) {
-        status.write("inactive", "Narration stopped");
+      if (stopSpeaking()) {
+        status.write("inactive", "Speech stopped");
       }
       return;
     }
 
     const config = yield* readConfigOrDefaults;
     const clipboardRefine = config.refineMode === "clipboard" || config.refineMode === "both";
-    switch (doubleTapAction({ narrationSpeaking: isNarrationSpeaking(), clipboardRefine })) {
-      case "stopNarration":
-        stopNarration();
-        status.write("inactive", "Narration stopped");
+    switch (doubleTapAction({ isSpeaking: isSpeaking(), clipboardRefine })) {
+      case "stopSpeaking":
+        stopSpeaking();
+        status.write("inactive", "Speech stopped");
         return;
       case "refineClipboard":
         yield* Effect.forkDaemon(refineClipboard(status));
         return;
       case "toggleMute":
-        yield* toggleNarrationMute(status);
+        yield* toggleSpeechMute(status);
         return;
     }
   });
 
   const startListening = Effect.sync(() => {
-    if (isNarrationSpeaking()) {
-      stopNarration();
+    if (isSpeaking()) {
+      stopSpeaking();
     }
     if (!clip.isRecording()) {
       clip.begin();

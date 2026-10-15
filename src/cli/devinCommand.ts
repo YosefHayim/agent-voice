@@ -1,4 +1,4 @@
-/** `voxkey devin -- <devin arguments>`: run Devin with its ATIF export and narrate each finished turn. */
+/** `voxkey devin -- <devin arguments>`: run Devin with its ATIF export and read each finished turn aloud. */
 
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -6,10 +6,10 @@ import path from "node:path";
 import { Args, Command } from "@effect/cli";
 import { Effect, Schema } from "effect";
 
-import { watchDevinSession } from "../devin/devinWatcher.js";
-import { makePrivateFolder } from "../state/stateFiles.js";
-import { stateFolder } from "../state/statePaths.js";
-import { startWorkers } from "../worker/workerProcesses.js";
+import { watchDevinSession } from "../agents/devinWatcher.js";
+import { makePrivateFolder } from "../files/stateFiles.js";
+import { stateFolder } from "../settings/voxkeyHome.js";
+import { startWorkers } from "../workers/workerProcesses.js";
 import * as TerminalUI from "./TerminalUI.js";
 
 class DevinFailed extends Schema.TaggedError<DevinFailed>()("DevinFailed", { issue: Schema.String }) {
@@ -42,7 +42,7 @@ export const devinCommand = Command.make(
       // Devin writes the whole session here, so the folder is private.
       makePrivateFolder(folder);
       const exportFile = path.join(folder, "session.atif.json");
-      yield* TerminalUI.detail(`Narrating finished turns from Devin's ATIF export (${exportFile}).`);
+      yield* TerminalUI.detail(`Reading finished turns aloud from Devin's ATIF export (${exportFile}).`);
       const code = yield* watchDevinSession({
         exportFile,
         session: runDevin(["--export", exportFile, ...args.devinArguments]),

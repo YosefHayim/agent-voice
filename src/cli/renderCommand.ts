@@ -2,7 +2,7 @@
 
 import { Args, Command } from "@effect/cli";
 
-import { markdownToSpeech } from "../narration/markdownToSpeech.js";
+import { markdownToSpeech } from "../speech/markdownToSpeech.js";
 import * as TerminalUI from "./TerminalUI.js";
 
 export const renderCommand = Command.make(

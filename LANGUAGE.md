@@ -6,12 +6,12 @@ Names only: use these words in code, comments, commits, and docs, and avoid the 
 Hold Shift, speak, release: the words are typed at the caret.
 _Avoid_: "stt", "speech-to-text" in identifiers, "voice input".
 
-**narration**
+**speech**
 Reading an agent reply aloud.
-_Avoid_: "tts", "speech" (as the feature name), "voice output".
+_Avoid_: "tts", "narration", "voice output".
 
 **voice**
-One Supertonic speaker (F1–F5, M1–M5), as in `narrationVoice`.
+One Supertonic speaker (F1–F5, M1–M5), as in `speechVoice`.
 _Avoid_: "voice" for the whole product or feature.
 
 **refine**
@@ -49,11 +49,11 @@ The small status panel at the bottom of the screen.
 _Avoid_: "HUD", "overlay".
 
 **worker**
-A background voxkey process: the dictation worker or the narration worker.
+A background voxkey process: the dictation worker or the speech worker.
 _Avoid_: "daemon", "service".
 
 **inbox**
-The folder of queued agent replies waiting for the narration worker.
+The folder of queued agent replies waiting for the speech worker.
 _Avoid_: "queue" (the dictation queue is a different thing).
 
 **provider**

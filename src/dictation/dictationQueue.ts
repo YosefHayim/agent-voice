@@ -5,13 +5,12 @@
  */
 
 import { Effect, Fiber, Option, Queue } from "effect";
-
-import { readConfigOrDefaults } from "../config/configFile.js";
-import type { Config } from "../config/configSchema.js";
 import { deliverToCmux } from "../refine/cmuxDelivery.js";
 import { refinePrompt } from "../refine/refineAttempts.js";
-import { appendDictationLog } from "../worker/workerLog.js";
-import type { StatusWriter } from "../worker/workerStatus.js";
+import { readConfigOrDefaults } from "../settings/configFile.js";
+import type { Config } from "../settings/configSchema.js";
+import { appendDictationLog } from "../workers/workerLog.js";
+import type { StatusWriter } from "../workers/workerStatus.js";
 import { typeAtCaret } from "./caret.js";
 import { formatDictation, parseReplacements, promptBoost } from "./dictationFormat.js";
 import type { Keyboard } from "./keyboard.js";

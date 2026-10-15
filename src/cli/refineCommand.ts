@@ -2,15 +2,14 @@
 
 import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
-
-import { readConfig } from "../config/configFile.js";
-import { refineProviders } from "../config/configSchema.js";
-import { ensureSupertonicModels } from "../models/supertonicModels.js";
-import { makeSpeechPlayer, speakMarkdown } from "../narration/speechPlayer.js";
-import { loadSupertonic } from "../narration/supertonic.js";
 import { deliverToCmux } from "../refine/cmuxDelivery.js";
 import { discoverProviders, REASONING_EFFORTS } from "../refine/providerModels.js";
 import { refinePrompt } from "../refine/refineAttempts.js";
+import { readConfig } from "../settings/configFile.js";
+import { refineProviders } from "../settings/configSchema.js";
+import { makeSpeechPlayer, speakMarkdown } from "../speech/speechPlayer.js";
+import { loadSupertonic } from "../speech/supertonic.js";
+import { ensureSupertonicModels } from "../speech/supertonicModels.js";
 import { CliUsageError } from "./cliUsageError.js";
 import * as TerminalUI from "./TerminalUI.js";
 
@@ -77,7 +76,7 @@ export const refineCommand = Command.make("refine", refineOptions, (args) =>
         engine,
         player: makeSpeechPlayer(),
         markdown: refined,
-        voice: { voice: config.narrationVoice, wordsPerMinute: config.narrationWordsPerMinute },
+        voice: { voice: config.speechVoice, wordsPerMinute: config.speechWordsPerMinute },
       });
     }
     if (config.refineSendTo !== "caret") {

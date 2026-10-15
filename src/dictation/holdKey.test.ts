@@ -171,8 +171,8 @@ describe("taps", () => {
   });
 
   it("stops speech first, then refines the clipboard, else toggles the mute", () => {
-    expect(doubleTapAction({ narrationSpeaking: true, clipboardRefine: true })).toBe("stopNarration");
-    expect(doubleTapAction({ narrationSpeaking: false, clipboardRefine: true })).toBe("refineClipboard");
-    expect(doubleTapAction({ narrationSpeaking: false, clipboardRefine: false })).toBe("toggleMute");
+    expect(doubleTapAction({ isSpeaking: true, clipboardRefine: true })).toBe("stopSpeaking");
+    expect(doubleTapAction({ isSpeaking: false, clipboardRefine: true })).toBe("refineClipboard");
+    expect(doubleTapAction({ isSpeaking: false, clipboardRefine: false })).toBe("toggleMute");
   });
 });

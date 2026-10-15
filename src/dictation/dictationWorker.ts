@@ -1,17 +1,16 @@
 /**
  * The dictation worker (`voxkey worker dictation`): load Whisper once, keep the mic open, poll Shift every
- * 8 ms, show the pill, and start the narration worker; it runs until `voxkey off` or `voxkey reset`.
+ * 8 ms, show the pill, and start the speech worker; it runs until `voxkey off` or `voxkey reset`.
  */
 
 import { Duration, Effect, Schedule } from "effect";
 
-import { readConfigOrDefaults } from "../config/configFile.js";
-import { readEnvironment } from "../config/environmentVariables.js";
-import { ensureWhisperModel, selectWhisperModel } from "../models/whisperModels.js";
-import { startPill, stopPill } from "../worker/pill.js";
-import { appendDictationLog } from "../worker/workerLog.js";
-import { claimWorkerLock, startNarrationWorker, stopRequested } from "../worker/workerProcesses.js";
-import { makeStatusWriter } from "../worker/workerStatus.js";
+import { readConfigOrDefaults } from "../settings/configFile.js";
+import { readEnvironment } from "../settings/environmentVariables.js";
+import { startPill, stopPill } from "../workers/pill.js";
+import { appendDictationLog } from "../workers/workerLog.js";
+import { claimWorkerLock, startSpeechWorker, stopRequested } from "../workers/workerProcesses.js";
+import { makeStatusWriter } from "../workers/workerStatus.js";
 import { startDictationQueue } from "./dictationQueue.js";
 import { makeHoldController } from "./holdController.js";
 import { SHIFT_POLL_MS } from "./holdKey.js";
@@ -19,6 +18,7 @@ import { loadKeyboard } from "./keyboard.js";
 import { captionLoop, makeLiveCaption } from "./livePreview.js";
 import { makeClipBuffer, openMicrophone } from "./microphone.js";
 import { loadTranscriber, whisperBackend } from "./transcriber.js";
+import { ensureWhisperModel, selectWhisperModel } from "./whisperModels.js";
 
 const waitForStop: Effect.Effect<void> = Effect.repeat(Effect.void, {
   schedule: Schedule.spaced("100 millis"),
@@ -55,8 +55,8 @@ const runWorker = Effect.gen(function* () {
     Effect.sync(() => startPill(process.pid)),
     () => Effect.sync(stopPill),
   );
-  if (config.narrationMode !== "off") {
-    startNarrationWorker();
+  if (config.speechMode !== "off") {
+    startSpeechWorker();
   }
   yield* Effect.forkScoped(transcriber.warm);
 

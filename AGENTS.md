@@ -26,7 +26,7 @@ Entrypoint for coding agents and maintainers (Claude Code, Codex, Cursor, and ot
 | `src/config/` | Settings Schema, config file, environment variables |
 | `src/state/` | `~/.voxkey` paths and atomic state files |
 | `src/dictation/` | Hold-Shift decisions, keyboard (koffi), caret typing, microphone, Whisper, live caption, queue, dictation worker |
-| `src/narration/` | Markdown to speech, Supertonic, playback, inbox, Cmux focus, narration worker |
+| `src/speech/` | Markdown to speech, Supertonic, playback, inbox, Cmux focus, speech worker |
 | `src/refine/` | Agent CLI discovery and calls, reply checks, rotation, picker, cmux delivery |
 | `src/agentHooks/` | Agent catalog, byte-preserving Stop-hook edits, `voxkey reply` |
 | `src/models/` | Whisper and Supertonic model files and downloads |

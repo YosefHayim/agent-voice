@@ -5,10 +5,10 @@ import path from "node:path";
 import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 
-import { readConfig } from "../config/configFile.js";
-import { ensureSupertonicModels, missingSupertonicFiles } from "../models/supertonicModels.js";
-import { makeSpeechPlayer, renderMarkdownToWav, speakMarkdown } from "../narration/speechPlayer.js";
-import { loadSupertonic } from "../narration/supertonic.js";
+import { readConfig } from "../settings/configFile.js";
+import { makeSpeechPlayer, renderMarkdownToWav, speakMarkdown } from "../speech/speechPlayer.js";
+import { loadSupertonic } from "../speech/supertonic.js";
+import { ensureSupertonicModels, missingSupertonicFiles } from "../speech/supertonicModels.js";
 import * as TerminalUI from "./TerminalUI.js";
 
 const markdownArgument = Args.text({ name: "markdown" }).pipe(Args.withDescription("A complete reply, in Markdown"));
@@ -25,7 +25,7 @@ export const speakCommand = Command.make("speak", { markdown: markdownArgument, 
       yield* TerminalUI.step("Downloading the Supertonic voices (~400 MB, once)");
     }
     const engine = yield* loadSupertonic(yield* ensureSupertonicModels(() => undefined));
-    const voice = { voice: config.narrationVoice, wordsPerMinute: config.narrationWordsPerMinute };
+    const voice = { voice: config.speechVoice, wordsPerMinute: config.speechWordsPerMinute };
     if (Option.isSome(args.output)) {
       const outputFile = path.resolve(args.output.value);
       const seconds = yield* renderMarkdownToWav({ engine, markdown: args.markdown, voice, outputFile });

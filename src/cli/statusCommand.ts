@@ -3,11 +3,11 @@
 import { Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 
-import { registeredAgents } from "../agentHooks/hookRegistration.js";
-import { readConfigOrDefaults } from "../config/configFile.js";
-import { configFilePath, voxkeyHome } from "../state/statePaths.js";
-import { isWorkerRunning, readPid } from "../worker/workerProcesses.js";
-import { readWorkerStatus } from "../worker/workerStatus.js";
+import { registeredAgents } from "../agents/hookRegistration.js";
+import { readConfigOrDefaults } from "../settings/configFile.js";
+import { configFilePath, voxkeyHome } from "../settings/voxkeyHome.js";
+import { isWorkerRunning, readPid } from "../workers/workerProcesses.js";
+import { readWorkerStatus } from "../workers/workerStatus.js";
 import * as TerminalUI from "./TerminalUI.js";
 
 const jsonOption = Options.boolean("json").pipe(Options.withDescription("Print one JSON document"));
@@ -43,11 +43,11 @@ const currentStatus = Effect.gen(function* () {
       language: config.dictationLanguage,
       hotkey: "hold-shift",
     },
-    narration: {
-      running: isWorkerRunning("narration"),
-      mode: config.narrationMode,
-      voice: config.narrationVoice,
-      muted: config.narrationMuted,
+    speech: {
+      running: isWorkerRunning("speech"),
+      mode: config.speechMode,
+      voice: config.speechVoice,
+      muted: config.speechMuted,
     },
     refine: {
       mode: config.refineMode,
@@ -74,7 +74,7 @@ export const statusCommand = Command.make("status", { json: jsonOption }, (args)
       [
         `dictation   ${dictation}`,
         `model       ${status.dictation.model || "(not loaded)"} ${status.dictation.backend} · language ${status.dictation.language}`,
-        `narration   ${status.narration.running ? "on" : "off"} · mode ${status.narration.mode} · voice ${status.narration.voice}${status.narration.muted ? " · muted" : ""}`,
+        `speech   ${status.speech.running ? "on" : "off"} · mode ${status.speech.mode} · voice ${status.speech.voice}${status.speech.muted ? " · muted" : ""}`,
         `refine      ${status.refine.mode}${status.refine.mode === "off" ? "" : ` · ${status.refine.provider}/${status.refine.model || "default"} → ${status.refine.sendTo}`}`,
         `hooks       ${status.hooks.length === 0 ? "none (run voxkey on)" : status.hooks.join(", ")}`,
         `config      ${status.configFile}`,

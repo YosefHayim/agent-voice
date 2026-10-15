@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Effect, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeStatusWriter } from "../worker/workerStatus.js";
+import { makeStatusWriter } from "../workers/workerStatus.js";
 import { captionLoop, makeLiveCaption } from "./livePreview.js";
 import { makeClipBuffer } from "./microphone.js";
 import type { Transcriber } from "./transcriber.js";

@@ -7,7 +7,7 @@ import { execFile, spawn } from "node:child_process";
 
 import { Effect, Schema } from "effect";
 
-import { appendDictationLog } from "../worker/workerLog.js";
+import { appendDictationLog } from "../workers/workerLog.js";
 import type { Keyboard } from "./keyboard.js";
 
 export class CaretError extends Schema.TaggedError<CaretError>()("CaretError", {

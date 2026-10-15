@@ -2,23 +2,22 @@
 
 import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
-
-import { readConfig, saveConfig } from "../config/configFile.js";
+import { selectWhisperModel } from "../dictation/whisperModels.js";
+import { discoverProviders, REASONING_EFFORTS } from "../refine/providerModels.js";
+import { saveRefineChoice } from "../refine/refineChoices.js";
+import { pickerModels, pickRefineTargetWithDialogs, type RefinePick } from "../refine/refinePicker.js";
+import { readConfig, saveConfig } from "../settings/configFile.js";
 import {
   type Config,
   configSettings,
   defaultConfig,
   settingValueFromText,
   withSettingValue,
-} from "../config/configSchema.js";
-import { readEnvironment } from "../config/environmentVariables.js";
-import { selectWhisperModel } from "../models/whisperModels.js";
-import { discoverProviders, REASONING_EFFORTS } from "../refine/providerModels.js";
-import { saveRefineChoice } from "../refine/refineChoices.js";
-import { pickerModels, pickRefineTargetWithDialogs, type RefinePick } from "../refine/refinePicker.js";
-import { isWorkerRunning, startNarrationWorker, stopNarrationSpeech } from "../worker/workerProcesses.js";
+} from "../settings/configSchema.js";
+import { readEnvironment } from "../settings/environmentVariables.js";
+import { isWorkerRunning, startSpeechWorker, stopSpeech } from "../workers/workerProcesses.js";
 import { CliUsageError } from "./cliUsageError.js";
-import { describeNarration, prepareModels, restartWorkers } from "./onCommand.js";
+import { describeSpeech, prepareModels, restartWorkers } from "./onCommand.js";
 import * as TerminalUI from "./TerminalUI.js";
 
 type ConfigSetting = (typeof configSettings)[number];
@@ -35,7 +34,7 @@ const shownValue = (config: Config, setting: ConfigSetting): string => {
   return value === undefined ? "(not set)" : JSON.stringify(value);
 };
 
-const nameArgument = Args.text({ name: "setting" }).pipe(Args.withDescription("Setting name, e.g. narration-mode"));
+const nameArgument = Args.text({ name: "setting" }).pipe(Args.withDescription("Setting name, e.g. speech-mode"));
 
 const listCommand = Command.make(
   "list",
@@ -62,7 +61,7 @@ const getCommand = Command.make("get", { name: nameArgument }, (args) =>
   }),
 ).pipe(Command.withDescription("Print one setting's value"));
 
-/** Apply a saved change at once: a new language reloads Whisper, and narration starts or stops. */
+/** Apply a saved change at once: a new language reloads Whisper, and speech starts or stops. */
 const applyChange = (previous: Config, next: Config) =>
   Effect.gen(function* () {
     const environment = readEnvironment();
@@ -77,23 +76,23 @@ const applyChange = (previous: Config, next: Config) =>
       return;
     }
 
-    if (previous.narrationMode === "off" && next.narrationMode !== "off" && dictationRunning) {
+    if (previous.speechMode === "off" && next.speechMode !== "off" && dictationRunning) {
       yield* prepareModels(next);
-      startNarrationWorker();
-      yield* TerminalUI.detail(`Narration started. ${describeNarration(next)}`);
+      startSpeechWorker();
+      yield* TerminalUI.detail(`Speech started. ${describeSpeech(next)}`);
       return;
     }
 
-    if (previous.narrationMode !== "off" && next.narrationMode === "off") {
+    if (previous.speechMode !== "off" && next.speechMode === "off") {
       // The worker reads the mode only between replies, so a reply being read is stopped now.
-      stopNarrationSpeech();
-      yield* TerminalUI.detail("Narration stops within a second; dictation keeps running.");
+      stopSpeech();
+      yield* TerminalUI.detail("Speech stops within a second; dictation keeps running.");
       return;
     }
 
-    if (!previous.narrationMuted && next.narrationMuted) {
-      stopNarrationSpeech();
-      yield* TerminalUI.detail("Narration muted; the reply being read stops now.");
+    if (!previous.speechMuted && next.speechMuted) {
+      stopSpeech();
+      yield* TerminalUI.detail("Speech muted; the reply being read stops now.");
       return;
     }
 

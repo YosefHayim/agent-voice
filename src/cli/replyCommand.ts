@@ -3,7 +3,7 @@
 import { Command, Options } from "@effect/cli";
 import { Option } from "effect";
 
-import { runReplyHookFromArguments } from "../agentHooks/replyHook.js";
+import { runReplyHookFromArguments } from "../agents/replyHook.js";
 
 // Free text, not a choice: an unknown agent must be a silent no-op, never a usage error (main.ts also routes
 // `reply` around the parser, so this command mostly documents the hook in --help).
@@ -16,6 +16,6 @@ export const replyCommand = Command.make("reply", { agent: agentOption }, (args)
   runReplyHookFromArguments(Option.match(args.agent, { onNone: () => [], onSome: (agent) => ["--agent", agent] })),
 ).pipe(
   Command.withDescription(
-    "Agent Stop hook: queue the agent's finished reply for narration. Prints nothing and always exits 0.",
+    "Agent Stop hook: queue the agent's finished reply for speech. Prints nothing and always exits 0.",
   ),
 );

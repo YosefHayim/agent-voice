@@ -3,7 +3,7 @@
 Hold Shift to dictate into any text field, and hear your coding agent's replies read aloud — all on your Mac, in TypeScript.
 
 - **Dictation.** Hold Shift on its own for 300 ms, speak, release. Whisper (whisper.cpp large-v3-turbo with Metal) transcribes on your Mac and voxkey types the text at the caret. Any other key pressed while Shift is down cancels, so capital letters and Shift shortcuts never start dictation. A small pill at the bottom of the screen shows "Recording", a live caption, then "Working".
-- **Narration.** When Claude Code, Codex, or Grok finishes a turn, its Stop hook (`voxkey reply`) queues the reply and voxkey reads it aloud with a Supertonic voice. Markdown becomes speech: headings and lists as sentences, tables row by row with their column names, code blocks announced and read symbol by symbol.
+- **Speech.** When Claude Code, Codex, or Grok finishes a turn, its Stop hook (`voxkey reply`) queues the reply and voxkey reads it aloud with a Supertonic voice. Markdown becomes speech: headings and lists as sentences, tables row by row with their column names, code blocks announced and read symbol by symbol.
 - **Refine.** Optionally rewrite what you dictated (or what you copied) into a clean prompt with an agent CLI you already have — codex, claude, gemini, grok, ollama, opencode, or pi — before it is typed.
 
 Everything except refine runs locally. voxkey is macOS only.
@@ -52,9 +52,9 @@ No Homebrew audio tools are needed: the microphone, Whisper, the voices, and the
 | --- | --- |
 | `voxkey on [--hooks-only]` | Register `voxkey reply` as the Stop hook of each installed agent, download missing models, and (re)start the workers. |
 | `voxkey off` | Stop every voxkey process and remove only voxkey's hook entries. Config and models stay. |
-| `voxkey status [--json]` | Workers, dictation stage, model, narration, refine, and hooks. |
+| `voxkey status [--json]` | Workers, dictation stage, model, speech, refine, and hooks. |
 | `voxkey doctor [--json]` | Check macOS, Node, native modules, system tools, models, permissions, hooks, and refine CLIs. |
-| `voxkey config list \| get \| set \| unset` | Show or change a setting; `set` applies at once (a new dictation language restarts dictation, narration starts or stops). |
+| `voxkey config list \| get \| set \| unset` | Show or change a setting; `set` applies at once (a new dictation language restarts dictation, speech starts or stops). |
 | `voxkey config pick-refine [--gui]` | Pick the refine provider, model, and effort from the agent CLIs on this Mac. |
 | `voxkey speak <markdown> [--output file.wav]` | Read one reply aloud, or write it to a WAV file. |
 | `voxkey render <markdown>` | Print the sentences voxkey would read. |
@@ -63,7 +63,7 @@ No Homebrew audio tools are needed: the microphone, Whisper, the voices, and the
 | `voxkey hotkey-check [--seconds 8]` | Print Shift presses, to check that voxkey can see the keyboard. |
 | `voxkey reset` | Kill every voxkey worker and pill and clear the locks. |
 | `voxkey reply --agent <id>` | The agent Stop hook (registered by `voxkey on`). Prints nothing, always exits 0. |
-| `voxkey worker dictation \| narration` | Internal: the background workers. |
+| `voxkey worker dictation \| speech` | Internal: the background workers. |
 
 ## Dictation
 
@@ -84,16 +84,16 @@ voxkey config set dictation-replacements "Joseph=Yosef;type script=TypeScript"
 
 Hebrew uses the [ivrit.ai](https://huggingface.co/ivrit-ai/whisper-large-v3-turbo-ggml) turbo model: `voxkey config set dictation-language he`.
 
-## Narration
+## Speech
 
-Narration starts muted: replies are dropped, not read, until you unmute. Double-tap Shift to unmute or mute again (or, in clipboard refine mode, where double-tap refines the copied prompt, run `voxkey config set narration-muted false`). Tap Shift to stop the current reply. Starting a hold also stops speech.
+Speech starts muted: replies are dropped, not read, until you unmute. Double-tap Shift to unmute or mute again (or, in clipboard refine mode, where double-tap refines the copied prompt, run `voxkey config set speech-muted false`). Tap Shift to stop the current reply. Starting a hold also stops speech.
 
 Inside Cmux each reply is bound to its workspace and surface. In `auto` mode a reply waits until that surface is focused and Cmux is in front; newer replies from the same surface replace older ones; if Cmux does not answer, the reply is spoken at once. `immediate` speaks every reply at once; `off` reads nothing.
 
 ```bash
-voxkey config set narration-muted false
-voxkey config set narration-mode off
-voxkey config set narration-voice M2
+voxkey config set speech-muted false
+voxkey config set speech-mode off
+voxkey config set speech-voice M2
 voxkey speak "Release status: **ready**."
 ```
 
@@ -110,14 +110,14 @@ voxkey tries the configured provider and model, rotates through that provider's 
 
 ## Settings
 
-Stored in `~/.voxkey/config.json`. Names are the kebab-case form of the JSON keys (`narration-mode` is `narrationMode`).
+Stored in `~/.voxkey/config.json`. Names are the kebab-case form of the JSON keys (`speech-mode` is `speechMode`).
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `narration-mode` | `"auto"` | When agent replies are read aloud: auto holds a Cmux reply until its surface is focused and Cmux is in front, and speaks other replies at once; immediate speaks every reply at once; off reads nothing. |
-| `narration-muted` | `true` | Read nothing while true; replies that arrive meanwhile are dropped, not saved for later. Double-tap Shift flips it (outside clipboard refine mode). |
-| `narration-voice` | `"F4"` | Supertonic voice: F1-F5 or M1-M5. |
-| `narration-words-per-minute` | `230` | Speed of read-aloud replies, in words per minute (the voice speed is clamped to 0.7-2.0x). |
+| `speech-mode` | `"auto"` | When agent replies are read aloud: auto holds a Cmux reply until its surface is focused and Cmux is in front, and speaks other replies at once; immediate speaks every reply at once; off reads nothing. |
+| `speech-muted` | `true` | Read nothing while true; replies that arrive meanwhile are dropped, not saved for later. Double-tap Shift flips it (outside clipboard refine mode). |
+| `speech-voice` | `"F4"` | Supertonic voice: F1-F5 or M1-M5. |
+| `speech-words-per-minute` | `230` | Speed of read-aloud replies, in words per minute (the voice speed is clamped to 0.7-2.0x). |
 | `dictation-language` | `"en"` | Dictation language: en (whisper.cpp large-v3-turbo) or he (ivrit.ai Hebrew large-v3-turbo). Accepts english, hebrew, ivrit, iw. |
 | `dictation-keep-listening-seconds` | `0.2` | Seconds the microphone stays open after Shift is released, so trailing words are not cut off. |
 | `dictation-replacements` | `""` | Semicolon-separated heard=written pairs applied to dictation, e.g. Joseph=Yosef;type script=TypeScript. |
@@ -150,10 +150,10 @@ Everything voxkey writes lives in `~/.voxkey` (or `$VOXKEY_HOME`):
 | `models/` | Whisper `ggml-*.bin` files and `supertonic-3/`. |
 | `inbox/`, `failed/`, `seen.json` | Queued replies, replies that failed to play, and the replies already spoken (24 h). |
 | `status.json` | The dictation stage the pill shows. |
-| `dictation.log`, `dictation-worker.log`, `narration-worker.log` | Timings and worker output. |
+| `dictation.log`, `dictation-worker.log`, `speech-worker.log` | Timings and worker output. |
 | `backups/` | A copy of each agent settings file before voxkey edited it. |
 | `refine-choice.json`, `refine-codex-*.txt` | The last refine pick and Codex's working and failing models. |
-| `prompts/`, `audio/`, `devin/` | Refined prompts handed to cmux, narration audio being played, and Devin session exports. |
+| `prompts/`, `audio/`, `devin/` | Refined prompts handed to cmux, speech audio being played, and Devin session exports. |
 | `*.pid`, `*.lock`, `stop` | Worker bookkeeping. |
 
 What you dictate and what agents reply stays yours: every file voxkey keeps in `~/.voxkey` that holds it, and every settings backup, is created readable by you alone (mode 0600), in folders only you can open (0700, `~/.voxkey` included). voxkey tightens such a file or folder whenever it finds one looser. A file you ask for elsewhere, like `voxkey speak --output <file>`, keeps your usual permissions, and so does the folder of a `VOXKEY_CONFIG_FILE` you point outside `~/.voxkey`.
@@ -170,12 +170,12 @@ voxkey is a clean break: it does not read the old config file. Re-create your se
 | `voice off`, `stt off` | `voxkey off` |
 | `voice status` | `voxkey status` |
 | `voice speak`, `voice refine`, `voice devin` | `voxkey speak`, `voxkey refine`, `voxkey devin` |
-| `tts on` / `tts off` | `voxkey config set narration-muted false` / `true` |
+| `tts on` / `tts off` | `voxkey config set speech-muted false` / `true` |
 | `stt keep-listening <s>` | `voxkey config set dictation-keep-listening-seconds <s>` |
 | `stt lang <en\|he>` | `voxkey config set dictation-language <en\|he>` |
 | `config show` / `set` / `reset` / `pick-refine` | `voxkey config list` / `set` / `unset` / `pick-refine` |
 | worker `hotkey-check`, `render`, `reset`, `bench` | `voxkey hotkey-check`, `voxkey render`, `voxkey reset`, `pnpm bench` |
-| `speechMode`, `speechVoice`, `speechWordsPerMinute` | `narrationMode`, `narrationVoice`, `narrationWordsPerMinute` |
+| `speechMode`, `speechVoice`, `speechWordsPerMinute` | `speechMode`, `speechVoice`, `speechWordsPerMinute` |
 | `refineProvider: local` (Apple Foundation Models) | removed; `auto` starts at codex |
 | the voice-folder, config-file, dictation-model, live-preview, and refine-picker variables | `VOXKEY_HOME`, `VOXKEY_CONFIG_FILE`, `VOXKEY_DICTATION_MODEL`, `VOXKEY_DICTATION_LIVE_PREVIEW`, `VOXKEY_REFINE_PICKER` |
 
@@ -187,7 +187,7 @@ pnpm cli status      # run the CLI from source
 pnpm bench --models base,turbo-q5 --seconds 1,2,4 --runs 3
 ```
 
-Smoke tests use models already on your Mac: put (or symlink) `ggml-base.en.bin` and `supertonic-3/` in `.scratch/models/` or `~/.voxkey/models/`; without them those tests skip. Hand checks (hotkey, mic, typing, live narration, permissions) are in [TESTING.md](TESTING.md). Agents start at [AGENTS.md](AGENTS.md).
+Smoke tests use models already on your Mac: put (or symlink) `ggml-base.en.bin` and `supertonic-3/` in `.scratch/models/` or `~/.voxkey/models/`; without them those tests skip. Hand checks (hotkey, mic, typing, live speech, permissions) are in [TESTING.md](TESTING.md). Agents start at [AGENTS.md](AGENTS.md).
 
 ## License
 

@@ -9,7 +9,7 @@ import { Effect, Schema } from "effect";
 
 import { SAMPLE_RATE, syntheticSpeech } from "../dictation/speechDetection.js";
 import { loadTranscriber, whisperBackend } from "../dictation/transcriber.js";
-import { ensureWhisperModel, whisperModels } from "../models/whisperModels.js";
+import { ensureWhisperModel, whisperModels } from "../dictation/whisperModels.js";
 
 const { values } = parseArgs({
   options: {

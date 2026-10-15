@@ -10,8 +10,8 @@ import {
   readTextIfReadable,
   writeFileAtomically,
   writeJsonAtomically,
-} from "../state/stateFiles.js";
-import { stateFile } from "../state/statePaths.js";
+} from "../files/stateFiles.js";
+import { stateFile } from "../settings/voxkeyHome.js";
 
 export const DEFAULT_REFINE_MODEL = "gpt-5.3-codex-spark";
 

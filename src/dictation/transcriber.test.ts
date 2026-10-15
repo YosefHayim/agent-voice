@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { decodeWav } from "../narration/wavFile.js";
+import { decodeWav } from "../speech/wavFile.js";
 import { formatDictation } from "./dictationFormat.js";
 import { samplesFromPcm } from "./speechDetection.js";
 import { loadTranscriber } from "./transcriber.js";
