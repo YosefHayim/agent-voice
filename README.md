@@ -180,7 +180,7 @@ Agent hooks: `~/.claude/settings.json`, `~/.codex/hooks.json`, and `~/.grok/hook
 | `src/refine/` | Agent CLI discovery and calls, reply checks, model rotation, the picker, and cmux delivery |
 | `src/agents/` | The agent catalog, Stop hook edits, `voxkey reply`, and the Devin watcher |
 | `src/workers/` | Worker processes, `status.json`, worker logs, and the pill |
-| `src/scripts/` | Tooling only: the code-style and rule-card checkers, `pnpm bench`, `pnpm cli` (the CLI from source), and the test folder helper |
+| `src/scripts/` | Tooling only: the code-style and rule-card checkers, `pnpm bench`, `pnpm cli` (the CLI from source), and the test helpers `makeTestFolder` and `runVoxkey` |
 
 ## Development
 

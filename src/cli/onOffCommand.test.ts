@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -15,9 +14,8 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
-
-const mainScript = path.join(repositoryRoot, "src", "cli", "main.ts");
+import { runVoxkey } from "../scripts/runVoxkey.js";
+import { makeTestFolder } from "../scripts/testFolder.js";
 
 let home = "";
 let psLog = "";
@@ -74,10 +72,9 @@ afterEach(() => {
 });
 
 const voxkey = (args: ReadonlyArray<string>) =>
-  spawnSync(process.execPath, ["--import", "tsx", mainScript, ...args], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-    env: {
+  runVoxkey({
+    args,
+    environment: {
       ...process.env,
       HOME: home,
       VOXKEY_HOME: inHome(".voxkey"),
@@ -86,7 +83,7 @@ const voxkey = (args: ReadonlyArray<string>) =>
   });
 
 describe("voxkey on --hooks-only and voxkey off in a scratch HOME", () => {
-  it("keeps settings backups private, tightening a backups folder an older build left open", () => {
+  it("keeps settings backups private, tightening a backups folder an older build left open", async () => {
     const voxkeyFolder = inHome(".voxkey");
     const backups = inHome(".voxkey/backups");
     const claudeSettingsFile = inHome(".claude/settings.json");
@@ -95,7 +92,8 @@ describe("voxkey on --hooks-only and voxkey off in a scratch HOME", () => {
     chmodSync(backups, 0o755);
     chmodSync(claudeSettingsFile, 0o644);
 
-    expect(voxkey(["on", "--hooks-only"]).status).toBe(0);
+    const on = await voxkey(["on", "--hooks-only"]);
+    expect(on.status).toBe(0);
 
     const permissions = (file: string) => statSync(file).mode & 0o777;
     expect(permissions(voxkeyFolder)).toBe(0o700);
@@ -107,9 +105,9 @@ describe("voxkey on --hooks-only and voxkey off in a scratch HOME", () => {
     expect(permissions(claudeSettingsFile)).toBe(0o644);
   });
 
-  it("adds one reply hook per installed agent, backs files up, and removes exactly what it added", () => {
+  it("adds one reply hook per installed agent, backs files up, and removes exactly what it added", async () => {
     const backups = inHome(".voxkey/backups");
-    const on = voxkey(["on", "--hooks-only"]);
+    const on = await voxkey(["on", "--hooks-only"]);
     expect(on.status).toBe(0);
     expect(read(".claude/settings.json")).toContain("// keep this comment");
     expect(read(".claude/settings.json")).toContain("reply --agent claude-code");
@@ -117,15 +115,15 @@ describe("voxkey on --hooks-only and voxkey off in a scratch HOME", () => {
     expect(read(".grok/hooks/voxkey.json")).toContain("reply --agent grok");
     expect(readdirSync(backups)).toHaveLength(2);
 
-    const again = voxkey(["on", "--hooks-only"]);
+    const again = await voxkey(["on", "--hooks-only"]);
     expect(again.stdout).toContain("already registered");
     expect(read(".claude/settings.json").match(/reply --agent claude-code/gu)).toHaveLength(1);
 
-    const statusRun = voxkey(["status", "--json"]);
+    const statusRun = await voxkey(["status", "--json"]);
     const status = JSON.parse(statusRun.stdout);
     expect(status.hooks).toEqual(["claude-code", "codex", "grok"]);
 
-    const off = voxkey(["off"]);
+    const off = await voxkey(["off"]);
     expect(off.status).toBe(0);
     expect(readFileSync(psLog, "utf8")).toContain("-ax");
     expect(read(".claude/settings.json")).toBe(claudeSettings);
@@ -133,69 +131,73 @@ describe("voxkey on --hooks-only and voxkey off in a scratch HOME", () => {
     expect(exists(".grok/hooks/voxkey.json")).toBe(false);
   });
 
-  it("deletes a settings file voxkey created once it is empty again, and keeps an empty file that was there before", () => {
+  it("deletes a settings file voxkey created once it is empty again, and keeps an empty file that was there before", async () => {
     remove(".codex/hooks.json");
     remove(".claude/settings.json");
     write(".grok/other.json", "{}\n");
 
-    expect(voxkey(["on", "--hooks-only"]).status).toBe(0);
+    const firstOn = await voxkey(["on", "--hooks-only"]);
+    expect(firstOn.status).toBe(0);
     expect(read(".codex/hooks.json")).toContain("reply --agent codex");
     expect(read(".claude/settings.json")).toContain("reply --agent claude-code");
 
-    expect(voxkey(["off"]).status).toBe(0);
+    const firstOff = await voxkey(["off"]);
+    expect(firstOff.status).toBe(0);
     expect(exists(".codex/hooks.json")).toBe(false);
     expect(exists(".claude/settings.json")).toBe(false);
     expect(read(".grok/other.json")).toBe("{}\n");
 
     write(".codex/hooks.json", "{}\n");
-    expect(voxkey(["on", "--hooks-only"]).status).toBe(0);
-    expect(voxkey(["off"]).status).toBe(0);
+    const secondOn = await voxkey(["on", "--hooks-only"]);
+    expect(secondOn.status).toBe(0);
+    const secondOff = await voxkey(["off"]);
+    expect(secondOff.status).toBe(0);
     expect(read(".codex/hooks.json")).toBe("{}\n");
   });
 
-  it("leaves a settings file it cannot read exactly as it is, instead of replacing it", () => {
+  it("leaves a settings file it cannot read exactly as it is, instead of replacing it", async () => {
     // A symlink to itself cannot be read by anyone; a mode-000 file can still be read by root.
     const settings = inHome(".claude/settings.json");
     const backups = inHome(".voxkey/backups");
     rmSync(settings);
     symlinkSync("settings.json", settings);
 
-    const on = voxkey(["on", "--hooks-only"]);
+    const on = await voxkey(["on", "--hooks-only"]);
     expect(on.status).toBe(0);
     expect(on.stdout).toContain("could not be read");
     expect(readlinkSync(settings)).toBe("settings.json");
     expect(readdirSync(backups)).toEqual([expect.stringMatching(/^codex-/u)]);
   });
 
-  it("does not claim there is no hook when the only agent's settings could not be read", () => {
+  it("does not claim there is no hook when the only agent's settings could not be read", async () => {
     remove(".codex");
     remove(".grok");
     const settings = inHome(".claude/settings.json");
     rmSync(settings);
     symlinkSync("settings.json", settings);
 
-    const on = voxkey(["on", "--hooks-only"]);
+    const on = await voxkey(["on", "--hooks-only"]);
     expect(on.status).toBe(0);
     expect(on.stdout).toContain("No agent hook was confirmed as registered");
     expect(on.stdout).not.toContain("No agent hook is registered");
   });
 
-  it("does not claim hooks are registered when no agent is installed", () => {
+  it("does not claim hooks are registered when no agent is installed", async () => {
     remove(".claude");
     remove(".codex");
     remove(".grok");
 
-    const on = voxkey(["on", "--hooks-only"]);
+    const on = await voxkey(["on", "--hooks-only"]);
     expect(on.status).toBe(0);
     expect(on.stdout).toContain("No agent hook was confirmed as registered");
     expect(on.stdout).not.toContain("Hooks registered");
   });
 
-  it("skips agents that are not installed and leaves a broken settings file alone", () => {
+  it("skips agents that are not installed and leaves a broken settings file alone", async () => {
     remove(".grok");
     write(".codex/hooks.json", "{ not json");
 
-    const on = voxkey(["on", "--hooks-only"]);
+    const on = await voxkey(["on", "--hooks-only"]);
     expect(on.status).toBe(0);
     expect(on.stdout).toContain("Grok: not installed, skipped");
     expect(on.stdout).toContain("left unchanged");

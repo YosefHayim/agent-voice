@@ -1,12 +1,11 @@
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
-
-const mainScript = path.join(repositoryRoot, "src", "cli", "main.ts");
+import { runVoxkey } from "../scripts/runVoxkey.js";
+import { makeTestFolder } from "../scripts/testFolder.js";
 
 let home = "";
 let sleeper: ChildProcess | undefined;
@@ -24,16 +23,12 @@ afterEach(() => {
 
 const voxkey = (args: ReadonlyArray<string>) => {
   const { VOXKEY_CONFIG_FILE: _ignored, ...environment } = process.env;
-  return spawnSync(process.execPath, ["--import", "tsx", mainScript, ...args], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-    env: { ...environment, HOME: home, VOXKEY_HOME: path.join(home, ".voxkey") },
-  });
+  return runVoxkey({ args, environment: { ...environment, HOME: home, VOXKEY_HOME: path.join(home, ".voxkey") } });
 };
 
 describe("voxkey config errors", () => {
-  it("go to stderr, so stdout carries only the command's own output", () => {
-    const get = voxkey(["config", "get", "no-such-setting"]);
+  it("go to stderr, so stdout carries only the command's own output", async () => {
+    const get = await voxkey(["config", "get", "no-such-setting"]);
 
     expect(get.status).toBe(2);
     expect(get.stdout).toBe("");
@@ -61,8 +56,8 @@ const speechStopped = async (marker: string) => {
   return existsSync(marker) && readFileSync(marker, "utf8") === "stopped";
 };
 
-const speechMuted = () => {
-  const statusRun = voxkey(["status", "--json"]);
+const speechMuted = async () => {
+  const statusRun = await voxkey(["status", "--json"]);
   return JSON.parse(statusRun.stdout).speech.muted;
 };
 
@@ -71,7 +66,7 @@ describe("voxkey config set speech-mode off", () => {
     const marker = path.join(home, "stopped");
     await startStandInSpeechWorker(marker);
 
-    const set = voxkey(["config", "set", "speech-mode", "off"]);
+    const set = await voxkey(["config", "set", "speech-mode", "off"]);
 
     expect(set.status).toBe(0);
     expect(set.stdout).toContain("Speech stops");
@@ -80,14 +75,14 @@ describe("voxkey config set speech-mode off", () => {
 });
 
 describe("voxkey speech-muted", () => {
-  it("starts muted, and config set speech-muted false unmutes", () => {
-    expect(speechMuted()).toBe(true);
+  it("starts muted, and config set speech-muted false unmutes", async () => {
+    expect(await speechMuted()).toBe(true);
 
-    const set = voxkey(["config", "set", "speech-muted", "false"]);
+    const set = await voxkey(["config", "set", "speech-muted", "false"]);
 
     expect(set.status).toBe(0);
     expect(set.stdout).toContain("speech-muted = false");
-    expect(speechMuted()).toBe(false);
+    expect(await speechMuted()).toBe(false);
   });
 
   it("stops the reply being read now when muted again", async () => {
@@ -97,7 +92,7 @@ describe("voxkey speech-muted", () => {
     const configText = JSON.stringify({ speechMuted: false });
     writeFileSync(configFile, configText);
 
-    const set = voxkey(["config", "set", "speech-muted", "true"]);
+    const set = await voxkey(["config", "set", "speech-muted", "true"]);
 
     expect(set.status).toBe(0);
     expect(set.stdout).toContain("Speech muted");
