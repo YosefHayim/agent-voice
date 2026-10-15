@@ -329,6 +329,15 @@ const ACCEPTED: ReadonlyArray<SingleFileCase> = [
       "export const pick = (items: string[], index: number) => {\n  // Bounds were checked before this lookup.\n  return items[index]!;\n};\n",
   },
   {
+    name: "indexed non-null access in a const with a proof comment",
+    source:
+      "export const pick = (items: string[], index: number) => {\n  // Bounds were checked before this lookup.\n  const item = items[index]!;\n  return item;\n};\n",
+  },
+  {
+    name: "an as expression in a const under an external type comment",
+    source: "// External type: the addon returns unknown.\nexport const decoded = input as string;\n",
+  },
+  {
     name: "an interface in a declaration file",
     path: "src/types/environment.d.ts",
     source: "declare global { interface ProcessEnv { VOXKEY_HOME?: string } }\nexport {};\n",

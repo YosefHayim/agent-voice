@@ -79,7 +79,7 @@ const extendsSchemaTaggedError = (node: ts.ClassLikeDeclaration): boolean => {
 };
 
 const nearestStatement = (node: ts.Node): ts.Node => {
-  if (ts.isStatement(node) || ts.isVariableDeclaration(node)) {
+  if (ts.isStatement(node)) {
     return node;
   }
 
