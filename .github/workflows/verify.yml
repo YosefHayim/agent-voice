@@ -1,0 +1,17 @@
+name: Verify
+'on':
+  workflow_call: null
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: Verify
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup workspace
+        uses: ./.github/actions/setup
+      - name: Verify
+        run: pnpm verify
