@@ -76,7 +76,7 @@ const { downloadFile } = await import(modulePath);
 await downloadFile({ url, destination, onProgress: () => undefined }).pipe(Effect.runPromise);
 `;
 
-// Another process downloading the same file with the same code, as a second `voxkey on` or worker would.
+// Another process downloading the same file with the same code, as a second `agent-voice on` or worker would.
 const startDownloader = (request: { readonly url: string; readonly destination: string }) => {
   const child = spawn(
     process.execPath,

@@ -47,9 +47,9 @@ beforeEach(() => {
   for (const name of PROVIDER_BINARIES) {
     writeFakeCli(name, "exit 0");
   }
-  const voxkeyHome = path.join(home, ".voxkey");
+  const agentVoiceHome = path.join(home, ".agent-voice");
   vi.stubEnv("HOME", home);
-  vi.stubEnv("VOXKEY_HOME", voxkeyHome);
+  vi.stubEnv("AGENT_VOICE_HOME", agentVoiceHome);
   vi.stubEnv("PATH", `${bin}:/usr/bin:/bin`);
 });
 
@@ -156,7 +156,7 @@ describe("refine rotation", () => {
     const refined = await refine("uh run `pnpm verify` and like open a pr dont merge");
 
     expect(refined).toEqual(Exit.succeed("finish-and-push: run `pnpm verify` then open a PR"));
-    const choiceFile = path.join(home, ".voxkey", "refine-choice.json");
+    const choiceFile = path.join(home, ".agent-voice", "refine-choice.json");
     const choiceText = readFileSync(choiceFile, "utf8");
     const choice = JSON.parse(choiceText);
     expect(choice).toMatchObject({ provider: "codex", model: "gpt-5.3-codex-spark", effort: "low" });
@@ -237,10 +237,10 @@ describe("pickerModels", () => {
   });
 
   it("never offers a model saved for another provider as a Codex model", () => {
-    const voxkeyHome = path.join(home, ".voxkey");
-    const choiceFile = path.join(voxkeyHome, "refine-choice.json");
+    const agentVoiceHome = path.join(home, ".agent-voice");
+    const choiceFile = path.join(agentVoiceHome, "refine-choice.json");
     const savedChoice = JSON.stringify({ provider: "claude", model: "opus", effort: "", updatedAt: 1 });
-    mkdirSync(voxkeyHome, { recursive: true });
+    mkdirSync(agentVoiceHome, { recursive: true });
     writeFileSync(choiceFile, savedChoice);
 
     expect(

@@ -1,5 +1,5 @@
 import { writePrivateFile } from "../files/stateFiles.js";
-import { stateFile } from "../settings/voxkeyHome.js";
+import { stateFile } from "../settings/agentVoiceHome.js";
 
 // The logs keep the full dictated and refined text, so they are private (0600 in a 0700 folder).
 const appendLogLine = (fileName: "dictation.log" | "speech-worker.log", line: string): void => {

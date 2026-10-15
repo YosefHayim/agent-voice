@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 
-// Tests write only under the gitignored .test-home/, never to the real ~/.voxkey or ~/.claude.
+// Tests write only under the gitignored .test-home/, never to the real ~/.agent-voice or ~/.claude.
 const testHomeRoot = path.join(repositoryRoot, ".test-home");
 
 export const makeTestFolder = (name: string): string => {

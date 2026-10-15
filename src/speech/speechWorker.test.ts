@@ -16,7 +16,7 @@ let server: Server | undefined;
 
 beforeEach(() => {
   home = makeTestFolder("speech-worker");
-  vi.stubEnv("VOXKEY_HOME", home);
+  vi.stubEnv("AGENT_VOICE_HOME", home);
   const configFile = path.join(home, "config.json");
   const config = JSON.stringify({ speechMode: "auto", speechMuted: false });
   writeFileSync(configFile, config);

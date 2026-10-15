@@ -5,8 +5,8 @@ import path from "node:path";
 
 import { Effect, Option, Schema } from "effect";
 import { writePrivateFile } from "../files/stateFiles.js";
+import { stateFolder } from "../settings/agentVoiceHome.js";
 import type { Config } from "../settings/configSchema.js";
-import { stateFolder } from "../settings/voxkeyHome.js";
 import { cliFailureText, findCli, nonBlankLines, runCli } from "./agentCli.js";
 
 export class CmuxDeliveryFailed extends Schema.TaggedError<CmuxDeliveryFailed>()("CmuxDeliveryFailed", {

@@ -13,8 +13,8 @@ let home = "";
 
 beforeEach(() => {
   home = makeTestFolder("caption");
-  vi.stubEnv("VOXKEY_HOME", home);
-  vi.stubEnv("VOXKEY_CONFIG_FILE", undefined);
+  vi.stubEnv("AGENT_VOICE_HOME", home);
+  vi.stubEnv("AGENT_VOICE_CONFIG_FILE", undefined);
 });
 
 afterEach(() => {

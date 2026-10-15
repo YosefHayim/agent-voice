@@ -80,7 +80,7 @@ const run = (request: {
     return tensor;
   });
 
-// onnxruntime-node is imported here, not at the top, so `voxkey reply` never loads it.
+// onnxruntime-node is imported here, not at the top, so `agent-voice reply` never loads it.
 export const loadSupertonic = (modelFolder: string) =>
   Effect.gen(function* () {
     const ort: typeof OnnxRuntime = yield* Effect.tryPromise({ try: () => import("onnxruntime-node"), catch: fail });

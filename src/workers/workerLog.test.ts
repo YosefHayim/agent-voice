@@ -12,9 +12,9 @@ let log = "";
 
 beforeEach(() => {
   testFolder = makeTestFolder("log");
-  home = path.join(testFolder, ".voxkey");
+  home = path.join(testFolder, ".agent-voice");
   log = path.join(home, "dictation.log");
-  vi.stubEnv("VOXKEY_HOME", home);
+  vi.stubEnv("AGENT_VOICE_HOME", home);
 });
 
 afterEach(() => {
@@ -25,7 +25,7 @@ afterEach(() => {
 const permissions = (file: string) => statSync(file).mode & 0o777;
 
 describe("dictation.log", () => {
-  it("is created readable by the user alone, in a voxkey folder only the user can open", () => {
+  it("is created readable by the user alone, in an agent-voice folder only the user can open", () => {
     appendDictationLog("stt text=meet me at noon");
 
     expect(permissions(log)).toBe(0o600);

@@ -3,8 +3,8 @@ import path from "node:path";
 
 import { Effect } from "effect";
 import { downloadFile, type ModelDownloadError } from "../files/modelDownload.js";
+import { stateFolder } from "../settings/agentVoiceHome.js";
 import { speechVoices } from "../settings/configSchema.js";
-import { stateFolder } from "../settings/voxkeyHome.js";
 
 // The revision the supertonic 1.3.1 PyPI package pinned, so voices sound exactly as before.
 const SUPERTONIC_REVISION = "724fb5abbf5502583fb520898d45929e62f02c0b";

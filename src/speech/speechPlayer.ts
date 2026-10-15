@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { Effect, Fiber, Schema } from "effect";
 import { writePrivateFile } from "../files/stateFiles.js";
+import { stateFolder } from "../settings/agentVoiceHome.js";
 import type { Config } from "../settings/configSchema.js";
-import { stateFolder } from "../settings/voxkeyHome.js";
 import { markdownToSpeech } from "./markdownToSpeech.js";
 import { chunkSpeech, SPEECH_CHUNK_CHARACTERS, speedForWordsPerMinute } from "./speechChunks.js";
 import type { SupertonicEngine, SupertonicError } from "./supertonic.js";

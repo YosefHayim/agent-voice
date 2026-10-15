@@ -8,4 +8,4 @@ const markdownArgument = Args.text({ name: "markdown" }).pipe(Args.withDescripti
 export const renderCommand = Command.make("render", { markdown: markdownArgument }, (args) => {
   const speech = markdownToSpeech(args.markdown);
   return TerminalUI.text(speech);
-}).pipe(Command.withDescription("Print the sentences voxkey would read for a Markdown reply"));
+}).pipe(Command.withDescription("Print the sentences agent-voice would read for a Markdown reply"));

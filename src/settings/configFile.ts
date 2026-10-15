@@ -1,15 +1,15 @@
 import { Effect, Option, ParseResult, Schema } from "effect";
 
 import { readTextIfPresent, writeFileAtomically } from "../files/stateFiles.js";
+import { configFilePath } from "./agentVoiceHome.js";
 import { type Config, configSchema, defaultConfig } from "./configSchema.js";
-import { configFilePath } from "./voxkeyHome.js";
 
 export class ConfigFileError extends Schema.TaggedError<ConfigFileError>()("ConfigFileError", {
   path: Schema.String,
   issue: Schema.String,
 }) {
   get message(): string {
-    return `${this.path} is not a valid voxkey config: ${this.issue}`;
+    return `${this.path} is not a valid agent-voice config: ${this.issue}`;
   }
 }
 

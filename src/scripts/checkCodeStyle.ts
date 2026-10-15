@@ -504,7 +504,7 @@ const NODE_RULES: ReadonlyArray<NodeRule> = [
     ruleId: "type.schema-owned-runtime",
     kinds: ["application"],
     message: "Exported runtime object types must derive from an Effect Schema.",
-    // A declaration file describes an external package's contract, which no voxkey Schema owns.
+    // A declaration file describes an external package's contract, which no agent-voice Schema owns.
     matches: ({ node, sourceFile }) =>
       !sourceFile.isDeclarationFile &&
       ts.isTypeAliasDeclaration(node) &&

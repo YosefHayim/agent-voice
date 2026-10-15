@@ -57,16 +57,16 @@ describe("private files", () => {
     expect(permissions(inbox)).toBe(0o700);
   });
 
-  it("tightens voxkey's own folders on an atomic write, and leaves a folder the user picked as it was", () => {
-    const home = path.join(folder, "voxkey-home");
+  it("tightens agent-voice's own folders on an atomic write, and leaves a folder the user picked as it was", () => {
+    const home = path.join(folder, "agent-voice-home");
     const chosen = path.join(folder, "dotfiles");
     const lastGood = path.join(home, "refine-codex-last-good.txt");
-    const chosenConfig = path.join(chosen, "voxkey.json");
+    const chosenConfig = path.join(chosen, "agent-voice.json");
     mkdirSync(home, { mode: 0o755 });
     mkdirSync(chosen, { mode: 0o755 });
     chmodSync(home, 0o755);
     chmodSync(chosen, 0o755);
-    vi.stubEnv("VOXKEY_HOME", home);
+    vi.stubEnv("AGENT_VOICE_HOME", home);
 
     writeFileAtomically({ path: lastGood, text: "gpt-5\n" });
     writeFileAtomically({ path: chosenConfig, text: "{}\n" });

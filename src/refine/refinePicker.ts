@@ -27,14 +27,14 @@ const refinePickSchema = Schema.Struct({
 
 export type RefinePick = Schema.Schema.Type<typeof refinePickSchema>;
 
-const PICKER_TITLE = "voxkey refine";
+const PICKER_TITLE = "agent-voice refine";
 const DIALOG_TIMEOUT_MS = 300_000;
 const ALERT_TIMEOUT_MS = 60_000;
 
-// The picker runs only on a Mac, outside CI, and unless VOXKEY_REFINE_PICKER is off.
+// The picker runs only on a Mac, outside CI, and unless AGENT_VOICE_REFINE_PICKER is off.
 export const pickerEnabled = (): boolean => {
   const environment = readEnvironment();
-  return environment.VOXKEY_REFINE_PICKER && environment.CI === "" && process.platform === "darwin";
+  return environment.AGENT_VOICE_REFINE_PICKER && environment.CI === "" && process.platform === "darwin";
 };
 
 const appleScriptText = (text: string): string => text.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"');

@@ -1,4 +1,4 @@
-// voxkey's one Stop entry is added and removed by text edits at jsonc-parser offsets: comments, key order, and spacing
+// agent-voice's one Stop entry is added and removed by text edits at jsonc-parser offsets: comments, key order, and spacing
 // of everything else stay byte for byte, and removing the entry right after adding it restores the original text.
 
 import { Either, Option, Schema } from "effect";
@@ -28,7 +28,7 @@ type HookInsertion = { readonly container: Node; readonly keyPrefix: string; rea
 // POSIX single quotes: the shell expands nothing inside them, and an embedded ' is closed, escaped, and reopened.
 const shellQuoted = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
 
-// `'<node>' [loader flags] '<voxkey main>' reply --agent <id>`: the command that identifies voxkey's entry.
+// `'<node>' [loader flags] '<agent-voice main>' reply --agent <id>`: the command that identifies agent-voice's entry.
 export const replyHookCommand = (request: {
   readonly nodePath: string;
   readonly scriptArguments: ReadonlyArray<string>;
@@ -42,7 +42,7 @@ const QUOTED_WORD = String.raw`'(?:[^']|'\\'')*'`;
 
 const MAIN_SCRIPT_WORD = String.raw`'(?:[^']|'\\'')*/src/cli/main\.[jt]s'`;
 
-// Matches voxkey's entry from any install path, but only in the exact shape replyHookCommand writes.
+// Matches agent-voice's entry from any install path, but only in the exact shape replyHookCommand writes.
 export const isReplyHookCommand = (command: string, agent: AgentId): boolean => {
   const replyHookPattern = new RegExp(`^(?:${QUOTED_WORD} )+${MAIN_SCRIPT_WORD} reply --agent ${agent}$`, "u");
   const trimmed = command.trim();
@@ -167,7 +167,7 @@ const findReplyHook = (root: Node, matches: (command: string) => boolean): Optio
 const isEmptyContainer = (node: Node | undefined): boolean =>
   (node?.type === "array" || node?.type === "object") && (node.children || []).length === 0;
 
-// Remove an object property, or nothing, once removing voxkey's entry left its value empty.
+// Remove an object property, or nothing, once removing agent-voice's entry left its value empty.
 const pruneIfEmpty = (request: { readonly source: string; readonly path: ReadonlyArray<string> }): string => {
   const parsed = parseSettings(request.source);
   if (Either.isLeft(parsed)) {
@@ -186,7 +186,7 @@ const pruneIfEmpty = (request: { readonly source: string; readonly path: Readonl
   return removeMember({ source: request.source, container: parent, member: property });
 };
 
-// A group that also holds other hooks keeps them; a group holding only voxkey's hook goes whole.
+// A group that also holds other hooks keeps them; a group holding only agent-voice's hook goes whole.
 const removeHookEntry = (source: string, location: ReplyHookLocation): string => {
   const hasOtherHooks = (location.groupHooks.children || []).length > 1;
   if (hasOtherHooks) {
@@ -215,7 +215,7 @@ export const removeReplyHook = (request: {
     }),
   );
 
-// voxkey's hook group goes into the Stop array, into a new Stop key in hooks, or into a new hooks key.
+// agent-voice's hook group goes into the Stop array, into a new Stop key in hooks, or into a new hooks key.
 const hookInsertion = (root: Node, command: string): Either.Either<HookInsertion, HookSettingsIssue> => {
   const hookGroup = { hooks: [{ type: "command", command }] };
   const hooks = findNodeAtLocation(root, ["hooks"]);
@@ -266,7 +266,7 @@ const confirmAdded = (edited: string, command: string): Either.Either<SettingsEd
     Either.map((root) => findReplyHook(root, (found) => found === command)),
     Either.filterOrLeft(
       Option.isSome,
-      () => new HookSettingsIssue({ issue: "the edited settings lost voxkey's entry" }),
+      () => new HookSettingsIssue({ issue: "the edited settings lost agent-voice's entry" }),
     ),
     Either.map(() => ({ source: edited, changed: true })),
   );
@@ -281,7 +281,7 @@ const replaceReplyHook = (request: {
     Either.flatMap((edited) => confirmAdded(edited, request.command)),
   );
 
-// Replaces an older voxkey entry for the same agent, so a moved install keeps one entry.
+// Replaces an older agent-voice entry for the same agent, so a moved install keeps one entry.
 export const addReplyHook = (request: {
   readonly source: string;
   readonly command: string;
@@ -301,5 +301,5 @@ export const addReplyHook = (request: {
   );
 };
 
-// `{}` and whitespace with no comment, so voxkey may then delete its own file.
+// `{}` and whitespace with no comment, so agent-voice may then delete its own file.
 export const isEmptySettings = (source: string): boolean => source.replace(/\s/gu, "") === "{}";

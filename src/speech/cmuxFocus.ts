@@ -56,7 +56,7 @@ const askCmux = (request: { readonly socketPath: string; readonly method: string
     socket.on("error", giveUp);
     socket.on("close", giveUp);
     socket.on("connect", () => {
-      const requestLine = JSON.stringify({ id: "voxkey", method: request.method, params: {} });
+      const requestLine = JSON.stringify({ id: "agent-voice", method: request.method, params: {} });
       socket.write(`${requestLine}\n`);
     });
     socket.on("data", (chunk) => {

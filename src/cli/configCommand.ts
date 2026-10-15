@@ -24,7 +24,7 @@ const findSetting = (name: string) =>
   Effect.gen(function* () {
     const setting = configSettings.find((candidate) => candidate.name === name || candidate.key === name);
     if (setting === undefined) {
-      return yield* new CliUsageError({ issue: `Unknown setting "${name}". See \`voxkey config list\`.` });
+      return yield* new CliUsageError({ issue: `Unknown setting "${name}". See \`agent-voice config list\`.` });
     }
 
     return setting;
@@ -129,7 +129,7 @@ const setCommand = Command.make("set", { name: nameArgument, value: valueArgumen
     const value = yield* settingValueFromText({ setting, text: args.value });
     yield* saveSetting({ setting, value });
   }),
-).pipe(Command.withDescription("Change one setting, e.g. `voxkey config set dictation-language he`"));
+).pipe(Command.withDescription("Change one setting, e.g. `agent-voice config set dictation-language he`"));
 
 const unsetCommand = Command.make("unset", { name: nameArgument }, (args) =>
   Effect.gen(function* () {
@@ -229,6 +229,6 @@ const pickRefineCommand = Command.make("pick-refine", { gui: guiOption }, (args)
 ).pipe(Command.withDescription("Pick the refine provider, model, and effort from the agent CLIs on this Mac"));
 
 export const configCommand = Command.make("config").pipe(
-  Command.withDescription("Show or change voxkey's settings"),
+  Command.withDescription("Show or change agent-voice's settings"),
   Command.withSubcommands([listCommand, getCommand, setCommand, unsetCommand, pickRefineCommand]),
 );

@@ -25,7 +25,7 @@ let home = "";
 
 beforeEach(() => {
   home = makeTestFolder("inbox");
-  vi.stubEnv("VOXKEY_HOME", home);
+  vi.stubEnv("AGENT_VOICE_HOME", home);
 });
 
 afterEach(() => {

@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { Effect, Option, Schema } from "effect";
 import { makePrivateFolder, readJsonFile, removeIfPresent, writeJsonAtomically } from "../files/stateFiles.js";
+import { stateFile, stateFolder } from "../settings/agentVoiceHome.js";
 import type { Config } from "../settings/configSchema.js";
-import { stateFile, stateFolder } from "../settings/voxkeyHome.js";
 import { type CmuxFocus, cmuxFocus } from "./cmuxFocus.js";
 
 const terminalOriginSchema = Schema.Struct({ kind: Schema.Literal("terminal") });

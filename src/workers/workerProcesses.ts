@@ -11,7 +11,7 @@ import {
   removeIfPresent,
   touchFile,
 } from "../files/stateFiles.js";
-import { stateFile, voxkeyHome } from "../settings/voxkeyHome.js";
+import { agentVoiceHome, stateFile } from "../settings/agentVoiceHome.js";
 import { removeInboxFiles } from "../speech/inbox.js";
 import { readWorkerStatus, writeWorkerStatus } from "./workerStatus.js";
 
@@ -69,7 +69,7 @@ const isZombie = (pid: number): boolean => {
 const isProcessAlive = (pid: number): boolean => sendSignal(pid, 0) && !isZombie(pid);
 
 const isPillCommand = (commandLine: string): boolean => {
-  const home = voxkeyHome();
+  const home = agentVoiceHome();
   return commandLine.includes("osascript -l JavaScript") && commandLine.includes(home);
 };
 
@@ -87,7 +87,7 @@ export const readPid = (name: PidFileName): Option.Option<number> => {
 };
 
 export const writePid = (name: PidFileName, pid: number): void => {
-  const home = voxkeyHome();
+  const home = agentVoiceHome();
   makePrivateFolder(home);
   const pidPath = stateFile(name);
   writeFileSync(pidPath, `${pid}`);
@@ -170,7 +170,7 @@ const removeOwnPidFile = (kind: WorkerKind): void => {
 // SIGKILL, so racing starters never meet a stale lock to take over, and exactly one of them owns it.
 export const claimWorkerLock = (kind: WorkerKind): Effect.Effect<boolean, FileLockError, Scope.Scope> =>
   Effect.gen(function* () {
-    const home = voxkeyHome();
+    const home = agentVoiceHome();
     makePrivateFolder(home);
     const lock = workerLockPath(kind);
     const ownsLock = yield* holdLock(lock);
@@ -194,8 +194,8 @@ const entryScript = (): string => {
   return fileURLToPath(new URL("../cli/main.ts", import.meta.url));
 };
 
-// This Node with its loader flags, so a worker or a hook runs the same voxkey as the command that started it.
-export const voxkeyInvocation = (): {
+// This Node with its loader flags, so a worker or a hook runs the same agent-voice as the command that started it.
+export const agentVoiceInvocation = (): {
   readonly executable: string;
   readonly scriptArguments: ReadonlyArray<string>;
 } => ({
@@ -207,7 +207,7 @@ export const voxkeyInvocation = (): {
 export const spawnWorker = (kind: WorkerKind): void => {
   const logPath = workerLogPath(kind);
   const log = openPrivateFile({ path: logPath, flags: "a" });
-  const invocation = voxkeyInvocation();
+  const invocation = agentVoiceInvocation();
   const child = spawn(invocation.executable, [...invocation.scriptArguments, "worker", kind], {
     detached: true,
     stdio: ["ignore", log, log],
@@ -269,13 +269,13 @@ export const stopWorkers: Effect.Effect<void> = Effect.gen(function* () {
   removeInboxFiles([".speaking"]);
 });
 
-// Every voxkey worker or pill process on this Mac, found by its command line.
-const strayVoxkeyProcesses = (): ReadonlyArray<number> => {
+// Every agent-voice worker or pill process on this Mac, found by its command line.
+const strayAgentVoiceProcesses = (): ReadonlyArray<number> => {
   const processList = runPs(["-ax", "-o", "pid=,args="]);
   return processList.split("\n").flatMap((line) => {
     const match = PROCESS_ROW.exec(line);
     const commandLine = match?.[2] || "";
-    const isWorker = commandLine.includes("voxkey") && WORKER_COMMAND.test(commandLine);
+    const isWorker = commandLine.includes("agent-voice") && WORKER_COMMAND.test(commandLine);
     const isStray = isWorker || isPillCommand(commandLine);
     if (!isStray) {
       return [];
@@ -287,7 +287,7 @@ const strayVoxkeyProcesses = (): ReadonlyArray<number> => {
 
 export const resetWorkers: Effect.Effect<void> = Effect.gen(function* () {
   yield* stopWorkers;
-  for (const pid of strayVoxkeyProcesses()) {
+  for (const pid of strayAgentVoiceProcesses()) {
     signalGroup(pid, "SIGKILL");
   }
 });

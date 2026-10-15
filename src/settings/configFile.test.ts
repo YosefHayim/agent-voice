@@ -10,11 +10,11 @@ import { defaultConfig } from "./configSchema.js";
 
 let home = "";
 
-// VOXKEY_CONFIG_FILE wins over VOXKEY_HOME, so one set in the developer's shell would point the test at a real file.
+// AGENT_VOICE_CONFIG_FILE wins over AGENT_VOICE_HOME, so one set in the developer's shell would point the test at a real file.
 beforeEach(() => {
   home = makeTestFolder("config");
-  vi.stubEnv("VOXKEY_HOME", home);
-  vi.stubEnv("VOXKEY_CONFIG_FILE", undefined);
+  vi.stubEnv("AGENT_VOICE_HOME", home);
+  vi.stubEnv("AGENT_VOICE_CONFIG_FILE", undefined);
 });
 
 afterEach(() => {
@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe("config file", () => {
-  it("reads the defaults when ~/.voxkey/config.json does not exist yet", () => {
+  it("reads the defaults when ~/.agent-voice/config.json does not exist yet", () => {
     expect(Effect.runSync(readConfig)).toEqual(defaultConfig);
   });
 

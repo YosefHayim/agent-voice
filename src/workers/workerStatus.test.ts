@@ -9,7 +9,7 @@ let home = "";
 
 beforeEach(() => {
   home = makeTestFolder("status");
-  vi.stubEnv("VOXKEY_HOME", home);
+  vi.stubEnv("AGENT_VOICE_HOME", home);
 });
 
 afterEach(() => {

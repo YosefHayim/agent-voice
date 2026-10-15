@@ -1,10 +1,10 @@
 {
-  "name": "voxkey",
+  "name": "agent-voice",
   "version": "0.1.0",
   "description": "Hold Shift to dictate into any text field and hear coding-agent replies read aloud, all on your Mac.",
   "type": "module",
   "bin": {
-    "voxkey": "dist/src/cli/main.js"
+    "agent-voice": "dist/src/cli/main.js"
   },
   "files": [
     "dist",
@@ -38,13 +38,13 @@
     "codex",
     "grok"
   ],
-  "homepage": "https://github.com/YosefHayim/voxkey#readme",
+  "homepage": "https://github.com/YosefHayim/agent-voice#readme",
   "bugs": {
-    "url": "https://github.com/YosefHayim/voxkey/issues"
+    "url": "https://github.com/YosefHayim/agent-voice/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YosefHayim/voxkey.git"
+    "url": "git+https://github.com/YosefHayim/agent-voice.git"
   },
   "author": "Yosef Hayim Sabag",
   "license": "MIT",

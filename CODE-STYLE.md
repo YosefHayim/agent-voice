@@ -1,4 +1,4 @@
-# voxkey code style
+# agent-voice code style
 
 This file is the prescriptive single source of truth for how code in this repository is written. It uses the rule-card format: one card per rule, machine-checked by `src/scripts/checkRuleCards.ts`.
 
@@ -377,7 +377,7 @@ export const runReplyHookFromArguments = (args: ReadonlyArray<string>): Effect.E
 export const runReplyHookFromArguments = (args: ReadonlyArray<string>): Effect.Effect<void> => {
 ```
 
-Why: voxkey publishes no API docs, so a doc block only repeats the name and drifts from the code.
+Why: agent-voice publishes no API docs, so a doc block only repeats the name and drifts from the code.
 
 ### Schema owns runtime objects
 [rule:type.schema-owned-runtime] · verify: `pnpm style`
@@ -693,16 +693,16 @@ A native addon (`koffi`, `@picovoice/pvrecorder-node`, `@fugood/whisper.node`, `
 // ✓ the Stop hook never pays for loading Whisper or ONNX Runtime
 const loadWhisper = Effect.tryPromise(() => import("@fugood/whisper.node"));
 
-// ✗ a top-level import pulled into every command, including `voxkey reply`
+// ✗ a top-level import pulled into every command, including `agent-voice reply`
 import { initWhisper } from "@fugood/whisper.node";
 ```
 
-Why: `voxkey reply` runs at the end of every agent turn and must stay fast.
+Why: `agent-voice reply` runs at the end of every agent turn and must stay fast.
 
 ### The reply hook fails open
 [rule:hook.fail-open] · verify: `pnpm test`
 
-The reply hook (`voxkey reply`) exits 0 and prints nothing whatever its input or failure.
+The reply hook (`agent-voice reply`) exits 0 and prints nothing whatever its input or failure.
 
 ```ts
 // ✓
@@ -717,7 +717,7 @@ Why: a speech bug must never block or confuse the coding agent.
 ### One owned hook entry
 [rule:hook.one-entry] · verify: `pnpm test`
 
-voxkey owns exactly one Stop entry per agent settings file, finds it by its command, and edits only its own bytes.
+agent-voice owns exactly one Stop entry per agent settings file, finds it by its command, and edits only its own bytes.
 
 ```ts
 // ✓ text edits at jsonc-parser offsets, verified by re-parsing before the write
@@ -727,7 +727,7 @@ const edited = addReplyHook({ source, command });
 writeFileSync(settingsPath, JSON.stringify({ ...JSON.parse(source), hooks }, null, 2));
 ```
 
-Why: agent settings files belong to the user; comments, order, and spacing must survive `voxkey on` and `voxkey off`.
+Why: agent settings files belong to the user; comments, order, and spacing must survive `agent-voice on` and `agent-voice off`.
 
 ### Configuration precedence is combined once
 [rule:config.precedence] · verify: judgment
@@ -739,7 +739,7 @@ Each setting is resolved once, from the CLI flag, then the environment variable,
 const model = selectDictationModel({ environment, config });
 
 // ✗ every caller rebuilds its own fallback chain
-const model = process.env.VOXKEY_DICTATION_MODEL || config.dictationLanguage || "turbo-q5";
+const model = process.env.AGENT_VOICE_DICTATION_MODEL || config.dictationLanguage || "turbo-q5";
 ```
 
 Why: distributed precedence makes the real source of a setting unknowable.
@@ -781,7 +781,7 @@ Tests are colocated, name a scenario, exercise public behavior in real temporary
 
 ```ts
 // ✓
-it("restores the settings bytes exactly after voxkey off", () => {});
+it("restores the settings bytes exactly after agent-voice off", () => {});
 
 // ✗
 it("works", () => expect(helper()).toBe(true));

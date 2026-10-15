@@ -5,14 +5,14 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { runVoxkey } from "../scripts/runVoxkey.js";
+import { runAgentVoice } from "../scripts/runAgentVoice.js";
 import { makeTestFolder } from "../scripts/testFolder.js";
 
 let home = "";
 let sleepers: ReadonlyArray<ChildProcess> = [];
 
 // Pid files naming sleeping processes whose command lines end in `worker dictation` and `worker speech` make
-// voxkey believe both workers already run, so no real worker starts. The test kills only these sleepers.
+// agent-voice believe both workers already run, so no real worker starts. The test kills only these sleepers.
 beforeEach(async () => {
   home = makeTestFolder("reply");
   const spawned = (["dictation", "speech"] as const).map((kind) => {
@@ -53,12 +53,12 @@ const runHook = (request: {
     speechMuted: request.speechMuted === true,
   });
   writeConfig(configText);
-  return runVoxkey({
+  return runAgentVoice({
     args: ["reply", "--agent", request.agent],
     stdin: request.stdin,
     environment: {
       ...process.env,
-      VOXKEY_HOME: home,
+      AGENT_VOICE_HOME: home,
       CMUX_WORKSPACE_ID: "",
       CMUX_SURFACE_ID: "",
       CMUX_SOCKET_PATH: "",
@@ -68,7 +68,7 @@ const runHook = (request: {
 };
 
 const runReply = (args: ReadonlyArray<string>, stdin: string) =>
-  runVoxkey({ args: ["reply", ...args], stdin, environment: { ...process.env, VOXKEY_HOME: home } });
+  runAgentVoice({ args: ["reply", ...args], stdin, environment: { ...process.env, AGENT_VOICE_HOME: home } });
 
 const queued = (): ReadonlyArray<unknown> => {
   const inbox = path.join(home, "inbox");
@@ -83,7 +83,7 @@ const queued = (): ReadonlyArray<unknown> => {
   });
 };
 
-describe("voxkey reply (the agent Stop hook)", () => {
+describe("agent-voice reply (the agent Stop hook)", () => {
   it("queues Claude's complete reply without rewriting the Markdown, silently", async () => {
     const markdown = "# Release\n\n| Item | State |\n| --- | --- |\n| Voice | Ready |\n\n```ts\nconst count = 2;\n```";
     const execution = await runHook({

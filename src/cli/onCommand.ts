@@ -114,12 +114,12 @@ const describeRefine = (config: Config): string => {
 
 export const describeSpeech = (config: Config): string => {
   if (config.speechMode === "off") {
-    return "Speech: off (turn on with `voxkey config set speech-mode auto`).";
+    return "Speech: off (turn on with `agent-voice config set speech-mode auto`).";
   }
 
   const speech = `Speech: ${config.speechMode}, voice ${config.speechVoice}`;
   if (config.speechMuted) {
-    return `${speech}, muted (unmute with \`voxkey config set speech-muted false\`).`;
+    return `${speech}, muted (unmute with \`agent-voice config set speech-muted false\`).`;
   }
 
   return `${speech}.`;
@@ -158,13 +158,13 @@ const showHooksOnlyOutro = (changes: ReadonlyArray<HookChange>) => {
     return TerminalUI.outro("No agent hook was confirmed as registered (see above).");
   }
 
-  return TerminalUI.outro("Hooks registered. Run `voxkey on` without --hooks-only to start dictation.");
+  return TerminalUI.outro("Hooks registered. Run `agent-voice on` without --hooks-only to start dictation.");
 };
 
 export const onCommand = Command.make("on", { hooksOnly: hooksOnlyOption }, (args) =>
   Effect.gen(function* () {
     yield* TerminalUI.intro("on");
-    yield* TerminalUI.step("Registering `voxkey reply` as the Stop hook of each installed agent");
+    yield* TerminalUI.step("Registering `agent-voice reply` as the Stop hook of each installed agent");
     const changes = yield* registerReplyHooks;
     yield* showHookChanges(changes);
     if (args.hooksOnly) {
@@ -174,9 +174,9 @@ export const onCommand = Command.make("on", { hooksOnly: hooksOnlyOption }, (arg
     const config = yield* readConfig;
     yield* prepareModels(config);
     yield* restartWorkers.pipe(Effect.retry({ times: 1, schedule: Schedule.spaced("1 second") }));
-    yield* TerminalUI.success("voxkey is on.");
+    yield* TerminalUI.success("agent-voice is on.");
     yield* showOnSummary(config);
-    yield* TerminalUI.outro("Check permissions any time with `voxkey doctor`.");
+    yield* TerminalUI.outro("Check permissions any time with `agent-voice doctor`.");
   }),
 ).pipe(
   Command.withDescription("Register the agent Stop hooks, download missing models, and start dictation and speech"),

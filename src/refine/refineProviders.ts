@@ -4,7 +4,7 @@ import path from "node:path";
 import { Effect, Either, Option, Schema } from "effect";
 
 import { makePrivateFolder, readTextIfReadable, removeIfPresent } from "../files/stateFiles.js";
-import { stateFolder } from "../settings/voxkeyHome.js";
+import { stateFolder } from "../settings/agentVoiceHome.js";
 import { type CliRun, cliFailureText, cliOutputText, findCli, nonBlankLines, runCli } from "./agentCli.js";
 import { type ProviderId, providerIdSchema } from "./providerModels.js";
 import {

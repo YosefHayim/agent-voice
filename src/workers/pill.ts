@@ -2,7 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 
 import { Option } from "effect";
 import { removeIfPresent } from "../files/stateFiles.js";
-import { stateFile, voxkeyHome } from "../settings/voxkeyHome.js";
+import { agentVoiceHome, stateFile } from "../settings/agentVoiceHome.js";
 import { runningPid, signalGroup, writePid } from "./workerProcesses.js";
 
 // A bottom-centre panel that shows the dictation stage from status.json. It is a JavaScript for Automation script
@@ -200,7 +200,7 @@ function run(argv) {
 
 export const startPill = (workerPid: number): ChildProcess => {
   stopPill();
-  const child = spawn("osascript", ["-l", "JavaScript", "-", String(workerPid), voxkeyHome()], {
+  const child = spawn("osascript", ["-l", "JavaScript", "-", String(workerPid), agentVoiceHome()], {
     stdio: ["pipe", "ignore", "ignore"],
   });
   child.stdin?.end(PILL_SCRIPT);
