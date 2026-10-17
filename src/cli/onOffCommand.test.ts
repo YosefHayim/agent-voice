@@ -71,13 +71,15 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-const agentVoice = (args: ReadonlyArray<string>) =>
+// CLAUDE_CONFIG_DIR is cleared unless a test sets it, so a run inside Claude Code never edits the developer's own settings.
+const agentVoice = (args: ReadonlyArray<string>, claudeConfigFolder = "") =>
   runAgentVoice({
     args,
     environment: {
       ...process.env,
       HOME: home,
       AGENT_VOICE_HOME: inHome(".agent-voice"),
+      CLAUDE_CONFIG_DIR: claudeConfigFolder,
       PATH: `${inHome("bin")}:${process.env.PATH || ""}`,
     },
   });
@@ -129,6 +131,37 @@ describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", ()
     expect(read(".claude/settings.json")).toBe(claudeSettings);
     expect(read(".codex/hooks.json")).toBe(codexHooks);
     expect(exists(".grok/hooks/agent-voice.json")).toBe(false);
+  });
+
+  it("adds the hook in every Claude Code config folder, replaces an entry left by a moved install, and removes it all without CLAUDE_CONFIG_DIR", async () => {
+    const staleHook =
+      "'/usr/local/bin/node' '/missing/node_modules/voxkey/dist/src/cli/main.js' reply --agent claude-code";
+    const staleSettings = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: staleHook }] }] } });
+    makeFolder(".claude-work");
+    write(".claude-work/settings.json", staleSettings);
+    makeFolder(".claude-notes");
+    makeFolder("work/.claude");
+    const customFolder = inHome("work/.claude");
+    const backups = inHome(".agent-voice/backups");
+
+    const on = await agentVoice(["on", "--hooks-only"], customFolder);
+    expect(on.status).toBe(0);
+    expect(read(".claude/settings.json")).toContain("reply --agent claude-code");
+    expect(read(".claude-work/settings.json").match(/reply --agent claude-code/gu)).toHaveLength(1);
+    expect(read(".claude-work/settings.json")).not.toContain("voxkey");
+    expect(read("work/.claude/settings.json")).toContain("reply --agent claude-code");
+    expect(exists(".claude-notes/settings.json")).toBe(false);
+    expect(readdirSync(backups)).toHaveLength(3);
+
+    const statusRun = await agentVoice(["status", "--json"]);
+    const status = JSON.parse(statusRun.stdout);
+    expect(status.hooks).toEqual(["claude-code", "codex", "grok"]);
+
+    const off = await agentVoice(["off"]);
+    expect(off.status).toBe(0);
+    expect(read(".claude/settings.json")).toBe(claudeSettings);
+    expect(read(".claude-work/settings.json")).not.toContain("reply --agent");
+    expect(exists("work/.claude/settings.json")).toBe(false);
   });
 
   it("deletes a settings file agent-voice created once it is empty again, and keeps an empty file that was there before", async () => {

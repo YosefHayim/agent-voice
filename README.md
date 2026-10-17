@@ -163,13 +163,14 @@ Everything agent-voice writes lives in `~/.agent-voice` (or `$AGENT_VOICE_HOME`)
 | `status.json` | The dictation stage the pill shows. |
 | `dictation.log`, `dictation-worker.log`, `speech-worker.log` | Timings and worker output. |
 | `backups/` | A copy of each agent settings file before agent-voice edited it. |
+| `created-hook-files.json`, `claude-config-folders.json` | The hook settings files agent-voice created, and the Claude Code folders `CLAUDE_CONFIG_DIR` named when hooks were added, so `off` finds them later. |
 | `refine-choice.json`, `refine-codex-*.txt` | The last refine pick and Codex's working and failing models. |
 | `prompts/`, `audio/`, `devin/` | Refined prompts handed to cmux, speech audio being played, and Devin session exports. |
 | `*.pid`, `*.lock`, `stop` | Worker bookkeeping. |
 
 What you dictate and what agents reply stays yours: every file agent-voice keeps in `~/.agent-voice` that holds it, and every settings backup, is created readable by you alone (mode 0600), in folders only you can open (0700, `~/.agent-voice` included). agent-voice tightens such a file or folder whenever it finds one looser. A file you ask for elsewhere, like `agent-voice speak --output <file>`, keeps your usual permissions, and so does the folder of an `AGENT_VOICE_CONFIG_FILE` you point outside `~/.agent-voice`.
 
-Agent hooks: `~/.claude/settings.json`, `~/.codex/hooks.json`, and `~/.grok/hooks/agent-voice.json` each get one Stop entry whose command ends in `reply --agent <id>`; `agent-voice off` removes exactly that entry.
+Agent hooks: `~/.claude/settings.json`, `~/.codex/hooks.json`, and `~/.grok/hooks/agent-voice.json` each get one Stop entry whose command ends in `reply --agent <id>`; `agent-voice off` removes exactly that entry. Every other Claude Code config folder gets one too: each `~/.claude-<name>` folder Claude Code has used, and `CLAUDE_CONFIG_DIR` when it is set.
 
 ## Project structure
 

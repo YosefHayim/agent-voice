@@ -8,10 +8,10 @@ const agentHookTargetSchema = Schema.Struct({
   agent: agentIdSchema,
   displayName: Schema.NonEmptyTrimmedString,
   homeFolder: Schema.NonEmptyTrimmedString.annotations({
-    description: "HOME-relative folder whose presence means the agent is installed.",
+    description: "HOME-relative folder whose presence means the agent is installed (Claude Code may have more).",
   }),
   settingsFile: Schema.NonEmptyTrimmedString.annotations({
-    description: "HOME-relative JSON file holding the agent's hooks in the Claude-style hooks.Stop format.",
+    description: "JSON file inside the agent's folder holding its hooks in the Claude-style hooks.Stop format.",
   }),
   ownFile: Schema.Boolean.annotations({
     description:
@@ -29,15 +29,15 @@ export const agentHookTargets: ReadonlyArray<AgentHookTarget> = Schema.decodeUnk
     agent: "claude-code",
     displayName: "Claude Code",
     homeFolder: ".claude",
-    settingsFile: ".claude/settings.json",
+    settingsFile: "settings.json",
     ownFile: false,
   },
-  { agent: "codex", displayName: "Codex", homeFolder: ".codex", settingsFile: ".codex/hooks.json", ownFile: false },
+  { agent: "codex", displayName: "Codex", homeFolder: ".codex", settingsFile: "hooks.json", ownFile: false },
   {
     agent: "grok",
     displayName: "Grok",
     homeFolder: ".grok",
-    settingsFile: ".grok/hooks/agent-voice.json",
+    settingsFile: "hooks/agent-voice.json",
     ownFile: true,
   },
 ]);
