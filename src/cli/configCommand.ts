@@ -67,6 +67,25 @@ const listCommand = Command.make("list", { json: jsonOption }, (args) =>
   }),
 ).pipe(Command.withDescription("Show every setting with its value and meaning"));
 
+// An unset optional setting has no value: null, so every entry carries the same fields.
+const describedSetting = (config: Config, setting: ConfigSetting) => {
+  const value: unknown = config[setting.key];
+  const { key: _key, ...described } = setting;
+  if (value === undefined) {
+    return { ...described, value: null };
+  }
+
+  return { ...described, value };
+};
+
+const describeCommand = Command.make("describe", {}, () =>
+  Effect.gen(function* () {
+    const config = yield* readConfig;
+    const settings = configSettings.map((setting) => describedSetting(config, setting));
+    yield* TerminalUI.json(settings);
+  }),
+).pipe(Command.withDescription("Print every setting as JSON: name, label, description, kind, choices, and value"));
+
 const getCommand = Command.make("get", { name: nameArgument }, (args) =>
   Effect.gen(function* () {
     const setting = yield* findSetting(args.name);
@@ -230,5 +249,5 @@ const pickRefineCommand = Command.make("pick-refine", { gui: guiOption }, (args)
 
 export const configCommand = Command.make("config").pipe(
   Command.withDescription("Show or change agent-voice's settings"),
-  Command.withSubcommands([listCommand, getCommand, setCommand, unsetCommand, pickRefineCommand]),
+  Command.withSubcommands([listCommand, describeCommand, getCommand, setCommand, unsetCommand, pickRefineCommand]),
 );

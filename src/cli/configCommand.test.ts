@@ -139,3 +139,21 @@ describe("agent-voice config set dictation-model", () => {
     expect(reset.modelKey).toBe("turbo-q5");
   });
 });
+
+describe("agent-voice config describe", () => {
+  it("prints every setting with its kind, choices, and value as one JSON document", async () => {
+    await agentVoice(["config", "set", "speech-voice", "M2"]);
+    const described = await agentVoice(["config", "describe"]);
+    const settings = JSON.parse(described.stdout);
+    const voice = settings.find((setting: { name: string }) => setting.name === "speech-voice");
+    const effort = settings.find((setting: { name: string }) => setting.name === "refine-effort");
+    const muted = settings.find((setting: { name: string }) => setting.name === "speech-muted");
+
+    expect(described.status).toBe(0);
+    expect(voice).toMatchObject({ label: "speech voice", kind: "text", optional: false, value: "M2" });
+    expect(voice.choices).toContain("F4");
+    expect(effort).toMatchObject({ kind: "text", optional: true, value: null });
+    expect(effort.choices).toEqual(["minimal", "low", "medium", "high", "xhigh"]);
+    expect(muted).toMatchObject({ kind: "boolean", choices: ["true", "false"], value: true });
+  });
+});
