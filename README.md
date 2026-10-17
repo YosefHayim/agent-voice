@@ -55,7 +55,7 @@ No Homebrew audio tools are needed: the microphone, Whisper, the voices, and the
 | `agent-voice status [--json]` | Workers, dictation stage, model, speech, refine, and hooks. |
 | `agent-voice doctor [--json]` | Check macOS, Node, native modules, system tools, models, permissions, hooks, and refine CLIs. |
 | `agent-voice config list \| get \| set \| unset` | Show or change a setting; `set` applies at once (a new dictation language restarts dictation, speech starts or stops). |
-| `agent-voice config describe` | Print every setting as JSON (name, label, meaning, kind, choices, value), for tools that draw a settings screen. |
+| `agent-voice config describe` | Print every setting as JSON (name, label, description, kind, choices, value), for tools that draw a settings screen. |
 | `agent-voice config pick-refine [--gui]` | Pick the refine provider, model, and effort from the agent CLIs on this Mac. |
 | `agent-voice speak <markdown> [--output file.wav]` | Read one reply aloud, or write it to a WAV file. |
 | `agent-voice render <markdown>` | Print the sentences agent-voice would read. |

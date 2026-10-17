@@ -84,7 +84,7 @@ const describeCommand = Command.make("describe", {}, () =>
     const settings = configSettings.map((setting) => describedSetting(config, setting));
     yield* TerminalUI.json(settings);
   }),
-).pipe(Command.withDescription("Print every setting as JSON: name, label, meaning, kind, choices, and value"));
+).pipe(Command.withDescription("Print every setting as JSON: name, label, description, kind, choices, and value"));
 
 const getCommand = Command.make("get", { name: nameArgument }, (args) =>
   Effect.gen(function* () {
