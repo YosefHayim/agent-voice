@@ -16,7 +16,7 @@ Workers are spawned detached in their own process groups and log to `~/.agent-vo
 
 ## Files
 
-All state is in `~/.agent-voice` (`AGENT_VOICE_HOME`). Writes go through a temporary sibling and a rename. Files that hold dictated, refined, or reply text (`dictation.log`, the worker logs, `status.json`, the inbox, `failed/`, `prompts/`, `audio/`) are 0600 in 0700 folders, and agent-voice tightens looser ones when it writes them. The only files agent-voice edits outside it are the agents' hook settings (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.grok/hooks/agent-voice.json`), always backed up to `~/.agent-voice/backups/` first.
+All state is in `~/.agent-voice` (`AGENT_VOICE_HOME`). Writes go through a temporary sibling and a rename. Files that hold dictated, refined, or reply text (`dictation.log`, the worker logs, `status.json`, the inbox, `failed/`, `prompts/`, `audio/`) are 0600 in 0700 folders, and agent-voice tightens looser ones when it writes them. The only files agent-voice edits outside it are the agents' hook settings (`~/.claude/settings.json` and the `settings.json` of every other Claude Code config folder, `~/.codex/hooks.json`, `~/.grok/hooks/agent-voice.json`), always backed up to `~/.agent-voice/backups/` first.
 
 ## Permissions
 

@@ -1,7 +1,7 @@
 import { Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 
-import { registeredAgents } from "../agents/hookRegistration.js";
+import { registeredSettingsFiles } from "../agents/hookRegistration.js";
 import { agentVoiceHome, configFilePath } from "../settings/agentVoiceHome.js";
 import { readConfigOrDefaults } from "../settings/configFile.js";
 import type { Config } from "../settings/configSchema.js";
@@ -33,6 +33,13 @@ const dictationStatus = (config: Config) => {
   return dictation;
 };
 
+// Several Claude Code accounts count as one agent.
+const registeredAgents = (): ReadonlyArray<string> => {
+  const agents = registeredSettingsFiles().map((settings) => settings.agent);
+  const uniqueAgents = new Set(agents);
+  return [...uniqueAgents];
+};
+
 const currentStatus = Effect.gen(function* () {
   const config = yield* readConfigOrDefaults;
   return {
@@ -51,7 +58,7 @@ const currentStatus = Effect.gen(function* () {
       model: config.refineModel || "",
       sendTo: config.refineSendTo,
     },
-    hooks: registeredAgents().map((target) => target.agent),
+    hooks: registeredAgents(),
   };
 });
 

@@ -166,7 +166,7 @@ Everything agent-voice writes lives in `~/.agent-voice` (or `$AGENT_VOICE_HOME`)
 
 What you dictate and what agents reply stays yours: every file agent-voice keeps in `~/.agent-voice` that holds it, and every settings backup, is created readable by you alone (mode 0600), in folders only you can open (0700, `~/.agent-voice` included). agent-voice tightens such a file or folder whenever it finds one looser. A file you ask for elsewhere, like `agent-voice speak --output <file>`, keeps your usual permissions, and so does the folder of an `AGENT_VOICE_CONFIG_FILE` you point outside `~/.agent-voice`.
 
-Agent hooks: `~/.claude/settings.json`, `~/.codex/hooks.json`, and `~/.grok/hooks/agent-voice.json` each get one Stop entry whose command ends in `reply --agent <id>`; `agent-voice off` removes exactly that entry.
+Agent hooks: `~/.claude/settings.json`, `~/.codex/hooks.json`, and `~/.grok/hooks/agent-voice.json` each get one Stop entry whose command ends in `reply --agent <id>`; `agent-voice off` removes exactly that entry. Every other Claude Code config folder gets one too: each `~/.claude-<name>` folder Claude Code has used, and `CLAUDE_CONFIG_DIR` when it is set.
 
 ## Project structure
 

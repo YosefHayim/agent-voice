@@ -1,10 +1,8 @@
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
 import { Command, Options } from "@effect/cli";
 import { Effect, Option, Schema } from "effect";
-import { agentHookTargets } from "../agents/agentCatalog.js";
-import { registeredAgents } from "../agents/hookRegistration.js";
+import { registeredSettingsFiles } from "../agents/hookRegistration.js";
+import { hookSettingsFiles } from "../agents/hookSettingsFiles.js";
 import { type Keyboard, loadKeyboard } from "../dictation/keyboard.js";
 import { WHISPER_PACKAGE } from "../dictation/transcriber.js";
 import { isWhisperModelPresent, selectWhisperModel, whisperModelPath } from "../dictation/whisperModels.js";
@@ -152,20 +150,18 @@ const microphoneCheck = runCli({
 );
 
 const hookChecks = (): ReadonlyArray<DoctorCheck> => {
-  const home = homedir();
-  const registered = registeredAgents().map((target) => target.agent);
-  return agentHookTargets.map((target) => {
-    const name = `${target.displayName} hook`;
-    if (registered.includes(target.agent)) {
-      return ok(name, target.settingsFile);
+  const registered = registeredSettingsFiles().map((settings) => settings.file);
+  return hookSettingsFiles().map((settings) => {
+    const name = `${settings.displayName} hook`;
+    if (registered.includes(settings.file)) {
+      return ok(name, settings.file);
     }
 
-    const agentFolder = path.join(home, target.homeFolder);
-    if (!existsSync(agentFolder)) {
+    if (!existsSync(settings.folder)) {
       return ok(name, "agent not installed");
     }
 
-    return problem({ name, status: "warn", detail: "not registered", fix: "agent-voice on" });
+    return problem({ name, status: "warn", detail: `not registered in ${settings.file}`, fix: "agent-voice on" });
   });
 };
 
