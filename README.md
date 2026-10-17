@@ -127,7 +127,7 @@ agent-voice config unset speech-voice    # back to the default
 | `speech-voice` | `"F4"` | Supertonic voice: F1-F5 or M1-M5. |
 | `speech-words-per-minute` | `230` | Speed of read-aloud replies, in words per minute (the voice speed is clamped to 0.7-2.0x). |
 | `dictation-language` | `"en"` | Dictation language: en (whisper.cpp large-v3-turbo) or he (ivrit.ai Hebrew large-v3-turbo). Accepts english, hebrew, ivrit, iw. With dictation-model auto it picks the model. |
-| `dictation-model` | `"auto"` | Whisper model for dictation: auto (turbo-q5 for en, ivrit for he), tiny, base, small, turbo-q5, turbo-q8, turbo, or ivrit. Changing it downloads the model if missing and restarts dictation. AGENT_VOICE_DICTATION_MODEL overrides it. |
+| `dictation-model` | `"auto"` | Whisper model for dictation: auto (turbo-q5 for en, ivrit for he), tiny, base, small, turbo-q5, turbo-q8, turbo, or ivrit. The tiny, base, and small models are English only and ivrit is Hebrew only: set dictation-language to match. Changing it downloads the model if missing and restarts dictation. AGENT_VOICE_DICTATION_MODEL overrides it. |
 | `dictation-keep-listening-seconds` | `0.2` | Seconds the microphone stays open after Shift is released, so trailing words are not cut off. |
 | `dictation-replacements` | `""` | Semicolon-separated heard=written pairs applied to dictation, e.g. Joseph=Yosef;type script=TypeScript. |
 | `refine-mode` | `"off"` | Prompt refine: off; clipboard = double-tap Shift refines the copied prompt; dictation = refine the dictation before it is typed; both. |

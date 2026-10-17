@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 const agentVoice = (args: ReadonlyArray<string>) => {
-  const { AGENT_VOICE_CONFIG_FILE: _ignored, ...environment } = process.env;
+  const { AGENT_VOICE_CONFIG_FILE: _ignored, AGENT_VOICE_DICTATION_MODEL: _forced, ...environment } = process.env;
   return runAgentVoice({
     args,
     environment: { ...environment, HOME: home, AGENT_VOICE_HOME: path.join(home, ".agent-voice") },
