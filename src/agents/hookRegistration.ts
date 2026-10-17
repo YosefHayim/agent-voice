@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -22,13 +23,20 @@ export type HookChange = Schema.Schema.Type<typeof hookChangeSchema>;
 
 const isAgentInstalled = (settings: HookSettingsFile): boolean => existsSync(settings.folder);
 
-// The agent folder is in the name, so two Claude Code accounts backed up in the same millisecond keep both copies.
+// The folder's name and a hash of its path are in the backup name, so two Claude Code folders backed up in the same
+// millisecond keep both copies, even when both are called .claude.
+const folderTag = (folder: string): string => {
+  const name = path.basename(folder).replace(/^\./u, "");
+  const pathHash = createHash("sha256").update(folder).digest("hex").slice(0, 8);
+  return `${name}-${pathHash}`;
+};
+
 const backupFile = (settings: HookSettingsFile): string => {
   // Agent settings can hold tokens, so their copies are private like the rest of agent-voice's state.
   const folder = stateFolder("backups");
   makePrivateFolder(folder);
   const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
-  const agentFolder = path.basename(settings.folder).replace(/^\./u, "");
+  const agentFolder = folderTag(settings.folder);
   const settingsName = path.basename(settings.file);
   const backup = path.join(folder, `${settings.agent}-${agentFolder}-${settingsName}-${stamp}`);
   copyFileSync(settings.file, backup);

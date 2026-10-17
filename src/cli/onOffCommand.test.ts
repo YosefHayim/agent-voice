@@ -140,8 +140,8 @@ describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", ()
     makeFolder(".claude-work");
     write(".claude-work/settings.json", staleSettings);
     makeFolder(".claude-notes");
-    makeFolder("custom-claude");
-    const customFolder = inHome("custom-claude");
+    makeFolder("work/.claude");
+    const customFolder = inHome("work/.claude");
     const backups = inHome(".agent-voice/backups");
 
     const on = await agentVoice(["on", "--hooks-only"], customFolder);
@@ -149,7 +149,7 @@ describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", ()
     expect(read(".claude/settings.json")).toContain("reply --agent claude-code");
     expect(read(".claude-work/settings.json").match(/reply --agent claude-code/gu)).toHaveLength(1);
     expect(read(".claude-work/settings.json")).not.toContain("voxkey");
-    expect(read("custom-claude/settings.json")).toContain("reply --agent claude-code");
+    expect(read("work/.claude/settings.json")).toContain("reply --agent claude-code");
     expect(exists(".claude-notes/settings.json")).toBe(false);
     expect(readdirSync(backups)).toHaveLength(3);
 
@@ -161,7 +161,7 @@ describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", ()
     expect(off.status).toBe(0);
     expect(read(".claude/settings.json")).toBe(claudeSettings);
     expect(read(".claude-work/settings.json")).not.toContain("reply --agent");
-    expect(exists("custom-claude/settings.json")).toBe(false);
+    expect(exists("work/.claude/settings.json")).toBe(false);
   });
 
   it("deletes a settings file agent-voice created once it is empty again, and keeps an empty file that was there before", async () => {
