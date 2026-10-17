@@ -13,6 +13,7 @@ describe("configSchema", () => {
       speechVoice: "F4",
       speechWordsPerMinute: 230,
       dictationLanguage: "en",
+      dictationModel: "auto",
       dictationKeepListeningSeconds: 0.2,
       dictationReplacements: "",
       refineMode: "off",
@@ -33,6 +34,19 @@ describe("configSchema", () => {
     ["EN-US", "en"],
   ])("accepts the dictation language alias %j as %s", (spoken, language) => {
     expect(decode({ dictationLanguage: spoken }).dictationLanguage).toBe(language);
+  });
+
+  it.each([
+    ["Auto", "auto"],
+    ["fast", "tiny"],
+    ["small.en", "small"],
+    ["q8", "turbo-q8"],
+    ["large", "turbo"],
+    ["Hebrew", "ivrit"],
+    ["turbo-q5", "turbo-q5"],
+  ])("accepts the dictation model alias %j as %s", (spoken, model) => {
+    expect(decode({ dictationModel: spoken }).dictationModel).toBe(model);
+    expect(() => decode({ dictationModel: "gigantic" })).toThrow();
   });
 
   it.each([
@@ -63,6 +77,16 @@ describe("configSchema", () => {
     expect(names).toContain("dictation-keep-listening-seconds");
     expect(configSettings.every((setting) => setting.label !== "" && setting.description !== "")).toBe(true);
     expect(configSettings.find((setting) => setting.key === "dictationLanguage")?.choices).toEqual(["en", "he"]);
+    expect(configSettings.find((setting) => setting.key === "dictationModel")?.choices).toEqual([
+      "auto",
+      "tiny",
+      "base",
+      "small",
+      "turbo-q5",
+      "turbo-q8",
+      "turbo",
+      "ivrit",
+    ]);
     expect(configSettings.find((setting) => setting.key === "refineEffort")?.optional).toBe(true);
     expect(configSettings.find((setting) => setting.key === "speechVoice")?.choices).toHaveLength(10);
   });

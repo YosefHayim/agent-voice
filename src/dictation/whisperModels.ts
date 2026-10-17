@@ -73,7 +73,7 @@ export const whisperModels: ReadonlyArray<WhisperModel> = Schema.decodeUnknownSy
   },
 ]);
 
-const MODEL_ALIASES: Readonly<Record<string, WhisperModel["key"]>> = {
+export const MODEL_ALIASES: Readonly<Record<string, WhisperModel["key"]>> = {
   tiny: "tiny",
   "tiny.en": "tiny",
   fast: "tiny",
@@ -98,14 +98,21 @@ const MODEL_ALIASES: Readonly<Record<string, WhisperModel["key"]>> = {
 const modelFor = (key: WhisperModel["key"]): WhisperModel =>
   whisperModels.find((model) => model.key === key) || whisperModels[3];
 
-// AGENT_VOICE_DICTATION_MODEL wins, and an unknown name means turbo-q5; otherwise Hebrew picks ivrit.ai and English turbo-q5.
+// AGENT_VOICE_DICTATION_MODEL wins (an unknown name means turbo-q5), then the dictation-model setting; auto follows the language: Hebrew picks ivrit.ai and English turbo-q5.
 export const selectWhisperModel = (request: {
   readonly environment: AgentVoiceEnvironment;
   readonly config: Config;
 }): WhisperModel => {
   const forced = request.environment.AGENT_VOICE_DICTATION_MODEL.toLowerCase();
-  if (forced !== "") {
+  const isForced = forced !== "";
+  if (isForced) {
     return modelFor(MODEL_ALIASES[forced] || "turbo-q5");
+  }
+
+  const chosenKey = request.config.dictationModel;
+  const isChosen = chosenKey !== "auto";
+  if (isChosen) {
+    return modelFor(chosenKey);
   }
 
   if (request.config.dictationLanguage === "he") {

@@ -28,7 +28,7 @@ const environmentSchema = Schema.Struct({
   }),
   AGENT_VOICE_DICTATION_MODEL: textVariable.annotations({
     description:
-      "Forces the Whisper model: turbo-q5, turbo-q8, turbo, small, base, tiny, or ivrit. Default: dictation-language picks turbo-q5 or ivrit.",
+      "Forces the Whisper model: turbo-q5, turbo-q8, turbo, small, base, tiny, or ivrit. Overrides the dictation-model setting. Default: unset.",
   }),
   AGENT_VOICE_DICTATION_LIVE_PREVIEW: switchVariable.annotations({
     description: "Set to off (or 0, false, no) to stop the live caption while Shift is held. Default: on.",

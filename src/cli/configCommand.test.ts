@@ -102,3 +102,40 @@ describe("agent-voice speech-muted", () => {
     expect(await speechStopped(marker)).toBe(true);
   });
 });
+
+const dictationStatus = async () => {
+  const statusRun = await agentVoice(["status", "--json"]);
+  return JSON.parse(statusRun.stdout).dictation;
+};
+
+describe("agent-voice config set dictation-model", () => {
+  it("selects the model, shows it in status --json with its file path, and unset goes back to auto", async () => {
+    const before = await dictationStatus();
+    expect(before.modelKey).toBe("turbo-q5");
+
+    const set = await agentVoice(["config", "set", "dictation-model", "small.en"]);
+    expect(set.status).toBe(0);
+    expect(set.stdout).toContain('dictation-model = "small"');
+    const get = await agentVoice(["config", "get", "dictation-model"]);
+    expect(get.stdout).toContain('"small"');
+
+    const after = await dictationStatus();
+    const selected = after.models.filter((model: { selected: boolean }) => model.selected);
+    expect(after.modelKey).toBe("small");
+    expect(selected.map((model: { key: string }) => model.key)).toEqual(["small"]);
+    expect(after.models).toHaveLength(7);
+    expect(selected[0]).toEqual({
+      key: "small",
+      label: "Small English",
+      megabytes: 488,
+      path: path.join(home, ".agent-voice", "models", "ggml-small.en.bin"),
+      present: false,
+      selected: true,
+    });
+
+    const unset = await agentVoice(["config", "unset", "dictation-model"]);
+    expect(unset.status).toBe(0);
+    const reset = await dictationStatus();
+    expect(reset.modelKey).toBe("turbo-q5");
+  });
+});

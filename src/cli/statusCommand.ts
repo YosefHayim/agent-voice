@@ -1,17 +1,36 @@
 import { Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
-
 import { registeredSettingsFiles } from "../agents/hookRegistration.js";
+import {
+  isWhisperModelPresent,
+  selectWhisperModel,
+  whisperModelPath,
+  whisperModels,
+} from "../dictation/whisperModels.js";
 import { agentVoiceHome, configFilePath } from "../settings/agentVoiceHome.js";
 import { readConfigOrDefaults } from "../settings/configFile.js";
 import type { Config } from "../settings/configSchema.js";
+import { readEnvironment } from "../settings/environmentVariables.js";
 import { isWorkerRunning, readPid } from "../workers/workerProcesses.js";
 import { readWorkerStatus } from "../workers/workerStatus.js";
 import * as TerminalUI from "./TerminalUI.js";
 
 const NOT_STARTED = { stage: "starting", detail: "", model: "", backend: "" };
 
+const BYTES_PER_MEGABYTE = 1_000_000;
+
+const modelEntries = (selectedKey: string) =>
+  whisperModels.map((model) => ({
+    key: model.key,
+    label: model.label,
+    megabytes: Math.round(model.approximateBytes / BYTES_PER_MEGABYTE),
+    path: whisperModelPath(model),
+    present: isWhisperModelPresent(model),
+    selected: model.key === selectedKey,
+  }));
+
 const dictationStatus = (config: Config) => {
+  const selected = selectWhisperModel({ environment: readEnvironment(), config });
   const isRunning = isWorkerRunning("dictation");
   const pid = readPid("dictation.pid");
   const savedStatus = readWorkerStatus();
@@ -24,6 +43,8 @@ const dictationStatus = (config: Config) => {
     model: saved.model,
     backend: saved.backend,
     language: config.dictationLanguage,
+    modelKey: selected.key,
+    models: modelEntries(selected.key),
     hotkey: "hold-shift",
   };
   if (!isRunning) {
@@ -87,7 +108,7 @@ const dictationLine = (dictation: AgentVoiceStatus["dictation"]): string => {
 
 const modelLine = (dictation: AgentVoiceStatus["dictation"]): string => {
   const model = dictation.model || "(not loaded)";
-  return `${model} ${dictation.backend} · language ${dictation.language}`;
+  return `${model} ${dictation.backend} · language ${dictation.language} · selected ${dictation.modelKey}`;
 };
 
 const speechLine = (speech: AgentVoiceStatus["speech"]): string => {

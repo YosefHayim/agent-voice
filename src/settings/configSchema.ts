@@ -1,5 +1,7 @@
 import { Effect, Option, ParseResult, Schema, SchemaAST, Struct } from "effect";
 
+import { MODEL_ALIASES, whisperModelSchema } from "../dictation/whisperModels.js";
+
 const withDefault = <Value, Encoded>(schema: Schema.Schema<Value, Encoded>, fallback: Value) =>
   Schema.optionalWith(schema, { default: () => fallback, exact: true });
 
@@ -40,6 +42,11 @@ const literalAliases = <Choice extends string>(choices: ReadonlyArray<Choice>): 
   const lowercaseEntries = choices.map((choice) => [choice.toLowerCase(), choice]);
   return Object.fromEntries(lowercaseEntries);
 };
+
+const dictationModelSchema = choiceWithAliases({
+  choices: Schema.Union(Schema.Literal("auto"), whisperModelSchema.fields.key),
+  aliases: { ...MODEL_ALIASES, auto: "auto" },
+});
 
 export const speechVoices = ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"] as const;
 
@@ -109,7 +116,12 @@ export const configSchema = Schema.Struct({
   dictationLanguage: withDefault(dictationLanguageSchema, "en").annotations({
     title: "dictation language",
     description:
-      "Dictation language: en (whisper.cpp large-v3-turbo) or he (ivrit.ai Hebrew large-v3-turbo). Accepts english, hebrew, ivrit, iw.",
+      "Dictation language: en (whisper.cpp large-v3-turbo) or he (ivrit.ai Hebrew large-v3-turbo). Accepts english, hebrew, ivrit, iw. With dictation-model auto it picks the model.",
+  }),
+  dictationModel: withDefault(dictationModelSchema, "auto").annotations({
+    title: "dictation model",
+    description:
+      "Whisper model for dictation: auto (turbo-q5 for en, ivrit for he), tiny, base, small, turbo-q5, turbo-q8, turbo, or ivrit. Changing it downloads the model if missing and restarts dictation. AGENT_VOICE_DICTATION_MODEL overrides it.",
   }),
   dictationKeepListeningSeconds: numberSetting({
     range: [0, 2],
@@ -199,7 +211,7 @@ const settingKind = (valueAst: SchemaAST.AST): SettingKind => {
 
 const unionMembers = (typeAst: SchemaAST.AST): ReadonlyArray<SchemaAST.AST> => {
   if (SchemaAST.isUnion(typeAst)) {
-    return typeAst.types;
+    return typeAst.types.flatMap(unionMembers);
   }
 
   return [typeAst];
