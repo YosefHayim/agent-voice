@@ -121,7 +121,7 @@ export const configSchema = Schema.Struct({
   dictationModel: withDefault(dictationModelSchema, "auto").annotations({
     title: "dictation model",
     description:
-      "Whisper model for dictation: auto (turbo-q5 for en, ivrit for he), tiny, base, small, turbo-q5, turbo-q8, turbo, or ivrit. Changing it downloads the model if missing and restarts dictation. AGENT_VOICE_DICTATION_MODEL overrides it.",
+      "Whisper model for dictation: auto (turbo-q5 for en, ivrit for he), tiny, base, small, turbo-q5, turbo-q8, turbo, or ivrit. The tiny, base, and small models are English only and ivrit is Hebrew only: set dictation-language to match. Changing it downloads the model if missing and restarts dictation. AGENT_VOICE_DICTATION_MODEL overrides it.",
   }),
   dictationKeepListeningSeconds: numberSetting({
     range: [0, 2],
