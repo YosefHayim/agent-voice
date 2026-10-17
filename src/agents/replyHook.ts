@@ -59,17 +59,17 @@ const wakeWorkers = (config: Config): void => {
 
 const queueAgentReply = (agent: AgentId) =>
   Effect.gen(function* () {
+    const hookInput = yield* readStandardInput;
+    const stopReply = stopReplyFromJson(hookInput);
+    if (Option.isNone(stopReply)) {
+      return;
+    }
+
     const config = yield* readConfigOrDefaults;
     // Every finished turn wakes dictation, so it comes back after a reboot even with speech off or muted.
     wakeWorkers(config);
     const isSpeechSilent = config.speechMode === "off" || config.speechMuted;
     if (isSpeechSilent) {
-      return;
-    }
-
-    const hookInput = yield* readStandardInput;
-    const stopReply = stopReplyFromJson(hookInput);
-    if (Option.isNone(stopReply)) {
       return;
     }
 

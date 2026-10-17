@@ -86,6 +86,7 @@ const isTestWorkerRunning = (): boolean => {
   return processList.stdout.includes(`${mainScript} worker dictation`);
 };
 
+// The hook exits only after spawn returned, so the worker is listed from the first check until it finds the lock taken.
 const testWorkerExited = async (): Promise<boolean> => {
   const deadline = Date.now() + 10_000;
   while (isTestWorkerRunning() && Date.now() < deadline) {
