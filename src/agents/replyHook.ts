@@ -4,6 +4,7 @@ import { text } from "node:stream/consumers";
 import { Effect, Option, Schema } from "effect";
 
 import { readConfigOrDefaults } from "../settings/configFile.js";
+import type { Config } from "../settings/configSchema.js";
 import { queueReply, type ReplyOrigin } from "../speech/inbox.js";
 import { isWorkerRunning, spawnWorker, startSpeechWorker } from "../workers/workerProcesses.js";
 import { type AgentId, agentIdSchema } from "./agentCatalog.js";
@@ -43,26 +44,32 @@ const transcriptReply = (transcriptPath: string): string => {
   return replyFromTranscript(transcript);
 };
 
-// After a reboot the hook is what brings dictation and speech back.
-const wakeWorkers = (): void => {
-  if (isWorkerRunning("dictation")) {
-    startSpeechWorker();
+// A new dictation worker starts speech itself when speech is on.
+const wakeWorkers = (config: Config): void => {
+  if (!isWorkerRunning("dictation")) {
+    spawnWorker("dictation");
     return;
   }
 
-  spawnWorker("dictation");
+  const isSpeechOn = config.speechMode !== "off";
+  if (isSpeechOn) {
+    startSpeechWorker();
+  }
 };
 
 const queueAgentReply = (agent: AgentId) =>
   Effect.gen(function* () {
-    const config = yield* readConfigOrDefaults;
-    if (config.speechMode === "off") {
-      return;
-    }
-
     const hookInput = yield* readStandardInput;
     const stopReply = stopReplyFromJson(hookInput);
     if (Option.isNone(stopReply)) {
+      return;
+    }
+
+    const config = yield* readConfigOrDefaults;
+    // Every finished turn wakes dictation, so it comes back after a reboot even with speech off or muted.
+    wakeWorkers(config);
+    const isSpeechSilent = config.speechMode === "off" || config.speechMuted;
+    if (isSpeechSilent) {
       return;
     }
 
@@ -71,12 +78,8 @@ const queueAgentReply = (agent: AgentId) =>
       return;
     }
 
-    // A muted reply is dropped here, but the workers still wake, so dictation comes back after a reboot.
-    if (!config.speechMuted) {
-      const origin = replyOrigin();
-      queueReply({ markdown, source: agent, agentReplyId: stopReply.value.agentReplyId, origin });
-    }
-    wakeWorkers();
+    const origin = replyOrigin();
+    queueReply({ markdown, source: agent, agentReplyId: stopReply.value.agentReplyId, origin });
   });
 
 // The hook prints nothing and succeeds whatever happens, so it can never block or confuse the agent.

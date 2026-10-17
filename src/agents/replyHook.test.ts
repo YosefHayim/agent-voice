@@ -1,12 +1,12 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { closeSync, constants, existsSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runAgentVoice } from "../scripts/runAgentVoice.js";
-import { makeTestFolder } from "../scripts/testFolder.js";
+import { makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
 
 let home = "";
 let sleepers: ReadonlyArray<ChildProcess> = [];
@@ -67,6 +67,34 @@ const runHook = (request: {
   });
 };
 
+const removePidFile = (kind: "dictation" | "speech"): void => {
+  const pidPath = path.join(home, `${kind}.pid`);
+  rmSync(pidPath);
+};
+
+// The test holds the dictation lock (O_EXLOCK, 0x20 on macOS), so the worker the hook starts finds it taken and exits
+// without loading a model.
+const holdDictationLock = (): number => {
+  const lockPath = path.join(home, "dictation.lock");
+  return openSync(lockPath, constants.O_RDWR | constants.O_CREAT | constants.O_NONBLOCK | 0x20, 0o600);
+};
+
+const mainScript = path.join(repositoryRoot, "src", "cli", "main.ts");
+
+const isTestWorkerRunning = (): boolean => {
+  const processList = spawnSync("ps", ["-ax", "-o", "args="], { encoding: "utf8" });
+  return processList.stdout.includes(`${mainScript} worker dictation`);
+};
+
+// The hook exits only after spawn returned, so the worker is listed from the first check until it finds the lock taken.
+const testWorkerExited = async (): Promise<boolean> => {
+  const deadline = Date.now() + 10_000;
+  while (isTestWorkerRunning() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return !isTestWorkerRunning();
+};
+
 const runReply = (args: ReadonlyArray<string>, stdin: string) =>
   runAgentVoice({ args: ["reply", ...args], stdin, environment: { ...process.env, AGENT_VOICE_HOME: home } });
 
@@ -99,7 +127,8 @@ describe("agent-voice reply (the agent Stop hook)", () => {
     ]);
   });
 
-  it("queues nothing when speech is off", async () => {
+  it("queues nothing and starts no speech worker when speech is off", async () => {
+    removePidFile("speech");
     const execution = await runHook({
       agent: "codex",
       stdin: JSON.stringify({ last_assistant_message: "Stay silent" }),
@@ -108,6 +137,27 @@ describe("agent-voice reply (the agent Stop hook)", () => {
 
     expect(execution.status).toBe(0);
     expect(queued()).toEqual([]);
+    const speechLog = path.join(home, "speech-worker.log");
+    expect(existsSync(speechLog)).toBe(false);
+  });
+
+  it("starts the dictation worker after a reboot even when speech is off", async () => {
+    removePidFile("dictation");
+    const lock = holdDictationLock();
+    try {
+      const execution = await runHook({
+        agent: "claude-code",
+        stdin: JSON.stringify({ last_assistant_message: "Stay silent" }),
+        speechMode: "off",
+      });
+
+      expect(execution.status).toBe(0);
+      const dictationLog = path.join(home, "dictation-worker.log");
+      expect(existsSync(dictationLog)).toBe(true);
+      expect(await testWorkerExited()).toBe(true);
+    } finally {
+      closeSync(lock);
+    }
   });
 
   it("queues nothing while speech is muted, so unmuting reads no backlog", async () => {
