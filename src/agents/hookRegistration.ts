@@ -7,7 +7,7 @@ import { stateFile, stateFolder } from "../settings/agentVoiceHome.js";
 import { agentVoiceInvocation } from "../workers/workerProcesses.js";
 import { agentIdSchema } from "./agentCatalog.js";
 import { addReplyHook, HookSettingsIssue, isEmptySettings, removeReplyHook, replyHookCommand } from "./hookSettings.js";
-import { type HookSettingsFile, hookSettingsFiles } from "./hookSettingsFiles.js";
+import { type HookSettingsFile, hookSettingsFiles, rememberClaudeConfigFolder } from "./hookSettingsFiles.js";
 
 const hookChangeSchema = Schema.Struct({
   agent: agentIdSchema,
@@ -173,9 +173,10 @@ const unregisterOne = (settings: HookSettingsFile): HookChange => {
   return { ...removed, backup };
 };
 
-export const registerReplyHooks: Effect.Effect<ReadonlyArray<HookChange>> = Effect.sync(() =>
-  hookSettingsFiles().map(registerOne),
-);
+export const registerReplyHooks: Effect.Effect<ReadonlyArray<HookChange>> = Effect.sync(() => {
+  rememberClaudeConfigFolder();
+  return hookSettingsFiles().map(registerOne);
+});
 
 export const unregisterReplyHooks: Effect.Effect<ReadonlyArray<HookChange>> = Effect.sync(() =>
   hookSettingsFiles().map(unregisterOne),

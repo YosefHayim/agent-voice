@@ -133,7 +133,7 @@ describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", ()
     expect(exists(".grok/hooks/agent-voice.json")).toBe(false);
   });
 
-  it("adds the hook in every Claude Code config folder and replaces an entry left by a moved install", async () => {
+  it("adds the hook in every Claude Code config folder, replaces an entry left by a moved install, and removes it all without CLAUDE_CONFIG_DIR", async () => {
     const staleHook =
       "'/usr/local/bin/node' '/missing/node_modules/voxkey/dist/src/cli/main.js' reply --agent claude-code";
     const staleSettings = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: staleHook }] }] } });
@@ -153,11 +153,11 @@ describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", ()
     expect(exists(".claude-notes/settings.json")).toBe(false);
     expect(readdirSync(backups)).toHaveLength(3);
 
-    const statusRun = await agentVoice(["status", "--json"], customFolder);
+    const statusRun = await agentVoice(["status", "--json"]);
     const status = JSON.parse(statusRun.stdout);
     expect(status.hooks).toEqual(["claude-code", "codex", "grok"]);
 
-    const off = await agentVoice(["off"], customFolder);
+    const off = await agentVoice(["off"]);
     expect(off.status).toBe(0);
     expect(read(".claude/settings.json")).toBe(claudeSettings);
     expect(read(".claude-work/settings.json")).not.toContain("reply --agent");

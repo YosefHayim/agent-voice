@@ -18,7 +18,8 @@ type StateFileName =
   | "refine-choice.json"
   | "refine-codex-last-good.txt"
   | "refine-codex-failed.txt"
-  | "created-hook-files.json";
+  | "created-hook-files.json"
+  | "claude-config-folders.json";
 
 type StateFolderName = "inbox" | "failed" | "models" | "backups" | "audio" | "prompts" | "devin";
 

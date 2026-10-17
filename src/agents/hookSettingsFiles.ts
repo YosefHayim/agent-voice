@@ -2,8 +2,10 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
 
+import { readJsonFile, writeJsonAtomically } from "../files/stateFiles.js";
+import { stateFile } from "../settings/agentVoiceHome.js";
 import { type AgentHookTarget, agentHookTargets, agentIdSchema } from "./agentCatalog.js";
 
 const hookSettingsFileSchema = Schema.Struct({
@@ -38,6 +40,26 @@ const configuredClaudeFolders = (): ReadonlyArray<string> => {
   return [path.resolve(environment.CLAUDE_CONFIG_DIR)];
 };
 
+const rememberedClaudeFolders = (): ReadonlyArray<string> => {
+  const foldersPath = stateFile("claude-config-folders.json");
+  const remembered = readJsonFile({ path: foldersPath, schema: Schema.Array(Schema.String) }).pipe(
+    Option.getOrElse(() => []),
+  );
+  return remembered.filter((folder) => existsSync(folder));
+};
+
+// `off` may run without CLAUDE_CONFIG_DIR, so the folder it named when the hook was added is kept here.
+export const rememberClaudeConfigFolder = (): void => {
+  const remembered = rememberedClaudeFolders();
+  const newFolders = configuredClaudeFolders().filter((folder) => !remembered.includes(folder));
+  if (newFolders.length === 0) {
+    return;
+  }
+
+  const foldersPath = stateFile("claude-config-folders.json");
+  writeJsonAtomically({ path: foldersPath, value: [...remembered, ...newFolders] });
+};
+
 // Claude Code reads ~/.claude unless CLAUDE_CONFIG_DIR names another folder, so each extra account is its own
 // ~/.claude-<name> folder with its own settings.json.
 const claudeConfigFolders = (defaultFolder: string): ReadonlyArray<string> => {
@@ -46,8 +68,9 @@ const claudeConfigFolders = (defaultFolder: string): ReadonlyArray<string> => {
     .filter((name) => CLAUDE_ACCOUNT_FOLDER.test(name))
     .map((name) => path.join(home, name))
     .filter(isClaudeConfigFolder);
+  const rememberedFolders = rememberedClaudeFolders();
   const configuredFolders = configuredClaudeFolders();
-  const folders = new Set([defaultFolder, ...accountFolders, ...configuredFolders]);
+  const folders = new Set([defaultFolder, ...accountFolders, ...rememberedFolders, ...configuredFolders]);
   return [...folders];
 };
 

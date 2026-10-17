@@ -160,6 +160,7 @@ Everything agent-voice writes lives in `~/.agent-voice` (or `$AGENT_VOICE_HOME`)
 | `status.json` | The dictation stage the pill shows. |
 | `dictation.log`, `dictation-worker.log`, `speech-worker.log` | Timings and worker output. |
 | `backups/` | A copy of each agent settings file before agent-voice edited it. |
+| `created-hook-files.json`, `claude-config-folders.json` | The hook settings files agent-voice created, and the Claude Code folders `CLAUDE_CONFIG_DIR` named when hooks were added, so `off` finds them later. |
 | `refine-choice.json`, `refine-codex-*.txt` | The last refine pick and Codex's working and failing models. |
 | `prompts/`, `audio/`, `devin/` | Refined prompts handed to cmux, speech audio being played, and Devin session exports. |
 | `*.pid`, `*.lock`, `stop` | Worker bookkeeping. |
