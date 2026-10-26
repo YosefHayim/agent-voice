@@ -4,7 +4,7 @@ import path from "node:path";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { makeTestFolder } from "../scripts/testFolder.js";
+import { isMacOS, makeTestFolder } from "../scripts/testFolder.js";
 import { holdLock, removeFreeLock } from "./fileLock.js";
 
 let folder = "";
@@ -18,21 +18,24 @@ afterEach(() => {
 });
 
 describe("file lock", () => {
-  it("is refused to a second taker, even in the same process, until the holder's scope ends", async () => {
-    const lock = path.join(folder, "model.bin.lock");
-    const takers = await Effect.gen(function* () {
-      const first = yield* holdLock(lock);
-      const second = yield* holdLock(lock).pipe(Effect.scoped);
-      return [first, second];
-    }).pipe(Effect.scoped, Effect.runPromise);
+  it.skipIf(!isMacOS)(
+    "is refused to a second taker, even in the same process, until the holder's scope ends",
+    async () => {
+      const lock = path.join(folder, "model.bin.lock");
+      const takers = await Effect.gen(function* () {
+        const first = yield* holdLock(lock);
+        const second = yield* holdLock(lock).pipe(Effect.scoped);
+        return [first, second];
+      }).pipe(Effect.scoped, Effect.runPromise);
 
-    expect(takers).toEqual([true, false]);
-    expect(existsSync(lock)).toBe(false);
-    const isTakenAfterRelease = await holdLock(lock).pipe(Effect.scoped, Effect.runPromise);
-    expect(isTakenAfterRelease).toBe(true);
-  });
+      expect(takers).toEqual([true, false]);
+      expect(existsSync(lock)).toBe(false);
+      const isTakenAfterRelease = await holdLock(lock).pipe(Effect.scoped, Effect.runPromise);
+      expect(isTakenAfterRelease).toBe(true);
+    },
+  );
 
-  it("removes a lock file nobody holds, but never one that is held", async () => {
+  it.skipIf(!isMacOS)("removes a lock file nobody holds, but never one that is held", async () => {
     const lock = path.join(folder, "dictation.lock");
     writeFileSync(lock, "");
     removeFreeLock(lock);

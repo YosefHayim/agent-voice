@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
+import { isMacOS, makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
 import { isWorkerRunning, stopWorkers } from "./workerProcesses.js";
 
 const workerProcessesModule = fileURLToPath(new URL("./workerProcesses.js", import.meta.url));
@@ -133,40 +133,43 @@ const startStarter = (request: { readonly go: string; readonly holdMs: number })
 };
 
 describe("worker lock", () => {
-  it("lets exactly one of eight racing starters own the lock, even over a lock left by a SIGKILLed owner", async () => {
-    const go = homeFile("go");
-    const lockFile = homeFile("dictation.lock");
-    const pidFile = homeFile("dictation.pid");
-    writeFileSync(go, "");
-    const crashed = startStarter({ go, holdMs: 60_000 });
-    expect(await eventually(() => crashed.output().includes("owner"), 20_000)).toBe(true);
-    process.kill(crashed.pid, "SIGKILL");
-    await crashed.exited;
-    expect(existsSync(lockFile)).toBe(true);
-    expect(readFileSync(pidFile, "utf8")).toBe(String(crashed.pid));
-    rmSync(go);
+  it.skipIf(!isMacOS)(
+    "lets exactly one of eight racing starters own the lock, even over a lock left by a SIGKILLed owner",
+    async () => {
+      const go = homeFile("go");
+      const lockFile = homeFile("dictation.lock");
+      const pidFile = homeFile("dictation.pid");
+      writeFileSync(go, "");
+      const crashed = startStarter({ go, holdMs: 60_000 });
+      expect(await eventually(() => crashed.output().includes("owner"), 20_000)).toBe(true);
+      process.kill(crashed.pid, "SIGKILL");
+      await crashed.exited;
+      expect(existsSync(lockFile)).toBe(true);
+      expect(readFileSync(pidFile, "utf8")).toBe(String(crashed.pid));
+      rmSync(go);
 
-    const racers = Array.from({ length: 8 }, () => startStarter({ go, holdMs: 2_000 }));
-    expect(await eventually(() => racers.every((racer) => racer.output().includes("ready")), 20_000)).toBe(true);
-    writeFileSync(go, "");
-    expect(await eventually(() => racers.some((racer) => racer.output().includes("owner")), 20_000)).toBe(true);
-    const owner = racers.find((racer) => racer.output().includes("owner"));
-    expect(readFileSync(pidFile, "utf8")).toBe(String(owner?.pid));
+      const racers = Array.from({ length: 8 }, () => startStarter({ go, holdMs: 2_000 }));
+      expect(await eventually(() => racers.every((racer) => racer.output().includes("ready")), 20_000)).toBe(true);
+      writeFileSync(go, "");
+      expect(await eventually(() => racers.some((racer) => racer.output().includes("owner")), 20_000)).toBe(true);
+      const owner = racers.find((racer) => racer.output().includes("owner"));
+      expect(readFileSync(pidFile, "utf8")).toBe(String(owner?.pid));
 
-    for (const racer of racers) {
-      await racer.exited;
-    }
-    expect(racers.map((racer) => racer.output().replace("ready\n", "")).sort()).toEqual([
-      "busy\n",
-      "busy\n",
-      "busy\n",
-      "busy\n",
-      "busy\n",
-      "busy\n",
-      "busy\n",
-      "owner\n",
-    ]);
-    expect(existsSync(lockFile)).toBe(false);
-    expect(existsSync(pidFile)).toBe(false);
-  });
+      for (const racer of racers) {
+        await racer.exited;
+      }
+      expect(racers.map((racer) => racer.output().replace("ready\n", "")).sort()).toEqual([
+        "busy\n",
+        "busy\n",
+        "busy\n",
+        "busy\n",
+        "busy\n",
+        "busy\n",
+        "busy\n",
+        "owner\n",
+      ]);
+      expect(existsSync(lockFile)).toBe(false);
+      expect(existsSync(pidFile)).toBe(false);
+    },
+  );
 });

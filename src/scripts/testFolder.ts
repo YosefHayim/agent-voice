@@ -2,6 +2,8 @@ import { mkdirSync, mkdtempSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+export const isMacOS = process.platform === "darwin";
+
 export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 // Tests write only under the gitignored .test-home/, never to the real ~/.agent-voice or ~/.claude.
