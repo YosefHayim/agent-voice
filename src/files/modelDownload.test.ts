@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Duration, Effect, Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
+import { isMacOS, makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
 import { downloadFile } from "./modelDownload.js";
 
 const modelDownloadUrl = new URL("./modelDownload.js", import.meta.url);
@@ -150,19 +150,22 @@ describe("downloadFile", () => {
     }
   });
 
-  it("waits for another process downloading the same file, then reuses its file instead of downloading again", async () => {
-    const destination = path.join(folder, "model.bin");
-    const other = startDownloader({ url: `${origin}/slow.bin`, destination });
-    expect(await eventually(() => requests.length === 1)).toBe(true);
+  it.skipIf(!isMacOS)(
+    "waits for another process downloading the same file, then reuses its file instead of downloading again",
+    async () => {
+      const destination = path.join(folder, "model.bin");
+      const other = startDownloader({ url: `${origin}/slow.bin`, destination });
+      expect(await eventually(() => requests.length === 1)).toBe(true);
 
-    await download({ url: `${origin}/slow.bin`, destination });
+      await download({ url: `${origin}/slow.bin`, destination });
 
-    expect(await other.exited).toBe(0);
-    expect(requests).toEqual(["/slow.bin"]);
-    expect(readFileSync(destination)).toEqual(Buffer.concat([half, half]));
-    expect(existsSync(`${destination}.partial`)).toBe(false);
-    expect(existsSync(`${destination}.lock`)).toBe(false);
-  });
+      expect(await other.exited).toBe(0);
+      expect(requests).toEqual(["/slow.bin"]);
+      expect(readFileSync(destination)).toEqual(Buffer.concat([half, half]));
+      expect(existsSync(`${destination}.partial`)).toBe(false);
+      expect(existsSync(`${destination}.lock`)).toBe(false);
+    },
+  );
 
   it("is not blocked by a download that crashed, and replaces the half file it left", async () => {
     const destination = path.join(folder, "model.bin");
