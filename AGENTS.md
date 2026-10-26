@@ -24,7 +24,7 @@ The folder table is in [README → Project structure](README.md#project-structur
 
 ## Working contract
 
-- **Verify gate**: `pnpm verify` = `biome ci .` + `pnpm typecheck` + `pnpm style` + `pnpm style:guide .` + `vitest run` + `pnpm build`. The husky pre-commit runs it; never bypass it.
+- **Verify gate**: `pnpm verify` = `biome ci .` + `pnpm typecheck` + `pnpm style` + `pnpm style:guide .` + `vitest run` + `pnpm build`. The husky pre-commit runs it; never bypass it. The husky pre-push runs biome, typecheck, both style checks and the tests on the Mac (CI runs only tests and build, on Linux), and a new worktree needs `pnpm install` before its first push.
 - **Effect / Schema**: outside data (files, hook input, CLI output, environment) is decoded by an Effect Schema; no `typeof` readers. Only `src/cli/main.ts` (and tests) run Effects.
 - **Native modules load lazily** (`koffi`, PvRecorder, whisper.node, onnxruntime-node): `agent-voice reply` must stay fast and must never fail.
 - **Agent settings** are edited only through `src/agents/hookSettings.ts`: one owned Stop entry, found by its command, backed up first, every other byte kept.
@@ -43,4 +43,4 @@ pnpm verify
 ## Local CI
 
 Before opening a PR, run `.github/workflows/ci.yml` locally with the run-ci-locally skill. It runs one act process per job, each holding a machine-wide slot, so parallel sessions do not run Docker out of memory. Never run `act` on the whole workflow.
-This package requires macOS: the `verify` job runs on `macos-latest`, and Linux Docker cannot validate its native behavior. Pass `-P macos-latest=-self-hosted` to every leg so that job runs on this Mac.
+CI runs on Linux. The file lock tests rely on macOS `O_EXLOCK` and skip on Linux (`isMacOS` in `src/scripts/testFolder.ts`); they run in the pre-push hook and `pnpm verify` on this Mac.
