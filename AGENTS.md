@@ -42,6 +42,5 @@ pnpm verify
 
 ## Local CI
 
-Run `act workflow_dispatch -W .github/workflows/ci.yml` before opening a PR.
-The machine `~/.actrc` selects the runner, architecture and shared caches.
-This package requires macOS. Run `pnpm verify` on macOS; Linux Docker cannot validate its native behavior. Use `act workflow_dispatch -W .github/workflows/ci.yml -P macos-latest=-self-hosted` for the native workflow.
+Before opening a PR, run `.github/workflows/ci.yml` locally with the run-ci-locally skill. It runs one act process per job, each holding a machine-wide slot, so parallel sessions do not run Docker out of memory. Never run `act` on the whole workflow.
+This package requires macOS: the `verify` job runs on `macos-latest`, and Linux Docker cannot validate its native behavior. Pass `-P macos-latest=-self-hosted` to every leg so that job runs on this Mac.
