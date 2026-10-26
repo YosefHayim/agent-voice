@@ -39,6 +39,8 @@ jobs:
               - 'tsconfig*.json'
               - '*.config.ts'
               - '**/package.json'
+              - README.md
+              - .env.example
               - '.github/**'
   verify:
     needs: changes

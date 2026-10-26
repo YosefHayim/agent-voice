@@ -39,7 +39,7 @@ jobs:
         run: pnpm exec vitest run
       - name: Test the changed files
         if: inputs.since != ''
-        run: pnpm exec vitest run --changed "$SINCE"
+        run: pnpm exec vitest run --changed "$SINCE" --passWithNoTests
         env:
           SINCE: ${{ inputs.since }}
       - name: Build
