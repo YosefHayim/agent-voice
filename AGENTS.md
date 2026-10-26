@@ -24,7 +24,7 @@ The folder table is in [README → Project structure](README.md#project-structur
 
 ## Working contract
 
-- **Verify gate**: `pnpm verify` = `biome ci .` + `tsc --noEmit` + `pnpm style` + `pnpm style:guide .` + `vitest run` + `pnpm build`. The husky pre-commit runs it; never bypass it.
+- **Verify gate**: `pnpm verify` = `biome ci .` + `pnpm typecheck` + `pnpm style` + `pnpm style:guide .` + `vitest run` + `pnpm build`. The husky pre-commit runs it; never bypass it.
 - **Effect / Schema**: outside data (files, hook input, CLI output, environment) is decoded by an Effect Schema; no `typeof` readers. Only `src/cli/main.ts` (and tests) run Effects.
 - **Native modules load lazily** (`koffi`, PvRecorder, whisper.node, onnxruntime-node): `agent-voice reply` must stay fast and must never fail.
 - **Agent settings** are edited only through `src/agents/hookSettings.ts`: one owned Stop entry, found by its command, backed up first, every other byte kept.
@@ -43,5 +43,5 @@ pnpm verify
 ## Local CI
 
 Run `act workflow_dispatch -W .github/workflows/ci.yml` before opening a PR.
-The root `.actrc` selects the local Docker runner and keeps the pnpm store outside the workspace.
+The machine `~/.actrc` selects the runner, architecture and shared caches.
 This package requires macOS. Run `pnpm verify` on macOS; Linux Docker cannot validate its native behavior. Use `act workflow_dispatch -W .github/workflows/ci.yml -P macos-latest=-self-hosted` for the native workflow.

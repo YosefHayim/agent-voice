@@ -1,6 +1,11 @@
 name: Verify
 'on':
-  workflow_call: null
+  workflow_call:
+    inputs:
+      since:
+        description: Base commit to check changes against. Empty checks every file.
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
@@ -11,7 +16,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - name: Setup workspace
         uses: ./.github/actions/setup
-      - name: Verify
-        run: pnpm verify
+      - name: Biome every file
+        if: inputs.since == ''
+        run: pnpm exec biome ci .
+      - name: Biome the changed files
+        if: inputs.since != ''
+        run: pnpm exec biome ci --changed --since="$SINCE" --no-errors-on-unmatched
+        env:
+          SINCE: ${{ inputs.since }}
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Code style
+        run: pnpm style
+      - name: Style guide
+        run: pnpm style:guide .
+      - name: Test every file
+        if: inputs.since == ''
+        run: pnpm exec vitest run
+      - name: Test the changed files
+        if: inputs.since != ''
+        run: pnpm exec vitest run --changed "$SINCE"
+        env:
+          SINCE: ${{ inputs.since }}
+      - name: Build
+        run: pnpm build

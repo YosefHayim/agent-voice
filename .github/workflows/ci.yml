@@ -1,9 +1,8 @@
 name: CI
 
-# One install and one `pnpm verify` run cover formatting, types, the code-style
-# and style-guide contracts, tests, and the build. agent-voice is macOS-only, so CI
-# runs on macOS; tests that need Whisper or Supertonic models skip when the
-# models are not present.
+# One install runs formatting, types, the code-style and style-guide contracts,
+# tests, and the build. agent-voice is macOS-only, so CI runs on macOS; tests
+# that need Whisper or Supertonic models skip when the models are not present.
 
 'on':
   push:
@@ -19,5 +18,32 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      since: ${{ steps.filter.outputs.everything != 'true' && github.event.pull_request.base.sha || '' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          token: ''
+          filters: |
+            everything:
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - biome.json
+              - 'tsconfig*.json'
+              - '*.config.ts'
+              - '**/package.json'
+              - README.md
+              - .env.example
+              - '.github/**'
   verify:
+    needs: changes
     uses: ./.github/workflows/verify.yml
+    with:
+      since: ${{ needs.changes.outputs.since }}
