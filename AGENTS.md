@@ -44,3 +44,4 @@ pnpm verify
 
 Before opening a PR, run `.github/workflows/ci.yml` locally with the run-ci-locally skill. It runs one act process per job, each holding a machine-wide slot, so parallel sessions do not run Docker out of memory. Never run `act` on the whole workflow.
 This package requires macOS: the `verify` job runs on `macos-latest`, and Linux Docker cannot validate its native behavior. Pass `-P macos-latest=-self-hosted` to every leg so that job runs on this Mac.
+That leg also needs `--env pnpm_config_store_dir=<scratchpad>/<run name>-pnpm-store --env npm_config_store_dir=<scratchpad>/<run name>-pnpm-store`, because `~/.actrc` sets the store to `/pnpm-store`, which exists only in containers.
