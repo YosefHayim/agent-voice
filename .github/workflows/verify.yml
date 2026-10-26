@@ -29,7 +29,7 @@ jobs:
         env:
           SINCE: ${{ inputs.since }}
       - name: Typecheck
-        run: pnpm exec tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/agent-voice.tsbuildinfo
+        run: pnpm typecheck
       - name: Code style
         run: pnpm style
       - name: Style guide
@@ -39,7 +39,7 @@ jobs:
         run: pnpm exec vitest run
       - name: Test the changed files
         if: inputs.since != ''
-        run: pnpm exec vitest run --changed "$SINCE" --passWithNoTests
+        run: pnpm exec vitest run --changed "$SINCE"
         env:
           SINCE: ${{ inputs.since }}
       - name: Build

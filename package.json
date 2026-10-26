@@ -19,13 +19,13 @@
     "prebuild": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc && node -e \"require('node:fs').chmodSync('dist/src/cli/main.js',0o755)\"",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/agent-voice.tsbuildinfo",
     "style": "tsx src/scripts/reportCodeStyle.ts",
     "style:guide": "tsx src/scripts/reportRuleCards.ts",
     "bench": "tsx src/scripts/benchDictation.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "verify": "biome ci . && tsc --noEmit && pnpm style && pnpm style:guide . && vitest run && pnpm build"
+    "verify": "biome ci . && pnpm typecheck && pnpm style && pnpm style:guide . && vitest run && pnpm build"
   },
   "keywords": [
     "dictation",
