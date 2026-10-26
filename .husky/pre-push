@@ -1,0 +1,1 @@
+pnpm exec biome ci . && pnpm typecheck && pnpm style && pnpm style:guide . && pnpm test
