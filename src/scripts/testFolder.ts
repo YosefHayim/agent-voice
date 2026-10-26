@@ -12,3 +12,10 @@ export const makeTestFolder = (name: string): string => {
   const folderPrefix = path.join(testHomeRoot, `${name}-`);
   return mkdtempSync(folderPrefix);
 };
+
+// macOS caps a socket path at 104 bytes, so a socket in a deep checkout or worktree is named relative to the test's working folder.
+export const makeTestSocketPath = (folder: string): string => {
+  const socketFile = path.join(folder, "c.sock");
+  const workingFolder = process.cwd();
+  return path.relative(workingFolder, socketFile);
+};

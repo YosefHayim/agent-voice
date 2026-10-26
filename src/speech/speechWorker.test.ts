@@ -5,7 +5,7 @@ import path from "node:path";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeTestFolder } from "../scripts/testFolder.js";
+import { makeTestFolder, makeTestSocketPath } from "../scripts/testFolder.js";
 import { queueReply } from "./inbox.js";
 import { makeSpeechPlayer } from "./speechPlayer.js";
 import { speakNextReply } from "./speechWorker.js";
@@ -53,7 +53,7 @@ describe("speakNextReply", () => {
 
   it("keeps a reply silent when a stop comes in while it is being claimed", async () => {
     const player = silentPlayer();
-    const socketPath = path.join(home, "c.sock");
+    const socketPath = makeTestSocketPath(home);
     // The stop lands during the Cmux focus check; with no reply line the focus is unknown, so the reply is claimed.
     server = createServer((connection) => {
       player.stop();
