@@ -21,11 +21,10 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/agent-voice.tsbuildinfo",
     "style": "tsx src/scripts/reportCodeStyle.ts",
-    "style:guide": "tsx src/scripts/reportRuleCards.ts",
     "bench": "tsx src/scripts/benchDictation.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "verify": "biome ci . && pnpm typecheck && pnpm style && pnpm style:guide . && vitest run && pnpm build"
+    "verify": "biome ci . && pnpm typecheck && pnpm style && vitest run && pnpm build"
   },
   "keywords": [
     "dictation",

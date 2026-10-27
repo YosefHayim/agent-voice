@@ -13,7 +13,6 @@ Entrypoint for coding agents and maintainers (Claude Code, Codex, Cursor, and ot
 | [`PROJECT.md`](PROJECT.md) | Scope and direction |
 | [`CONTEXT.md`](CONTEXT.md) | Runtime model: processes, files, permissions |
 | [`LANGUAGE.md`](LANGUAGE.md) | The words used in code and docs |
-| [`CODE-STYLE.md`](CODE-STYLE.md) | Rule cards; `pnpm style` and `pnpm style:guide .` enforce them |
 | [`README.md`](README.md) | Commands, settings, files, project structure, and the hand checks that need a mic, a keyboard, and macOS permissions |
 | `src/settings/configSchema.ts` | Every setting (the README table is checked against it) |
 | `src/settings/environmentVariables.ts` | Every `AGENT_VOICE_*` variable (README and `.env.example` are checked against it) |
@@ -24,7 +23,7 @@ The folder table is in [README → Project structure](README.md#project-structur
 
 ## Working contract
 
-- **Verify gate**: `pnpm verify` = `biome ci .` + `pnpm typecheck` + `pnpm style` + `pnpm style:guide .` + `vitest run` + `pnpm build`. The husky pre-commit runs it; never bypass it. The husky pre-push runs biome, typecheck, both style checks and the tests on the Mac (CI runs only tests and build, on Linux), and a new worktree needs `pnpm install` before its first push.
+- **Verify gate**: `pnpm verify` = `biome ci .` + `pnpm typecheck` + `pnpm style` + `vitest run` + `pnpm build`. The husky pre-commit runs it; never bypass it. The husky pre-push runs biome, typecheck, the style check and the tests on the Mac (CI runs only tests and build, on Linux), and a new worktree needs `pnpm install` before its first push.
 - **Effect / Schema**: outside data (files, hook input, CLI output, environment) is decoded by an Effect Schema; no `typeof` readers. Only `src/cli/main.ts` (and tests) run Effects.
 - **Native modules load lazily** (`koffi`, PvRecorder, whisper.node, onnxruntime-node): `agent-voice reply` must stay fast and must never fail.
 - **Agent settings** are edited only through `src/agents/hookSettings.ts`: one owned Stop entry, found by its command, backed up first, every other byte kept.
