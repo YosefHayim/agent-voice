@@ -1,0 +1,5 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreDependencies": ["@fugood/whisper.node"],
+  "ignoreBinaries": ["devin", "pbcopy", "say", "afconvert", "afplay"]
+}

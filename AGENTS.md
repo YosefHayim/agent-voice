@@ -23,12 +23,11 @@ The folder table is in [README → Project structure](README.md#project-structur
 
 ## Working contract
 
-- **Verify gate**: `pnpm verify` = `biome ci .` + `pnpm typecheck` + `pnpm style` + `vitest run` + `pnpm build`. The husky pre-commit runs it; never bypass it. The husky pre-push runs biome, typecheck, the style check and the tests on the Mac (CI runs only tests and build, on Linux), and a new worktree needs `pnpm install` before its first push.
+- **Check gate**: `pnpm check` = `pnpm lint` (Biome, then knip) + `pnpm typecheck` + `pnpm test` + `pnpm build`. The husky pre-commit runs it; never bypass it. The husky pre-push runs lint, typecheck and the tests on the Mac (CI runs only tests and build, on Linux), and a new worktree needs `pnpm install` before its first push.
 - **Effect / Schema**: outside data (files, hook input, CLI output, environment) is decoded by an Effect Schema; no `typeof` readers. Only `src/cli/main.ts` (and tests) run Effects.
 - **Native modules load lazily** (`koffi`, PvRecorder, whisper.node, onnxruntime-node): `agent-voice reply` must stay fast and must never fail.
 - **Agent settings** are edited only through `src/agents/hookSettings.ts`: one owned Stop entry, found by its command, backed up first, every other byte kept.
 - **Never touch a running agent-voice or another voice tool on the developer's Mac from tests**: tests set `AGENT_VOICE_HOME` and `HOME` to a folder from `makeTestFolder` (`src/scripts/testFolder.ts`, under the gitignored `.test-home/`) and put fake CLIs on `PATH`; smoke tests only read models from `~/.agent-voice/models`.
-- **Names**: plain English, one word per idea, from `LANGUAGE.md`. No `??`, no ternaries, no nested calls, at most two positional parameters, no classes except tagged errors.
 - **Branches**: product work lands from a topic branch; never commit to `main` directly.
 
 ## Validate changes
@@ -36,10 +35,10 @@ The folder table is in [README → Project structure](README.md#project-structur
 ```bash
 pnpm exec vitest run src/<capability>
 pnpm typecheck
-pnpm verify
+pnpm check
 ```
 
 ## Local CI
 
 Before opening a PR, run `.github/workflows/ci.yml` locally with the run-ci-locally skill. It runs one act process per job, each holding a machine-wide slot, so parallel sessions do not run Docker out of memory. Never run `act` on the whole workflow.
-CI runs on Linux. The file lock tests rely on macOS `O_EXLOCK` and skip on Linux (`isMacOS` in `src/scripts/testFolder.ts`); they run in the pre-push hook and `pnpm verify` on this Mac.
+CI runs on Linux. The file lock tests rely on macOS `O_EXLOCK` and skip on Linux (`isMacOS` in `src/scripts/testFolder.ts`); they run in the pre-push hook and `pnpm check` on this Mac.

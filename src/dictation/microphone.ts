@@ -5,7 +5,7 @@ import { Effect, Fiber, Schema } from "effect";
 
 import { SAMPLE_RATE, samplesFromPcm } from "./clipAudio.js";
 
-export class MicrophoneError extends Schema.TaggedError<MicrophoneError>()("MicrophoneError", {
+class MicrophoneError extends Schema.TaggedError<MicrophoneError>()("MicrophoneError", {
   issue: Schema.String,
 }) {
   get message(): string {

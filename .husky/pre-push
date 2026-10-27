@@ -1,1 +1,1 @@
-pnpm exec biome ci . && pnpm typecheck && pnpm style && pnpm test
+pnpm lint && pnpm typecheck && pnpm test
