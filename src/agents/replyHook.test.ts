@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runAgentVoice } from "../scripts/runAgentVoice.js";
-import { makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
+import { isMacOS, makeTestFolder, repositoryRoot } from "../scripts/testFolder.js";
 
 let home = "";
 let sleepers: ReadonlyArray<ChildProcess> = [];
@@ -79,6 +79,9 @@ const holdDictationLock = (): number => {
   return openSync(lockPath, constants.O_RDWR | constants.O_CREAT | constants.O_NONBLOCK | 0x20, 0o600);
 };
 
+// Under a full parallel test run the worker can take several seconds just to start from source.
+const WORKER_EXIT_TIMEOUT_MS = 30_000;
+
 const mainScript = path.join(repositoryRoot, "src", "cli", "main.ts");
 
 const isTestWorkerRunning = (): boolean => {
@@ -88,7 +91,7 @@ const isTestWorkerRunning = (): boolean => {
 
 // The hook exits only after spawn returned, so the worker is listed from the first check until it finds the lock taken.
 const testWorkerExited = async (): Promise<boolean> => {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + WORKER_EXIT_TIMEOUT_MS;
   while (isTestWorkerRunning() && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
@@ -141,7 +144,8 @@ describe("agent-voice reply (the agent Stop hook)", () => {
     expect(existsSync(speechLog)).toBe(false);
   });
 
-  it("starts the dictation worker after a reboot even when speech is off", async () => {
+  // The test lock is macOS-only (O_EXLOCK), so elsewhere the hook starts a real worker that loads a model.
+  it.skipIf(!isMacOS)("starts the dictation worker after a reboot even when speech is off", async () => {
     removePidFile("dictation");
     const lock = holdDictationLock();
     try {
