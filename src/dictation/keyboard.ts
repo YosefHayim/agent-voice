@@ -2,7 +2,7 @@
 
 import { Effect, Schema } from "effect";
 
-export class KeyboardError extends Schema.TaggedError<KeyboardError>()("KeyboardError", {
+class KeyboardError extends Schema.TaggedError<KeyboardError>()("KeyboardError", {
   issue: Schema.String,
 }) {
   get message(): string {
@@ -51,7 +51,7 @@ export const utf16Units = (chunk: string): Uint16Array =>
   Uint16Array.from({ length: chunk.length }, (_unused, index) => chunk.charCodeAt(index));
 
 // macOS silently drops a chunk that starts with a newline, so a zero-width space leads it.
-export const postableChunk = (chunk: string): string => {
+const postableChunk = (chunk: string): string => {
   const startsWithNewline = /^[\r\n]/u.test(chunk);
   if (!startsWithNewline) {
     return chunk;

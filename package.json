@@ -20,11 +20,10 @@
     "build": "tsc && node -e \"require('node:fs').chmodSync('dist/src/cli/main.js',0o755)\"",
     "test": "vitest run",
     "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc/agent-voice.tsbuildinfo",
-    "style": "tsx src/scripts/reportCodeStyle.ts",
     "bench": "tsx src/scripts/benchDictation.ts",
-    "lint": "biome check .",
+    "lint": "biome check . && knip",
     "lint:fix": "biome check --write .",
-    "verify": "biome ci . && pnpm typecheck && pnpm style && vitest run && pnpm build"
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "keywords": [
     "dictation",
@@ -68,8 +67,8 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.2",
     "@types/node": "22.20.0",
-    "glob": "13.0.6",
     "husky": "9.1.7",
+    "knip": "6.43.0",
     "tsx": "4.22.4",
     "typescript": "5.9.3",
     "vitest": "3.2.7"

@@ -26,7 +26,7 @@ const transcriberError = (error: unknown): TranscriberError => {
   return new TranscriberError({ issue: String(error) });
 };
 
-export const transcriptionSchema = Schema.Struct({
+const transcriptionSchema = Schema.Struct({
   text: Schema.String,
   decodeMs: Schema.Number,
   inputLevel: Schema.Number.annotations({ description: "RMS of the capture before normalizing, for the log." }),

@@ -185,13 +185,13 @@ Agent hooks: `~/.claude/settings.json`, `~/.codex/hooks.json`, and `~/.grok/hook
 | `src/refine/` | Agent CLI discovery and calls, reply checks, model rotation, the picker, and cmux delivery |
 | `src/agents/` | The agent catalog, Stop hook edits, `agent-voice reply`, and the Devin watcher |
 | `src/workers/` | Worker processes, `status.json`, worker logs, and the pill |
-| `src/scripts/` | Tooling only: the code-style and rule-card checkers, `pnpm bench`, `pnpm cli` (the CLI from source), and the test helpers `makeTestFolder` and `runAgentVoice` |
+| `src/scripts/` | Tooling only: `pnpm bench`, `pnpm cli` (the CLI from source), and the test helpers `makeTestFolder` and `runAgentVoice` |
 
 ## Development
 
 ```bash
 pnpm install
-pnpm verify          # Biome, typecheck, code-style rules, rule cards, tests, build
+pnpm check           # Biome, knip, typecheck, tests, build
 pnpm cli status      # run the CLI from source; loads .env when it exists
 pnpm bench --models base,turbo-q5 --seconds 1,2,4 --runs 3
 ```

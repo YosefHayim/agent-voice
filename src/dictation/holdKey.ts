@@ -16,7 +16,7 @@ type ShiftEdge = "shiftDown" | "shiftUp" | "none";
 // Longer than the Shift press for a capital letter; the mic buffer already started at Shift down.
 export const HOLD_THRESHOLD_MS = 300;
 
-export const DOUBLE_TAP_MS = 400;
+const DOUBLE_TAP_MS = 400;
 
 export const SHIFT_POLL_MS = 8;
 
