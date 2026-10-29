@@ -38,7 +38,6 @@ pnpm typecheck
 pnpm check
 ```
 
-## Local CI
+## CI
 
-Before opening a PR, run `.github/workflows/ci.yml` locally with the run-ci-locally skill. It runs one act process per job, each holding a machine-wide slot, so parallel sessions do not run Docker out of memory. Never run `act` on the whole workflow.
 CI runs on Linux. The file lock tests rely on macOS `O_EXLOCK` and skip on Linux (`isMacOS` in `src/scripts/testFolder.ts`); they run in the pre-push hook and `pnpm check` on this Mac.
