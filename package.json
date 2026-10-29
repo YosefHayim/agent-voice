@@ -23,7 +23,7 @@
     "bench": "tsx src/scripts/benchDictation.ts",
     "lint": "biome check . && knip",
     "lint:fix": "biome check --write .",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "check": "turbo run lint typecheck test build --output-logs=errors-only"
   },
   "keywords": [
     "dictation",
@@ -70,6 +70,7 @@
     "husky": "9.1.7",
     "knip": "6.43.0",
     "tsx": "4.22.4",
+    "turbo": "2.11.8",
     "typescript": "5.9.3",
     "vitest": "3.2.7"
   }
