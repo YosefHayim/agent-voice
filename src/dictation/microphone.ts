@@ -1,4 +1,4 @@
-// The microphone stays open for the dictation worker's lifetime (PvRecorder, 16 kHz mono), so Shift only flips a
+// The microphone stays open for the dictation worker's lifetime (PvRecorder, 16 kHz mono), so the hold key only flips a
 // recording flag and the first word is never clipped by device start-up.
 
 import { Effect, Fiber, Schema } from "effect";
@@ -37,7 +37,7 @@ const joined = (frames: ReadonlyArray<Int16Array>): Float32Array => {
   return samplesFromPcm(pcm);
 };
 
-// Frames arriving while not recording are dropped. Shift down begins a clip that may still be a capital letter, and
+// Frames arriving while not recording are dropped. A modifier press begins a clip that may still be a typing shortcut, and
 // `confirm` marks it a hold. Every begin starts a new clip number, so work started for an earlier clip can tell it is late.
 export const makeClipBuffer = () => {
   let frames: Array<Int16Array> = [];

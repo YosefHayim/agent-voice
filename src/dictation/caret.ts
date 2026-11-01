@@ -50,12 +50,12 @@ const commandVWithSystemEvents: Effect.Effect<void, CaretError> = Effect.tryProm
   catch: (error) => new CaretError({ issue: String(error) }),
 }).pipe(Effect.asVoid);
 
-// Releases the dictation Shift once and waits for it to read up, so it cannot capitalize the typed text.
-const waitForShiftUp = (keyboard: Keyboard, maxMs: number) =>
+// Release the selected modifier before typing so it cannot alter the text.
+const waitForHoldUp = (keyboard: Keyboard, maxMs: number) =>
   Effect.gen(function* () {
     const deadline = Date.now() + maxMs;
-    keyboard.releaseShift();
-    while (keyboard.shiftDown() && Date.now() < deadline) {
+    keyboard.releaseHoldKey();
+    while (keyboard.holdDown() && Date.now() < deadline) {
       yield* Effect.sleep("10 millis");
     }
     // A small settle so the focused app accepts key events after the hotkey release.
@@ -117,12 +117,12 @@ export const typeAtCaret = (request: {
       return;
     }
 
-    yield* waitForShiftUp(request.keyboard, 900);
+    yield* waitForHoldUp(request.keyboard, 900);
     yield* putText(request.keyboard, request.text);
     if (!request.pressEnter) {
       return;
     }
 
-    yield* waitForShiftUp(request.keyboard, 400);
+    yield* waitForHoldUp(request.keyboard, 400);
     request.keyboard.pressReturn();
   });

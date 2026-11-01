@@ -2,16 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   classifyTap,
-  debounceShift,
+  debounceHold,
   doubleTapAction,
   type HoldAction,
   type HoldEvent,
   type HoldState,
   holdTransition,
-  initialShiftDebounce,
-  initialShiftTracker,
+  initialHoldDebounce,
+  initialHoldTracker,
   newlyPressed,
-  sampleShift,
+  sampleHold,
 } from "./holdKey.js";
 
 const replay = (events: ReadonlyArray<HoldEvent>) =>
@@ -25,25 +25,25 @@ type HoldCase = {
 };
 
 const holdCases: ReadonlyArray<HoldCase> = [
-  { name: "Shift down schedules the hold", events: ["shiftDown"], state: "waiting", action: "schedule" },
-  { name: "a long hold starts listening", events: ["shiftDown", "holdElapsed"], state: "listening", action: "start" },
-  { name: "a short press is a tap", events: ["shiftDown", "shiftUp"], state: "idle", action: "tap" },
-  { name: "typing a capital letter cancels", events: ["shiftDown", "otherDown"], state: "shortcut", action: "cancel" },
+  { name: "Shift down schedules the hold", events: ["holdDown"], state: "waiting", action: "schedule" },
+  { name: "a long hold starts listening", events: ["holdDown", "holdElapsed"], state: "listening", action: "start" },
+  { name: "a short press is a tap", events: ["holdDown", "holdUp"], state: "idle", action: "tap" },
+  { name: "typing a capital letter cancels", events: ["holdDown", "otherDown"], state: "shortcut", action: "cancel" },
   {
     name: "releasing after a cancel does nothing",
-    events: ["shiftDown", "otherDown", "shiftUp"],
+    events: ["holdDown", "otherDown", "holdUp"],
     state: "idle",
     action: "none",
   },
   {
     name: "a key pressed while listening drops the clip",
-    events: ["shiftDown", "holdElapsed", "otherDown"],
+    events: ["holdDown", "holdElapsed", "otherDown"],
     state: "shortcut",
     action: "cancel",
   },
   {
     name: "releasing while listening stops and keeps the clip",
-    events: ["shiftDown", "holdElapsed", "shiftUp"],
+    events: ["holdDown", "holdElapsed", "holdUp"],
     state: "idle",
     action: "stop",
   },
@@ -73,13 +73,13 @@ describe("newlyPressed", () => {
   });
 });
 
-describe("debounceShift", () => {
+describe("debounceHold", () => {
   // [sample index, edge] for every edge, so the exact debounce lengths are locked down.
   const run = (samples: ReadonlyArray<"down" | "up">) => {
-    let debounce = initialShiftDebounce;
+    let debounce = initialHoldDebounce;
     const edges: Array<readonly [number, string]> = [];
     for (const [index, sample] of samples.entries()) {
-      const [next, edge] = debounceShift(debounce, sample);
+      const [next, edge] = debounceHold(debounce, sample);
       debounce = next;
       if (edge !== "none") {
         edges.push([index, edge]);
@@ -90,30 +90,30 @@ describe("debounceShift", () => {
 
   it("reports Shift down on the second down sample and up on the fourth up sample", () => {
     expect(run(["down", "down", "down", "up", "up", "up", "up"])).toEqual([
-      [1, "shiftDown"],
-      [6, "shiftUp"],
+      [1, "holdDown"],
+      [6, "holdUp"],
     ]);
   });
 
   it("ignores a one-sample blip in either direction", () => {
     expect(run(["down", "up", "up", "up", "up"])).toEqual([]);
     expect(run(["down", "down", "up", "down", "down", "up", "up", "up", "up"])).toEqual([
-      [1, "shiftDown"],
-      [8, "shiftUp"],
+      [1, "holdDown"],
+      [8, "holdUp"],
     ]);
   });
 });
 
-describe("sampleShift", () => {
+describe("sampleHold", () => {
   const letter = 1n << 0x0en;
   const stuckKey = 1n;
 
   // [sample index, event] for every event the samples produce.
   const run = (samples: ReadonlyArray<readonly ["down" | "up", bigint]>) => {
-    let tracker = initialShiftTracker;
+    let tracker = initialHoldTracker;
     const events: Array<readonly [number, string]> = [];
-    for (const [index, [shift, keys]] of samples.entries()) {
-      const [next, produced] = sampleShift(tracker, { shift, otherKeys: () => keys });
+    for (const [index, [hold, keys]] of samples.entries()) {
+      const [next, produced] = sampleHold(tracker, { hold, otherKeys: () => keys });
       tracker = next;
       const indexed = produced.map((event) => [index, event] as const);
       events.push(...indexed);
@@ -128,7 +128,7 @@ describe("sampleShift", () => {
         ["down", letter],
       ]),
     ).toEqual([
-      [1, "shiftDown"],
+      [1, "holdDown"],
       [1, "otherDown"],
     ]);
   });
@@ -142,7 +142,7 @@ describe("sampleShift", () => {
         ["down", stuckKey | letter],
       ]),
     ).toEqual([
-      [1, "shiftDown"],
+      [1, "holdDown"],
       [3, "otherDown"],
     ]);
   });
@@ -158,8 +158,8 @@ describe("sampleShift", () => {
         ["up", letter],
       ]),
     ).toEqual([
-      [1, "shiftDown"],
-      [5, "shiftUp"],
+      [1, "holdDown"],
+      [5, "holdUp"],
     ]);
   });
 });
