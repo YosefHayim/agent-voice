@@ -1,4 +1,4 @@
-// The live caption while Shift is held: a Whisper pass over the last 8 s every 700 ms, shown in the pill only.
+// The live caption while the hold key is held: a Whisper pass over the last 8 s every 700 ms, shown in the pill only.
 // The final text always comes from the queue; the best caption is its fallback for short clips.
 
 import { Effect, Option } from "effect";

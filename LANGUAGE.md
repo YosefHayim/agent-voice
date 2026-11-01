@@ -3,7 +3,7 @@
 Names only: use these words in code, comments, commits, and docs, and avoid the listed aliases. One word per idea.
 
 **dictation**
-Hold Shift, speak, release: the words are typed at the caret.
+Hold the configured key (Shift or Right Option), speak, release: the words are typed at the caret.
 _Avoid_: "stt", "speech-to-text" in identifiers, "voice input".
 
 **speech**
@@ -23,14 +23,14 @@ The complete text an agent finished a turn with.
 _Avoid_: "response", "message", "output".
 
 **hold**
-Shift pressed alone past 300 ms: a dictation.
+The configured key pressed alone past 300 ms: a dictation.
 _Avoid_: "press", "hotkey event".
 
 **tap**
 A Shift press shorter than a hold; a **double tap** is two within 400 ms.
 
 **clip**
-The audio of one hold, from Shift down to the end of the release tail.
+The audio of one hold, from the hold key going down to the end of the release tail.
 _Avoid_: "recording", "buffer" (the buffer is the mechanism that holds a clip).
 
 **transcript**

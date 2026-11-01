@@ -4,7 +4,7 @@
 
 Talk to coding agents and listen to them, on a Mac, without sending audio anywhere:
 
-1. **Dictation**: hold Shift, speak, release; the words land at the caret.
+1. **Dictation**: hold the configured key (Shift or Right Option), speak, release; the words land at the caret.
 2. **Speech**: an agent's finished reply is read aloud, in a natural voice, without reading Markdown punctuation.
 3. **Refine** (optional): turn a rambling dictated or copied draft into a clean prompt with an agent CLI the user already has.
 

@@ -7,7 +7,7 @@ How agent-voice runs on a Mac. Words are defined in `LANGUAGE.md`.
 | Process | Started by | Lives | Does |
 | --- | --- | --- | --- |
 | `agent-voice <command>` | the user | one command | everything in `src/cli/` |
-| dictation worker (`agent-voice worker dictation`) | `agent-voice on`, or `agent-voice reply` after a reboot | until `agent-voice off` / `reset` | loads Whisper, opens the mic, polls Shift every 8 ms, runs the queue, starts the pill and the speech worker |
+| dictation worker (`agent-voice worker dictation`) | `agent-voice on`, or `agent-voice reply` after a reboot | until `agent-voice off` / `reset` | loads Whisper, opens the mic, polls the configured hold key every 8 ms, runs the queue, starts the pill and the speech worker |
 | speech worker (`agent-voice worker speech`) | the dictation worker, `agent-voice reply`, or `config set speech-mode` | until speech is off or `agent-voice off` | inbox → Supertonic → `afplay` |
 | pill (`osascript -l JavaScript`) | the dictation worker | until that worker exits | shows `status.json` at the bottom of the screen |
 | `agent-voice reply` | an agent's Stop hook | one turn | wakes the dictation worker (and speech when on), queues the reply unless speech is off or muted, prints nothing, exits 0 |

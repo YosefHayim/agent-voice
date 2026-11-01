@@ -102,10 +102,11 @@ const applyChange = (previous: Config, next: Config) =>
     const nextModel = selectWhisperModel({ environment, config: next });
     const isDictationRunning = isWorkerRunning("dictation");
     const isModelChanged = previousModel.key !== nextModel.key;
+    const isHoldKeyChanged = previous.dictationHoldKey !== next.dictationHoldKey;
     const isSpeechTurnedOn = previous.speechMode === "off" && next.speechMode !== "off";
     const isSpeechTurnedOff = previous.speechMode !== "off" && next.speechMode === "off";
     const isNewlyMuted = !previous.speechMuted && next.speechMuted;
-    if (isModelChanged && isDictationRunning) {
+    if ((isModelChanged || isHoldKeyChanged) && isDictationRunning) {
       yield* prepareModels(next);
       yield* restartWorkers;
       return yield* TerminalUI.detail(`Dictation restarted with ${nextModel.label}.`);

@@ -1,6 +1,3 @@
-// Turns the 8 ms Shift samples into dictation: debounced edges and "another key" events go to the pure hold
-// table, and its actions run on the clip buffer, the queue, the pill, and speech.
-
 import { Effect } from "effect";
 import { refinePrompt } from "../refine/refineAttempts.js";
 import { readConfig, readConfigOrDefaults, saveConfig } from "../settings/configFile.js";
@@ -18,8 +15,8 @@ import {
   type HoldEvent,
   type HoldState,
   holdTransition,
-  initialShiftTracker,
-  sampleShift,
+  initialHoldTracker,
+  sampleHold,
 } from "./holdKey.js";
 import type { Keyboard } from "./keyboard.js";
 import type { LiveCaption } from "./livePreview.js";
@@ -81,8 +78,8 @@ const toggleSpeechMute = (status: StatusWriter) =>
     status.write("inactive", "Speech muted (double-tap Shift to unmute)");
   }).pipe(Effect.catchAll((failure) => Effect.sync(() => status.write("inactive", `Mute failed: ${failure.message}`))));
 
-const shiftSample = (keyboard: Keyboard): "down" | "up" => {
-  if (keyboard.shiftDown()) {
+const holdSample = (keyboard: Keyboard): "down" | "up" => {
+  if (keyboard.holdDown()) {
     return "down";
   }
 
@@ -97,7 +94,7 @@ export const makeHoldController = (request: {
   readonly queue: DictationQueue;
 }) => {
   const { keyboard, clip, caption, status, queue } = request;
-  let tracker = initialShiftTracker;
+  let tracker = initialHoldTracker;
   let state: HoldState = "idle";
   let deadline: number | undefined;
   let generation = 0;
@@ -145,6 +142,10 @@ export const makeHoldController = (request: {
     });
 
   const onTap = Effect.gen(function* () {
+    if (keyboard.holdKey === "right-option") {
+      return;
+    }
+
     const tap = classifyTap({ lastTapAt, now: Date.now() });
     lastTapAt = tap.rememberedTapAt;
     if (!tap.double) {
@@ -183,8 +184,7 @@ export const makeHoldController = (request: {
     announcedListening = true;
   });
 
-  // Shift is also pressed for every capital letter, so Shift down only opens the buffer (and ends a clip
-  // still in its release tail); the pill waits until the hold is confirmed.
+  // Buffer audio before the threshold so the first word is retained.
   const schedule = Effect.gen(function* () {
     if (finishing !== undefined) {
       yield* endClip(finishing);
@@ -226,11 +226,14 @@ export const makeHoldController = (request: {
       return perform(action);
     });
 
-  // Shift plus another key is typing or a shortcut, never a hold.
   const sampleEvents = (): ReadonlyArray<HoldEvent> => {
-    const shift = shiftSample(keyboard);
-    const [next, events] = sampleShift(tracker, { shift, otherKeys: keyboard.otherKeysDown });
+    const hold = holdSample(keyboard);
+    const [next, events] = sampleHold(tracker, { hold, otherKeys: keyboard.otherKeysDown });
     tracker = next;
+    if (hold === "down" && keyboard.otherModifiersDown()) {
+      return [...events, "otherDown"];
+    }
+
     return events;
   };
 
@@ -243,7 +246,7 @@ export const makeHoldController = (request: {
     return ["holdElapsed"];
   };
 
-  // Recording with no Shift hold and no release tail means a signal was lost: never leave the mic on.
+  // Recording with no dictation hold and no release tail means a signal was lost: never leave the mic on.
   const safetyNet = Effect.sync(() => {
     const isHeld = state === "waiting" || state === "listening";
     const isLost = clip.isRecording() && finishing === undefined && !isHeld;
@@ -251,7 +254,7 @@ export const makeHoldController = (request: {
       return;
     }
 
-    appendDictationLog("recording stopped: no Shift hold");
+    appendDictationLog("recording stopped: no dictation hold");
     cancelClip();
   });
 

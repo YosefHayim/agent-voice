@@ -45,7 +45,7 @@ const dictationStatus = (config: Config) => {
     language: config.dictationLanguage,
     modelKey: selected.key,
     models: modelEntries(selected.key),
-    hotkey: "hold-shift",
+    hotkey: `hold-${config.dictationHoldKey}`,
   };
   if (!isRunning) {
     return { ...dictation, stage: "inactive" };

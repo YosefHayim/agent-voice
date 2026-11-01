@@ -1,4 +1,4 @@
-// The dictation worker (`agent-voice worker dictation`): Whisper loads once, the mic stays open, Shift is polled every
+// The dictation worker (`agent-voice worker dictation`): Whisper loads once, the mic stays open, the hold key is polled every
 // 8 ms, the pill shows, and the speech worker starts. It runs until `agent-voice off` or `agent-voice reset`.
 
 import { Effect, Schedule } from "effect";
@@ -11,7 +11,7 @@ import { claimWorkerLock, startSpeechWorker, stopRequested } from "../workers/wo
 import { makeStatusWriter } from "../workers/workerStatus.js";
 import { startDictationQueue } from "./dictationQueue.js";
 import { makeHoldController } from "./holdController.js";
-import { SHIFT_POLL_MS } from "./holdKey.js";
+import { HOLD_POLL_MS } from "./holdKey.js";
 import { loadKeyboard } from "./keyboard.js";
 import { captionLoop, makeLiveCaption } from "./livePreview.js";
 import { makeClipBuffer, openMicrophone } from "./microphone.js";
@@ -64,7 +64,7 @@ const runWorker = Effect.gen(function* () {
     yield* captionLoop({ clip, transcriber, caption, status }).pipe(Effect.forkScoped);
   }
   const controller = makeHoldController({ keyboard, clip, caption, status, queue });
-  const pollEvery = Schedule.spaced(SHIFT_POLL_MS);
+  const pollEvery = Schedule.spaced(HOLD_POLL_MS);
   yield* controller.poll.pipe(Effect.repeat(pollEvery), Effect.forkScoped);
   yield* Effect.raceFirst(waitForStop, microphone.failure);
 });

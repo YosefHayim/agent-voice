@@ -18,7 +18,7 @@ type DictationStage = Schema.Schema.Type<typeof dictationStageSchema>;
 const workerStatusSchema = Schema.Struct({
   stage: dictationStageSchema,
   detail: Schema.String.annotations({ description: "Short text for the pill and `agent-voice status`." }),
-  preview: Schema.String.annotations({ description: "Live caption while Shift is held; never typed." }),
+  preview: Schema.String.annotations({ description: "Live caption while the hold key is held; never typed." }),
   recording: Schema.Boolean.annotations({
     description: "True while the mic captures a confirmed hold, through its release tail; speech waits.",
   }),
