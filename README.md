@@ -17,7 +17,7 @@ git clone https://github.com/YosefHayim/agent-voice.git
 cd agent-voice
 pnpm install
 pnpm build
-pnpm link --global      # puts `agent-voice` on your PATH; it runs this folder's build (or: alias agent-voice="node $PWD/dist/src/cli/main.js")
+pnpm add -g .          # puts `agent-voice` on your PATH; it links this folder's build (or: alias agent-voice="node $PWD/dist/src/cli/main.js")
 agent-voice on
 ```
 
@@ -29,6 +29,7 @@ agent-voice on
 git pull
 pnpm install
 pnpm build
+pnpm add -g .       # registers the new build on your PATH
 agent-voice on      # restarts the workers on the new build
 ```
 
