@@ -1,5 +1,5 @@
 import { Command, Options } from "@effect/cli";
-import { Option } from "effect";
+import { Effect, Option } from "effect";
 
 import { runReplyHookFromArguments } from "#src/agents/reply-hook.js";
 
@@ -12,7 +12,7 @@ const agentOption = Options.text("agent").pipe(
 
 export const replyCommand = Command.make("reply", { agent: agentOption }, (args) => {
   const hookArguments = Option.match(args.agent, { onNone: () => [], onSome: (agent) => ["--agent", agent] });
-  return runReplyHookFromArguments(hookArguments);
+  return Effect.promise(() => runReplyHookFromArguments(hookArguments));
 }).pipe(
   Command.withDescription(
     "Agent Stop hook: queue the agent's finished reply for speech. Prints nothing and always exits 0.",

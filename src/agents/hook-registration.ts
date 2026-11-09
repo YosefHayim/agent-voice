@@ -2,30 +2,27 @@ import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { Effect, Either, Option, Schema } from "effect";
+import { z } from "zod";
+import { describeError } from "#src/error-message.js";
 import { stateFile, stateFolder } from "#src/settings/agent-voice-home.js";
 import { makePrivateFolder, readJsonFile, readTextIfPresent, writeJsonAtomically } from "#src/storage/state-files.js";
 import { agentVoiceInvocation } from "#src/workers/worker-processes.js";
-import { agentIdSchema } from "./agent-catalog.js";
-import {
-  addReplyHook,
-  HookSettingsIssue,
-  isEmptySettings,
-  removeReplyHook,
-  replyHookCommand,
-} from "./hook-settings.js";
+import type { AgentId } from "./agent-catalog.js";
+import { addReplyHook, isEmptySettings, removeReplyHook, replyHookCommand } from "./hook-settings.js";
 import { type HookSettingsFile, hookSettingsFiles, rememberClaudeConfigFolder } from "./hook-settings-files.js";
 
-const hookChangeSchema = Schema.Struct({
-  agent: agentIdSchema,
-  displayName: Schema.String,
-  file: Schema.String,
-  change: Schema.Literal("added", "unchanged", "removed", "absent", "not installed", "failed"),
-  backup: Schema.optional(Schema.String),
-  issue: Schema.optional(Schema.String),
-});
+export type HookChangeKind = "added" | "unchanged" | "removed" | "absent" | "not installed" | "failed";
 
-export type HookChange = Schema.Schema.Type<typeof hookChangeSchema>;
+export interface HookChange {
+  readonly agent: AgentId;
+  readonly displayName: string;
+  readonly file: string;
+  readonly change: HookChangeKind;
+  readonly backup?: string;
+  readonly issue?: string;
+}
+
+const createdFilesSchema = z.array(z.string());
 
 const isAgentInstalled = (settings: HookSettingsFile): boolean => existsSync(settings.folder);
 
@@ -72,7 +69,7 @@ const writeSettings = (settings: HookSettingsFile, text: string): void => {
 // Settings files agent-voice created, so `agent-voice off` can delete one it leaves empty and keep any file that existed before.
 const createdFiles = (): ReadonlyArray<string> => {
   const createdPath = stateFile("created-hook-files.json");
-  return readJsonFile({ path: createdPath, schema: Schema.Array(Schema.String) }) ?? [];
+  return readJsonFile({ path: createdPath, schema: createdFilesSchema }) ?? [];
 };
 
 const recordCreated = (request: { readonly file: string; readonly created: boolean }): void => {
@@ -86,7 +83,7 @@ const recordCreated = (request: { readonly file: string; readonly created: boole
   writeJsonAtomically({ path: createdPath, value: others });
 };
 
-const changeFor = (settings: HookSettingsFile, change: HookChange["change"]): HookChange => ({
+const changeFor = (settings: HookSettingsFile, change: HookChangeKind): HookChange => ({
   agent: settings.agent,
   displayName: settings.displayName,
   file: settings.file,
@@ -94,17 +91,19 @@ const changeFor = (settings: HookSettingsFile, change: HookChange["change"]): Ho
 });
 
 // A settings file agent-voice cannot read or parse is reported and left exactly as it is.
-const failedChange = (settings: HookSettingsFile, issue: HookSettingsIssue): HookChange => ({
+const failedChange = (settings: HookSettingsFile, error: unknown): HookChange => ({
   ...changeFor(settings, "failed"),
-  issue: issue.message,
+  issue: describeError(error),
 });
 
 // Reading an unreadable file as missing would replace the user's settings with a hook-only file.
-const readSettings = (settings: HookSettingsFile): Either.Either<Option.Option<string>, HookSettingsIssue> =>
-  Either.try({
-    try: () => readTextIfPresent(settings.file),
-    catch: (error) => new HookSettingsIssue({ issue: `the settings file could not be read (${String(error)})` }),
-  }).pipe(Either.map(Option.fromNullable));
+const readSettings = (settings: HookSettingsFile): string | null => {
+  try {
+    return readTextIfPresent(settings.file);
+  } catch (error) {
+    throw new Error(`the settings file could not be read (${String(error)})`, { cause: error });
+  }
+};
 
 const agentVoiceReplyCommand = (settings: HookSettingsFile): string => {
   const invocation = agentVoiceInvocation();
@@ -126,86 +125,88 @@ const saveRemoval = (settings: HookSettingsFile, source: string): void => {
   writeSettings(settings, source);
 };
 
-const registerOne = (settings: HookSettingsFile): HookChange => {
-  if (!isAgentInstalled(settings)) {
-    return changeFor(settings, "not installed");
-  }
-
-  const read = readSettings(settings);
-  if (Either.isLeft(read)) {
-    return failedChange(settings, read.left);
-  }
-
-  const current = read.right;
-  const source = Option.getOrElse(current, () => "");
+const registerInstalled = (settings: HookSettingsFile): HookChange => {
+  const current = readSettings(settings);
+  const source = current ?? "";
   const command = agentVoiceReplyCommand(settings);
   const edit = addReplyHook({ source, command, agent: settings.agent });
-  if (Either.isLeft(edit)) {
-    return failedChange(settings, edit.left);
-  }
-
-  if (!edit.right.changed) {
+  if (!edit.changed) {
     return changeFor(settings, "unchanged");
   }
 
   const added = changeFor(settings, "added");
-  if (Option.isNone(current)) {
-    writeSettings(settings, edit.right.source);
+  const isNewSettingsFile = current === null;
+  if (isNewSettingsFile) {
+    writeSettings(settings, edit.source);
     recordCreated({ file: added.file, created: true });
     return added;
   }
 
   const backup = backupFile(settings);
-  writeSettings(settings, edit.right.source);
+  writeSettings(settings, edit.source);
   return { ...added, backup };
 };
 
-const unregisterOne = (settings: HookSettingsFile): HookChange => {
-  const read = readSettings(settings);
-  if (Either.isLeft(read)) {
-    return failedChange(settings, read.left);
+const registerOne = (settings: HookSettingsFile): HookChange => {
+  const isNotInstalled = !isAgentInstalled(settings);
+  if (isNotInstalled) {
+    return changeFor(settings, "not installed");
   }
 
-  const current = read.right;
-  if (Option.isNone(current)) {
+  try {
+    return registerInstalled(settings);
+  } catch (error) {
+    return failedChange(settings, error);
+  }
+};
+
+const unregisterInstalled = (settings: HookSettingsFile): HookChange => {
+  const current = readSettings(settings);
+  const isThereNoSettingsText = current === null;
+  if (isThereNoSettingsText) {
     return changeFor(settings, "absent");
   }
 
-  const edit = removeReplyHook({ source: current.value, agent: settings.agent });
-  if (Either.isLeft(edit)) {
-    return failedChange(settings, edit.left);
-  }
-
-  if (!edit.right.changed) {
+  const edit = removeReplyHook({ source: current, agent: settings.agent });
+  if (!edit.changed) {
     return changeFor(settings, "absent");
   }
 
   const backup = backupFile(settings);
   const removed = changeFor(settings, "removed");
-  saveRemoval(settings, edit.right.source);
+  saveRemoval(settings, edit.source);
   recordCreated({ file: removed.file, created: false });
   return { ...removed, backup };
 };
 
-export const registerReplyHooks: Effect.Effect<ReadonlyArray<HookChange>> = Effect.sync(() => {
+const unregisterOne = (settings: HookSettingsFile): HookChange => {
+  try {
+    return unregisterInstalled(settings);
+  } catch (error) {
+    return failedChange(settings, error);
+  }
+};
+
+export const registerReplyHooks = (): ReadonlyArray<HookChange> => {
   rememberClaudeConfigFolder();
   return hookSettingsFiles().map(registerOne);
-});
+};
 
-export const unregisterReplyHooks: Effect.Effect<ReadonlyArray<HookChange>> = Effect.sync(() =>
-  hookSettingsFiles().map(unregisterOne),
-);
+export const unregisterReplyHooks = (): ReadonlyArray<HookChange> => hookSettingsFiles().map(unregisterOne);
 
+// A file that cannot be read or parsed has no agent-voice entry to list; registering reports it as failed.
 const hasReplyHook = (settings: HookSettingsFile): boolean => {
-  const current = readSettings(settings).pipe(Either.getOrElse(() => Option.none<string>()));
-  if (Option.isNone(current)) {
+  try {
+    const current = readSettings(settings);
+    const isThereNoSettingsText = current === null;
+    if (isThereNoSettingsText) {
+      return false;
+    }
+
+    return removeReplyHook({ source: current, agent: settings.agent }).changed;
+  } catch {
     return false;
   }
-
-  return removeReplyHook({ source: current.value, agent: settings.agent }).pipe(
-    Either.map((edit) => edit.changed),
-    Either.getOrElse(() => false),
-  );
 };
 
 export const registeredSettingsFiles = (): ReadonlyArray<HookSettingsFile> => hookSettingsFiles().filter(hasReplyHook);

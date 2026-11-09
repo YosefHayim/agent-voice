@@ -11,7 +11,7 @@ export const offCommand = Command.make("off", {}, () =>
     yield* TerminalUI.intro("off");
     // Hooks first, so an agent turn that ends meanwhile cannot start a worker after the workers are stopped.
     yield* TerminalUI.step("Removing agent-voice's Stop hook from the agent settings");
-    const changes = yield* unregisterReplyHooks;
+    const changes = yield* Effect.sync(unregisterReplyHooks);
     yield* showHookChanges(changes);
     yield* TerminalUI.step("Stopping the workers and the pill");
     yield* Effect.promise(resetWorkers);

@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
 
-import { Either } from "effect";
 import { parse } from "jsonc-parser";
 import { describe, expect, it } from "vitest";
 
@@ -18,10 +17,9 @@ const command = replyHookCommand({
   agent: "codex",
 });
 
-const added = (source: string, hookCommand = command) =>
-  addReplyHook({ source, command: hookCommand, agent: "codex" }).pipe(Either.getOrThrow);
+const added = (source: string, hookCommand = command) => addReplyHook({ source, command: hookCommand, agent: "codex" });
 
-const removed = (source: string) => removeReplyHook({ source, agent: "codex" }).pipe(Either.getOrThrow);
+const removed = (source: string) => removeReplyHook({ source, agent: "codex" });
 
 const stopCommands = (source: string): ReadonlyArray<string> =>
   (parse(source)?.hooks?.Stop || []).flatMap((group: { hooks: ReadonlyArray<{ command: string }> }) =>
@@ -145,11 +143,11 @@ describe("addReplyHook and removeReplyHook", () => {
   });
 
   it("leaves a file without agent-voice's entry unchanged and refuses a file that is not a JSON object", () => {
-    const arraySettings = addReplyHook({ source: "[1, 2]", command, agent: "codex" });
-    const objectStop = addReplyHook({ source: '{"hooks": {"Stop": {}}}', command, agent: "codex" });
+    const addToArrayFile = () => addReplyHook({ source: "[1, 2]", command, agent: "codex" });
+    const addWhenStopIsObject = () => addReplyHook({ source: '{"hooks": {"Stop": {}}}', command, agent: "codex" });
 
     expect(removed(claudeSettings)).toEqual({ source: claudeSettings, changed: false });
-    expect(Either.isLeft(arraySettings)).toBe(true);
-    expect(Either.isLeft(objectStop)).toBe(true);
+    expect(addToArrayFile).toThrow("the settings file is not a JSON object");
+    expect(addWhenStopIsObject).toThrow("hooks.Stop is not an array");
   });
 });

@@ -2,46 +2,42 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { Schema } from "effect";
+import { z } from "zod";
 import { stateFile } from "#src/settings/agent-voice-home.js";
 import { readJsonFile, writeJsonAtomically } from "#src/storage/state-files.js";
-import { type AgentHookTarget, agentHookTargets, agentIdSchema } from "./agent-catalog.js";
+import { type AgentHookTarget, type AgentId, agentHookTargets } from "./agent-catalog.js";
 
-const hookSettingsFileSchema = Schema.Struct({
-  agent: agentIdSchema,
-  displayName: Schema.String,
-  folder: Schema.String,
-  file: Schema.String,
-  ownFile: Schema.Boolean,
-});
+export interface HookSettingsFile {
+  readonly agent: AgentId;
+  readonly displayName: string;
+  readonly folder: string;
+  readonly file: string;
+  readonly ownFile: boolean;
+}
 
-export type HookSettingsFile = Schema.Schema.Type<typeof hookSettingsFileSchema>;
-
-const claudeEnvironmentSchema = Schema.Struct({
-  CLAUDE_CONFIG_DIR: Schema.optionalWith(Schema.Trim, { default: () => "" }),
-});
+const claudeConfigFoldersSchema = z.array(z.string());
 
 const CLAUDE_ACCOUNT_FOLDER = /^\.claude-./u;
 
 // Claude Code writes .claude.json into every config folder it runs with.
 const isClaudeConfigFolder = (folder: string): boolean => {
-  const stateFile = path.join(folder, ".claude.json");
+  const stateFilePath = path.join(folder, ".claude.json");
   const settingsFile = path.join(folder, "settings.json");
-  return existsSync(stateFile) || existsSync(settingsFile);
+  return existsSync(stateFilePath) || existsSync(settingsFile);
 };
 
 const configuredClaudeFolders = (): ReadonlyArray<string> => {
-  const environment = Schema.decodeUnknownSync(claudeEnvironmentSchema)(process.env);
-  if (environment.CLAUDE_CONFIG_DIR === "") {
+  const claudeConfigDirectory = (process.env.CLAUDE_CONFIG_DIR ?? "").trim();
+  if (claudeConfigDirectory === "") {
     return [];
   }
 
-  return [path.resolve(environment.CLAUDE_CONFIG_DIR)];
+  return [path.resolve(claudeConfigDirectory)];
 };
 
 const rememberedClaudeFolders = (): ReadonlyArray<string> => {
   const foldersPath = stateFile("claude-config-folders.json");
-  const remembered = readJsonFile({ path: foldersPath, schema: Schema.Array(Schema.String) }) ?? [];
+  const remembered = readJsonFile({ path: foldersPath, schema: claudeConfigFoldersSchema }) ?? [];
   return remembered.filter((folder) => existsSync(folder));
 };
 
