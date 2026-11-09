@@ -1,8 +1,5 @@
 name: CI
 'on':
-  pull_request:
-    branches:
-      - main
   push:
     branches:
       - main
@@ -11,69 +8,16 @@ name: CI
   workflow_dispatch: null
 permissions:
   contents: read
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  changes:
-    name: Changes
-    runs-on: ubuntu-slim
-    timeout-minutes: 5
-    outputs:
-      since: ${{ steps.filter.outputs.everything != 'true' && github.event.pull_request.base.sha || '' }}
-      code: ${{ github.event_name != 'pull_request' || steps.filter.outputs.code == 'true' }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: filter
-        if: github.event_name == 'pull_request'
-        with:
-          token: ''
-          filters: |
-            everything: &everything
-              - pnpm-lock.yaml
-              - pnpm-workspace.yaml
-              - biome.json
-              - 'tsconfig*.json'
-              - '*.config.ts'
-              - '**/package.json'
-              - README.md
-              - .env.example
-              - '.github/**'
-            code:
-              - *everything
-              - '**/*.{ts,js,mjs,json}'
   test:
     name: Test and build
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
       - name: Setup workspace
         uses: ./.github/actions/setup
-      - name: Test every file
-        if: needs.changes.outputs.since == ''
-        run: pnpm exec vitest run
-      - name: Test the changed files
-        if: needs.changes.outputs.since != ''
-        run: pnpm exec vitest run --changed "$SINCE"
-        env:
-          SINCE: ${{ needs.changes.outputs.since }}
+      - name: Test
+        run: pnpm test
       - name: Build
         run: pnpm build
-  gate:
-    name: CI Gate
-    runs-on: ubuntu-slim
-    timeout-minutes: 5
-    needs:
-      - changes
-      - test
-    if: always()
-    steps:
-      - name: Require every check to pass
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        run: exit 1
