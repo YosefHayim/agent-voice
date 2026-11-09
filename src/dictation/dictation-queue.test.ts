@@ -1,9 +1,9 @@
 import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { sleep } from "#src/sleep.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
 import { makeStatusWriter } from "#src/workers/worker-status.js";
 import { startDictationQueue } from "./dictation-queue.js";
@@ -19,7 +19,7 @@ beforeEach(() => {
   const bin = path.join(home, "bin");
   const cmuxPath = path.join(bin, "cmux");
   const configPath = path.join(home, "config.json");
-  const config = JSON.stringify({ refineMode: "dictation", refineSendTo: "cmux-new" });
+  const settingsFileContents = JSON.stringify({ refineMode: "dictation", refineSendTo: "cmux-new" });
   cmuxLog = path.join(home, "cmux.log");
   mkdirSync(bin);
   writeFileSync(cmuxPath, `#!/bin/sh\necho "$@" >> '${cmuxLog}'\necho '{"surface_id":"s1"}'\n`);
@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.stubEnv("PATH", `${bin}:/usr/bin:/bin`);
   vi.stubEnv("AGENT_VOICE_HOME", home);
   vi.stubEnv("AGENT_VOICE_CONFIG_FILE", undefined);
-  writeFileSync(configPath, config);
+  writeFileSync(configPath, settingsFileContents);
 });
 
 afterEach(() => {
@@ -58,28 +58,32 @@ const fakeKeyboard = (): { readonly keyboard: Keyboard; readonly typed: Readonly
 
 const fakeTranscriber = (heard: string): Transcriber => ({
   modelName: "fake",
-  transcribe: () => Effect.succeed({ text: heard, decodeMs: 1, inputLevel: 0.2, ranWhisper: true }),
-  caption: () => Effect.succeedNone,
-  warm: Effect.void,
-  release: Effect.void,
+  transcribe: async () => ({ text: heard, decodeMs: 1, inputLevel: 0.2, ranWhisper: true }),
+  caption: async () => null,
+  warmUp: async () => undefined,
+  release: async () => undefined,
 });
+
+const typingWaitMilliseconds = 3_000;
+const typingPollMilliseconds = 20;
 
 describe("dictation queue", () => {
   it("types dictation that was not refined at the caret, even when refined prompts go to cmux", async () => {
     const { keyboard, typed } = fakeKeyboard();
-    const dictation = Effect.gen(function* () {
-      const queue = yield* startDictationQueue({
-        transcriber: fakeTranscriber("yes do it"),
-        keyboard,
-        status: makeStatusWriter({ model: "fake", backend: "none", recording: () => false }),
-      });
-      yield* queue.offer({ samples: new Float32Array(16_000), fallbackCaption: "", generation: 1 });
-      const deadline = Date.now() + 3_000;
-      while (typed.length === 0 && Date.now() < deadline) {
-        yield* Effect.sleep("20 millis");
-      }
-    }).pipe(Effect.scoped);
-    await Effect.runPromise(dictation);
+    const shutdown = new AbortController();
+    const queue = startDictationQueue({
+      transcriber: fakeTranscriber("yes do it"),
+      keyboard,
+      status: makeStatusWriter({ model: "fake", backend: "none", recording: () => false }),
+      shutdown: shutdown.signal,
+    });
+
+    queue.offer({ samples: new Float32Array(16_000), fallbackCaption: "", generation: 1 });
+    const deadline = Date.now() + typingWaitMilliseconds;
+    while (typed.length === 0 && Date.now() < deadline) {
+      await sleep(typingPollMilliseconds);
+    }
+    shutdown.abort();
 
     expect(typed).toEqual(["Yes do it "]);
     expect(existsSync(cmuxLog)).toBe(false);

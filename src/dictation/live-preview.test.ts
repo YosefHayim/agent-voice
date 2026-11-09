@@ -1,6 +1,5 @@
 import { rmSync } from "node:fs";
 
-import { Effect, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeTestFolder } from "#src/testing/test-folder.js";
@@ -22,6 +21,8 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
+const captionWindowMilliseconds = 300;
+
 describe("live caption", () => {
   it("drops a caption pass that finishes after its hold ended and a new hold began", async () => {
     const clip = makeClipBuffer();
@@ -35,24 +36,23 @@ describe("live caption", () => {
     // While Whisper is busy with the first hold's tail, Shift is released and pressed again.
     const transcriber: Transcriber = {
       modelName: "fake",
-      transcribe: () => Effect.die("final decodes are not part of this test"),
-      caption: () =>
-        Effect.sync(() => {
-          passes += 1;
-          clip.end();
-          clip.begin();
-          return Option.some("words from the earlier hold");
-        }),
-      warm: Effect.void,
-      release: Effect.void,
+      transcribe: async () => {
+        throw new Error("final decodes are not part of this test");
+      },
+      caption: async () => {
+        passes += 1;
+        clip.end();
+        clip.begin();
+        return "words from the earlier hold";
+      },
+      warmUp: async () => undefined,
+      release: async () => undefined,
     };
     const status = makeStatusWriter({ model: "fake", backend: "none", recording: clip.isConfirmedHold });
-    const captions = captionLoop({ clip, transcriber, caption, status }).pipe(
-      Effect.timeout("300 millis"),
-      Effect.ignore,
-    );
+    const shutdown = new AbortController();
+    setTimeout(() => shutdown.abort(), captionWindowMilliseconds);
 
-    await Effect.runPromise(captions);
+    await captionLoop({ clip, transcriber, caption, status, shutdown: shutdown.signal });
 
     expect(passes).toBe(1);
     expect(caption.take()).toBe("");

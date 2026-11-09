@@ -1,10 +1,8 @@
 import { Args, Command } from "@effect/cli";
-import type { Effect } from "effect";
+import { Effect } from "effect";
 
 import { runDictationWorker } from "#src/dictation/dictation-worker.js";
 import { runSpeechWorker } from "#src/speech/speech-worker.js";
-
-type WorkerFailure = Effect.Effect.Error<typeof runDictationWorker> | Effect.Effect.Error<typeof runSpeechWorker>;
 
 const kindArgument = Args.choice(
   [
@@ -14,15 +12,12 @@ const kindArgument = Args.choice(
   { name: "kind" },
 );
 
-export const workerCommand = Command.make(
-  "worker",
-  { kind: kindArgument },
-  (args): Effect.Effect<void, WorkerFailure> => {
-    switch (args.kind) {
-      case "dictation":
-        return runDictationWorker;
-      case "speech":
-        return runSpeechWorker;
-    }
-  },
-).pipe(Command.withDescription("Internal: run a background worker in this process (agent-voice on starts them)"));
+// Bridge: the workers are plain async functions; this CLI file moves off Effect in part 4.
+export const workerCommand = Command.make("worker", { kind: kindArgument }, (args): Effect.Effect<void, unknown> => {
+  switch (args.kind) {
+    case "dictation":
+      return Effect.tryPromise({ try: runDictationWorker, catch: (error) => error });
+    case "speech":
+      return Effect.tryPromise({ try: runSpeechWorker, catch: (error) => error });
+  }
+}).pipe(Command.withDescription("Internal: run a background worker in this process (agent-voice on starts them)"));

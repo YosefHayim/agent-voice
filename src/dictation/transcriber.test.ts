@@ -3,7 +3,6 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decodeWav } from "#src/speech/wav-file.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
@@ -58,15 +57,10 @@ describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisp
 
   it("transcribes a spoken WAV fixture and formats it for the caret", async () => {
     const samples = spokenFixture("Check the worktrees folder and push every branch.");
-    const transcribeSpoken = Effect.gen(function* () {
-      const transcriber = yield* loadTranscriber(modelPath);
-      yield* transcriber.warm;
-      const spoken = yield* transcriber.transcribe({ samples, language: "en", prompt: "worktrees" });
-      yield* transcriber.release;
-      return spoken;
-    });
-
-    const transcription = await Effect.runPromise(transcribeSpoken);
+    const transcriber = await loadTranscriber(modelPath);
+    await transcriber.warmUp();
+    const transcription = await transcriber.transcribe({ samples, language: "en", prompt: "worktrees" });
+    await transcriber.release();
     const formatted = formatDictation(transcription.text, new Map());
 
     expect(transcription.ranWhisper).toBe(true);
@@ -75,14 +69,9 @@ describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisp
   });
 
   it("skips Whisper for silence and types nothing", async () => {
-    const transcribeSilence = Effect.gen(function* () {
-      const transcriber = yield* loadTranscriber(modelPath);
-      const decoded = yield* transcriber.transcribe({ samples: new Float32Array(16_000), language: "en", prompt: "" });
-      yield* transcriber.release;
-      return decoded;
-    });
-
-    const silence = await Effect.runPromise(transcribeSilence);
+    const transcriber = await loadTranscriber(modelPath);
+    const silence = await transcriber.transcribe({ samples: new Float32Array(16_000), language: "en", prompt: "" });
+    await transcriber.release();
 
     expect(silence).toMatchObject({ text: "", ranWhisper: false });
   });

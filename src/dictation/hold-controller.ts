@@ -1,6 +1,7 @@
-import { Effect } from "effect";
+import { describeError } from "#src/error-message.js";
 import { refinePrompt } from "#src/refine/refine-attempts.js";
 import { readConfig, readConfigOrDefaults, saveConfig } from "#src/settings/config-file.js";
+import { sleep } from "#src/sleep.js";
 import { isSpeaking, queueReply } from "#src/speech/inbox.js";
 import { appendDictationLog } from "#src/workers/worker-log.js";
 import { stopSpeech } from "#src/workers/worker-processes.js";
@@ -22,7 +23,10 @@ import type { Keyboard } from "./keyboard.js";
 import type { LiveCaption } from "./live-preview.js";
 import type { ClipBuffer } from "./microphone.js";
 
-const stopTappedSpeech = (status: StatusWriter) => {
+// The clipboard refine's outcome stays on the pill for a few seconds.
+const clipboardOutcomeHoldMilliseconds = 4_000;
+
+const stopTappedSpeech = (status: StatusWriter): void => {
   const wasSpeaking = isSpeaking();
   stopSpeech();
   if (!wasSpeaking) {
@@ -32,43 +36,55 @@ const stopTappedSpeech = (status: StatusWriter) => {
   status.write("inactive", "Speech stopped");
 };
 
-const refineCopiedPrompt = (status: StatusWriter) =>
-  Effect.gen(function* () {
-    const config = yield* Effect.sync(readConfigOrDefaults);
-    const model = config.refineModel || "default model";
-    status.write("refining", `Refining copied prompt (${config.refineProvider}/${model})…`);
-    const draft = yield* readClipboard;
-    const refined = yield* refinePrompt({
+interface ClipboardRefineRequest {
+  readonly status: StatusWriter;
+  readonly shutdown: AbortSignal;
+}
+
+// Never rejects: a failed refine is shown on the pill.
+const refineCopiedPrompt = async (request: ClipboardRefineRequest): Promise<void> => {
+  try {
+    const settings = readConfigOrDefaults();
+    const model = settings.refineModel || "default model";
+    request.status.write("refining", `Refining copied prompt (${settings.refineProvider}/${model})…`);
+
+    const draft = await readClipboard();
+    const refinedPrompt = await refinePrompt({
       draft,
-      provider: config.refineProvider,
-      model: config.refineModel || "",
-      effort: config.refineEffort || "",
+      provider: settings.refineProvider,
+      model: settings.refineModel || "",
+      effort: settings.refineEffort || "",
       allowPicker: true,
+      signal: request.shutdown,
       log: appendDictationLog,
     });
-    yield* writeClipboard(refined);
-    status.write("done", "Refined prompt copied — press ⌘V to paste");
-    if (config.speechMode === "off") {
+    await writeClipboard(refinedPrompt);
+    request.status.write("done", "Refined prompt copied — press ⌘V to paste");
+
+    const isSpeechOff = settings.speechMode === "off";
+    if (isSpeechOff) {
       return;
     }
 
-    queueReply({ markdown: refined, source: "refine", agentReplyId: "", origin: { kind: "terminal" } });
-  }).pipe(Effect.catchAll((failure) => Effect.sync(() => status.write("done", `Refine failed: ${failure.message}`))));
+    queueReply({ markdown: refinedPrompt, source: "refine", agentReplyId: "", origin: { kind: "terminal" } });
+  } catch (error) {
+    request.status.write("done", `Refine failed: ${describeError(error)}`);
+  }
+};
 
-// The outcome stays on the pill for a few seconds.
-const refineClipboard = (status: StatusWriter) =>
-  Effect.gen(function* () {
-    yield* refineCopiedPrompt(status);
-    yield* Effect.sleep("4 seconds");
-    status.write("inactive", "");
-  });
+const refineClipboard = async (request: ClipboardRefineRequest): Promise<void> => {
+  await refineCopiedPrompt(request);
+  await sleep(clipboardOutcomeHoldMilliseconds);
+  request.status.write("inactive", "");
+};
 
-const toggleSpeechMute = (status: StatusWriter) =>
-  Effect.gen(function* () {
-    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
-    const muted = !config.speechMuted;
-    yield* Effect.try({ try: () => saveConfig({ ...config, speechMuted: muted }), catch: (error) => error });
-    if (!muted) {
+const toggleSpeechMute = (status: StatusWriter): void => {
+  try {
+    const settings = readConfig();
+    const willBeMuted = !settings.speechMuted;
+    saveConfig({ ...settings, speechMuted: willBeMuted });
+
+    if (!willBeMuted) {
       status.write("inactive", "Speech unmuted");
       return;
     }
@@ -76,14 +92,9 @@ const toggleSpeechMute = (status: StatusWriter) =>
     // A reply can be mid-claim, with no .speaking file yet, so the double tap did not count as stopping speech.
     stopSpeech();
     status.write("inactive", "Speech muted (double-tap Shift to unmute)");
-  }).pipe(Effect.catchAll((failure) => Effect.sync(() => status.write("inactive", `Mute failed: ${failure.message}`))));
-
-const holdSample = (keyboard: Keyboard): "down" | "up" => {
-  if (keyboard.holdDown()) {
-    return "down";
+  } catch (error) {
+    status.write("inactive", `Mute failed: ${describeError(error)}`);
   }
-
-  return "up";
 };
 
 export const makeHoldController = (request: {
@@ -92,153 +103,177 @@ export const makeHoldController = (request: {
   readonly caption: LiveCaption;
   readonly status: StatusWriter;
   readonly queue: DictationQueue;
+  readonly shutdown: AbortSignal;
 }) => {
-  const { keyboard, clip, caption, status, queue } = request;
+  const { keyboard, clip, caption, status, queue, shutdown } = request;
   let tracker = initialHoldTracker;
-  let state: HoldState = "idle";
+  let holdState: HoldState = "idle";
   let deadline: number | undefined;
   let generation = 0;
   let lastTapAt: number | undefined;
-  let announcedListening = false;
-  let finishing: number | undefined;
+  let isListeningAnnounced = false;
+  let finishingGeneration: number | undefined;
 
-  const cancelClip = () => {
+  const cancelClip = (): void => {
     clip.cancel();
     caption.clear();
-    if (!announcedListening) {
+    if (!isListeningAnnounced) {
       return;
     }
 
     status.write("inactive", "");
-    announcedListening = false;
+    isListeningAnnounced = false;
   };
 
   // The queue never blocks the next hold.
-  const endClip = (clipGeneration: number) =>
-    Effect.suspend(() => {
-      finishing = undefined;
-      const samples = clip.end();
-      const fallbackCaption = caption.take();
-      if (samples.length === 0 && fallbackCaption === "") {
-        status.write("inactive", "No audio captured");
-        return Effect.void;
-      }
+  const endClip = (clipGeneration: number): void => {
+    finishingGeneration = undefined;
+    const samples = clip.end();
+    const fallbackCaption = caption.take();
+    const isClipEmpty = samples.length === 0 && fallbackCaption === "";
+    if (isClipEmpty) {
+      status.write("inactive", "No audio captured");
+      return;
+    }
 
-      status.write("finishing", `${String(samples.length)} samples`);
-      return queue.offer({ samples, fallbackCaption, generation: clipGeneration });
-    });
+    status.write("finishing", `${String(samples.length)} samples`);
+    queue.offer({ samples, fallbackCaption, generation: clipGeneration });
+  };
 
   // Keeps listening after release so the last word is not clipped, unless a newer hold already took over.
-  const finishClip = (clipGeneration: number) =>
-    Effect.gen(function* () {
-      const config = yield* Effect.sync(readConfigOrDefaults);
-      const keepListeningMs = Math.round(config.dictationKeepListeningSeconds * 1_000);
-      yield* Effect.sleep(keepListeningMs);
-      if (finishing !== clipGeneration) {
+  const endClipAfterKeepListening = (clipGeneration: number): void => {
+    const settings = readConfigOrDefaults();
+    const keepListeningMs = Math.round(settings.dictationKeepListeningSeconds * 1_000);
+    setTimeout(() => {
+      const isNewerHoldActive = finishingGeneration !== clipGeneration;
+      if (isNewerHoldActive) {
         return;
       }
 
-      yield* endClip(clipGeneration);
-    });
+      endClip(clipGeneration);
+    }, keepListeningMs);
+  };
 
-  const onTap = Effect.gen(function* () {
-    if (keyboard.holdKey === "right-option") {
+  const runTapAction = (): void => {
+    const isRightOptionHold = keyboard.holdKey === "right-option";
+    if (isRightOptionHold) {
       return;
     }
 
     const tap = classifyTap({ lastTapAt, now: Date.now() });
     lastTapAt = tap.rememberedTapAt;
-    if (!tap.double) {
+    const isSingleTap = !tap.double;
+    if (isSingleTap) {
       stopTappedSpeech(status);
       return;
     }
 
-    const config = yield* Effect.sync(readConfigOrDefaults);
-    const clipboardRefine = config.refineMode === "clipboard" || config.refineMode === "both";
-    const action = doubleTapAction({ isSpeaking: isSpeaking(), clipboardRefine });
+    const settings = readConfigOrDefaults();
+    const isClipboardRefineOn = settings.refineMode === "clipboard" || settings.refineMode === "both";
+    const action = doubleTapAction({ isSpeaking: isSpeaking(), clipboardRefine: isClipboardRefineOn });
     switch (action) {
       case "stopSpeaking":
         stopSpeech();
         status.write("inactive", "Speech stopped");
         return;
       case "refineClipboard":
-        yield* refineClipboard(status).pipe(Effect.forkDaemon);
+        // Runs in the background so the poll keeps sampling the key. refineClipboard never rejects.
+        void refineClipboard({ status, shutdown });
         return;
       case "toggleMute":
-        yield* toggleSpeechMute(status);
+        toggleSpeechMute(status);
         return;
     }
-  });
+  };
 
-  const startListening = Effect.sync(() => {
-    if (isSpeaking()) {
+  const beginListening = (): void => {
+    const isSpeechPlaying = isSpeaking();
+    if (isSpeechPlaying) {
       stopSpeech();
     }
-    if (!clip.isRecording()) {
+
+    const isNotRecording = !clip.isRecording();
+    if (isNotRecording) {
       clip.begin();
       caption.clear();
     }
+
     clip.confirm();
     status.write("listening", "Recording");
     appendDictationLog("hold start");
-    announcedListening = true;
-  });
+    isListeningAnnounced = true;
+  };
 
   // Buffer audio before the threshold so the first word is retained.
-  const schedule = Effect.gen(function* () {
-    if (finishing !== undefined) {
-      yield* endClip(finishing);
+  const scheduleHold = (): void => {
+    const pendingGeneration = finishingGeneration;
+    const hasPendingClip = pendingGeneration !== undefined;
+    if (hasPendingClip) {
+      endClip(pendingGeneration);
     }
+
     deadline = Date.now() + HOLD_THRESHOLD_MS;
     generation += 1;
     clip.begin();
     caption.clear();
-  });
+  };
 
-  const perform = (action: HoldAction): Effect.Effect<void> => {
+  const stopHold = (): void => {
+    isListeningAnnounced = false;
+    finishingGeneration = generation;
+    appendDictationLog(`hold stop gen=${String(generation)}`);
+    status.write("finishing", "Decoding…");
+    endClipAfterKeepListening(generation);
+  };
+
+  const runHoldAction = (action: HoldAction): void => {
     switch (action) {
       case "schedule":
-        return schedule;
+        scheduleHold();
+        return;
       case "start":
         deadline = undefined;
-        return startListening;
+        beginListening();
+        return;
       case "cancel":
         deadline = undefined;
-        return Effect.sync(cancelClip);
+        cancelClip();
+        return;
       case "tap":
         deadline = undefined;
-        return Effect.sync(cancelClip).pipe(Effect.zipRight(onTap));
+        cancelClip();
+        runTapAction();
+        return;
       case "stop":
-        announcedListening = false;
-        finishing = generation;
-        appendDictationLog(`hold stop gen=${String(generation)}`);
-        status.write("finishing", "Decoding…");
-        return finishClip(generation).pipe(Effect.fork, Effect.asVoid);
+        stopHold();
+        return;
       case "none":
-        return Effect.void;
+        return;
     }
   };
 
-  const apply = (event: HoldEvent) =>
-    Effect.suspend(() => {
-      const [next, action] = holdTransition(state, event);
-      state = next;
-      return perform(action);
-    });
+  const applyHoldEvent = (event: HoldEvent): void => {
+    const [nextHoldState, action] = holdTransition(holdState, event);
+    holdState = nextHoldState;
+    runHoldAction(action);
+  };
 
-  const sampleEvents = (): ReadonlyArray<HoldEvent> => {
-    const hold = holdSample(keyboard);
-    const [next, events] = sampleHold(tracker, { hold, otherKeys: keyboard.otherKeysDown });
-    tracker = next;
-    if (hold === "down" && keyboard.otherModifiersDown()) {
+  const sampleHoldEvents = (): ReadonlyArray<HoldEvent> => {
+    const isHoldDown = keyboard.holdDown();
+    const hold = isHoldDown ? "down" : "up";
+    const [nextTracker, events] = sampleHold(tracker, { hold, otherKeys: keyboard.otherKeysDown });
+    tracker = nextTracker;
+
+    const isOtherModifierHeld = isHoldDown && keyboard.otherModifiersDown();
+    if (isOtherModifierHeld) {
       return [...events, "otherDown"];
     }
 
     return events;
   };
 
-  const timerEvents = (): ReadonlyArray<HoldEvent> => {
-    const isHoldElapsed = deadline !== undefined && state === "waiting" && Date.now() >= deadline;
+  const listTimerEvents = (): ReadonlyArray<HoldEvent> => {
+    const isHoldElapsed = deadline !== undefined && holdState === "waiting" && Date.now() >= deadline;
     if (!isHoldElapsed) {
       return [];
     }
@@ -247,22 +282,25 @@ export const makeHoldController = (request: {
   };
 
   // Recording with no dictation hold and no release tail means a signal was lost: never leave the mic on.
-  const safetyNet = Effect.sync(() => {
-    const isHeld = state === "waiting" || state === "listening";
-    const isLost = clip.isRecording() && finishing === undefined && !isHeld;
+  const stopLostRecording = (): void => {
+    const isHeld = holdState === "waiting" || holdState === "listening";
+    const isLost = clip.isRecording() && finishingGeneration === undefined && !isHeld;
     if (!isLost) {
       return;
     }
 
     appendDictationLog("recording stopped: no dictation hold");
     cancelClip();
-  });
+  };
 
-  const poll: Effect.Effect<void> = Effect.gen(function* () {
-    const events = [...sampleEvents(), ...timerEvents()];
-    yield* Effect.forEach(events, apply, { discard: true });
-    yield* safetyNet;
-  });
+  const poll = (): void => {
+    const events = [...sampleHoldEvents(), ...listTimerEvents()];
+    for (const event of events) {
+      applyHoldEvent(event);
+    }
+
+    stopLostRecording();
+  };
 
   return { poll };
 };

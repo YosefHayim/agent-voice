@@ -50,10 +50,10 @@ const benchModel = (request: {
       catch: (error) => error,
     });
     const loadStarted = performance.now();
-    const transcriber = yield* loadTranscriber(modelPath);
+    const transcriber = yield* Effect.tryPromise({ try: () => loadTranscriber(modelPath), catch: (error) => error });
     const loadMs = performance.now() - loadStarted;
     const warmStarted = performance.now();
-    yield* transcriber.warm;
+    yield* Effect.tryPromise({ try: () => transcriber.warmUp(), catch: (error) => error });
     const warmMs = performance.now() - warmStarted;
     const clips = yield* Effect.forEach(request.seconds, (seconds) =>
       Effect.gen(function* () {
@@ -62,7 +62,10 @@ const benchModel = (request: {
         const audioSeconds = samples.length / SAMPLE_RATE;
         const attempts = Array.from({ length: request.runs });
         const timings = yield* Effect.forEach(attempts, () =>
-          transcriber.transcribe({ samples, language: "en", prompt: "" }),
+          Effect.tryPromise({
+            try: () => transcriber.transcribe({ samples, language: "en", prompt: "" }),
+            catch: (error) => error,
+          }),
         );
         const decodes = timings.map((timing) => timing.decodeMs);
         const mean = decodes.reduce((total, decode) => total + decode, 0) / decodes.length;
@@ -78,7 +81,7 @@ const benchModel = (request: {
         };
       }),
     );
-    yield* transcriber.release;
+    yield* Effect.tryPromise({ try: () => transcriber.release(), catch: (error) => error });
     return { model: model.file, label: model.label, loadMs: round(loadMs), warmMs: round(warmMs), clips };
   });
 

@@ -1,6 +1,4 @@
-import { Either, Option, Schema } from "effect";
-
-import { containsAny, nonBlankLines } from "./agent-cli.js";
+import { containsAny, nonBlankLines, parseJsonOrNull } from "./agent-cli.js";
 
 const REFINE_INSTRUCTIONS = `You refine messy freeform or spoken drafts into a single paste-ready prompt for a coding agent.
 
@@ -12,7 +10,7 @@ Rules:
 5. Do not answer the prompt. Do not add commentary, labels, Markdown fences around the whole reply, or invented requirements.
 6. Return only the revised prompt text.`;
 
-export const refinePromptFor = (draft: string): string =>
+export const createRefineRequestText = (draft: string): string =>
   `${REFINE_INSTRUCTIONS}\n\nDraft to refine:\n---\n${draft}\n---\nReturn only the revised prompt text.`;
 
 // Agent CLIs that print auth or help failures with exit code 0.
@@ -159,18 +157,25 @@ export const promptLiterals = (text: string): ReadonlyArray<string> => {
   return candidates.filter((candidate) => kept.includes(candidate)).map((candidate) => candidate.literal);
 };
 
-export class RefineReplyRejected extends Schema.TaggedError<RefineReplyRejected>()("RefineReplyRejected", {
-  reason: Schema.Literal("empty", "cliHelp", "droppedLiteral"),
-  literal: Schema.optional(Schema.String),
-}) {
-  get message(): string {
-    return {
-      empty: "The model returned an empty prompt",
-      cliHelp: "The model returned CLI help text instead of a refined prompt",
-      droppedLiteral: `The model changed a protected literal: ${this.literal || ""}`,
-    }[this.reason];
-  }
+export interface RefineReplyRejection {
+  readonly reason: "empty" | "cliHelp" | "droppedLiteral";
+  readonly literal?: string;
 }
+
+export type RefinedPromptCheck =
+  | { readonly status: "accepted"; readonly prompt: string }
+  | { readonly status: "rejected"; readonly rejection: RefineReplyRejection };
+
+export const describeRefineReplyRejection = (rejection: RefineReplyRejection): string => {
+  switch (rejection.reason) {
+    case "empty":
+      return "The model returned an empty prompt";
+    case "cliHelp":
+      return "The model returned CLI help text instead of a refined prompt";
+    case "droppedLiteral":
+      return `The model changed a protected literal: ${rejection.literal ?? ""}`;
+  }
+};
 
 const withoutWholeReplyFence = (text: string): string => {
   const lines = text.split("\n");
@@ -185,54 +190,76 @@ const withoutWholeReplyFence = (text: string): string => {
 export const checkRefinedPrompt = (request: {
   readonly draft: string;
   readonly refined: string;
-}): Either.Either<string, RefineReplyRejected> => {
+}): RefinedPromptCheck => {
   const trimmed = request.refined.trim();
   const refinedPrompt = withoutWholeReplyFence(trimmed);
-  if (refinedPrompt === "") {
-    return Either.left(new RefineReplyRejected({ reason: "empty" }));
+  const isPromptEmpty = refinedPrompt === "";
+  if (isPromptEmpty) {
+    return { status: "rejected", rejection: { reason: "empty" } };
   }
 
   if (looksLikeCliHelp(refinedPrompt)) {
-    return Either.left(new RefineReplyRejected({ reason: "cliHelp" }));
+    return { status: "rejected", rejection: { reason: "cliHelp" } };
   }
 
   const literals = promptLiterals(request.draft);
-  const dropped = literals.find((literal) => !refinedPrompt.includes(literal));
-  if (dropped !== undefined) {
-    return Either.left(new RefineReplyRejected({ reason: "droppedLiteral", literal: dropped }));
+  const droppedLiteral = literals.find((literal) => !refinedPrompt.includes(literal));
+  if (droppedLiteral !== undefined) {
+    return { status: "rejected", rejection: { reason: "droppedLiteral", literal: droppedLiteral } };
   }
 
-  return Either.right(refinedPrompt);
+  return { status: "accepted", prompt: refinedPrompt };
 };
 
 type JsonObject = Readonly<Record<string, unknown>>;
 
-const decodeJson = Schema.decodeUnknownOption(Schema.parseJson());
-const decodeObject = Schema.decodeUnknownOption(Schema.Record({ key: Schema.String, value: Schema.Unknown }));
-const decodeString = Schema.decodeUnknownOption(Schema.String);
-const decodeArray = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown));
-const decodeTextBlock = Schema.decodeUnknownOption(Schema.Struct({ text: Schema.String }));
-
 const DOCUMENT_TEXT_KEYS = ["result", "text", "content", "message", "output", "response"];
 const EVENT_TEXT_KEYS = ["result", "text", "content", "message", "output"];
 
-const textOf = (value: unknown): Option.Option<string> =>
-  decodeString(value).pipe(
-    Option.map((text) => text.trim()),
-    Option.filter((text) => text !== ""),
-  );
+const isJsonObject = (value: unknown): value is JsonObject =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
-const stringOf = (value: unknown): string => decodeString(value).pipe(Option.getOrElse(() => ""));
+const isTextPresent = (text: string | null): text is string => text !== null;
 
-const blockText = (block: unknown): ReadonlyArray<string> =>
-  decodeTextBlock(block).pipe(
-    Option.map((decoded) => decoded.text),
-    Option.toArray,
-  );
+// The trimmed text, or null when the value is not a string or is blank.
+const textOf = (value: unknown): string | null => {
+  const isString = typeof value === "string";
+  if (!isString) {
+    return null;
+  }
 
-const joinedBlocks = (value: unknown): Option.Option<string> => {
-  const blocks = decodeArray(value).pipe(Option.getOrElse(() => []));
-  const joined = blocks.flatMap(blockText).join("\n");
+  const trimmed = value.trim();
+  const isBlank = trimmed === "";
+  return isBlank ? null : trimmed;
+};
+
+const stringOf = (value: unknown): string => {
+  const isString = typeof value === "string";
+  if (!isString) {
+    return "";
+  }
+
+  return value;
+};
+
+// A block keeps its text as sent, blank included, so the joined reply keeps its line breaks.
+const blockText = (block: unknown): string | null => {
+  const text = isJsonObject(block) ? block.text : undefined;
+  const isTextString = typeof text === "string";
+  if (!isTextString) {
+    return null;
+  }
+
+  return text;
+};
+
+const joinedBlocks = (value: unknown): string | null => {
+  const isBlockList = Array.isArray(value);
+  if (!isBlockList) {
+    return null;
+  }
+
+  const joined = value.map(blockText).filter(isTextPresent).join("\n");
   return textOf(joined);
 };
 
@@ -243,55 +270,63 @@ const isTextPart = (event: JsonObject, part: JsonObject): boolean => {
   return partType === "" || partType === "text" || eventType === "text";
 };
 
-const partText = (event: JsonObject): Option.Option<string> =>
-  decodeObject(event.part).pipe(
-    Option.filter((part) => isTextPart(event, part)),
-    Option.flatMap((part) => textOf(part.text)),
-  );
+const partText = (event: JsonObject): string | null => {
+  const part = event.part;
+  if (!isJsonObject(part) || !isTextPart(event, part)) {
+    return null;
+  }
 
-const nestedText = (value: unknown): Option.Option<string> =>
-  decodeObject(value).pipe(
-    Option.flatMap((nested) => textOf(nested.text).pipe(Option.orElse(() => textOf(nested.content)))),
-  );
+  return textOf(part.text);
+};
 
-const fieldText = (document: JsonObject, key: string): Option.Option<string> =>
-  textOf(document[key]).pipe(Option.orElse(() => nestedText(document[key])));
+const nestedText = (value: unknown): string | null => {
+  if (!isJsonObject(value)) {
+    return null;
+  }
 
-const documentText = (document: JsonObject): Option.Option<string> => {
+  return textOf(value.text) ?? textOf(value.content);
+};
+
+const fieldText = (document: JsonObject, key: string): string | null =>
+  textOf(document[key]) ?? nestedText(document[key]);
+
+const documentText = (document: JsonObject): string | null => {
   const keyTexts = DOCUMENT_TEXT_KEYS.map((key) => fieldText(document, key));
-  return Option.firstSomeOf(keyTexts).pipe(
-    Option.orElse(() => partText(document)),
-    Option.orElse(() => joinedBlocks(document.content)),
-  );
+  const firstKeyText = keyTexts.find(isTextPresent) ?? null;
+  return firstKeyText ?? partText(document) ?? joinedBlocks(document.content);
 };
 
-const messageText = (event: JsonObject): Option.Option<string> =>
-  decodeObject(event.message).pipe(
-    Option.flatMap((message) => textOf(message.content).pipe(Option.orElse(() => joinedBlocks(message.content)))),
-  );
+const messageText = (event: JsonObject): string | null => {
+  const message = event.message;
+  if (!isJsonObject(message)) {
+    return null;
+  }
 
-const eventText = (event: JsonObject): Option.Option<string> => {
-  const directTexts = EVENT_TEXT_KEYS.flatMap((key) => textOf(event[key]).pipe(Option.toArray));
-  const lastDirectText = directTexts.at(-1);
-  return messageText(event).pipe(
-    Option.orElse(() => partText(event)),
-    Option.orElse(() => Option.fromNullable(lastDirectText)),
-  );
+  return textOf(message.content) ?? joinedBlocks(message.content);
 };
 
-const wholeReplyText = (output: string): Option.Option<string> => {
-  const whole = decodeJson(output);
-  const wholeDocumentText = whole.pipe(Option.flatMap(decodeObject), Option.flatMap(documentText));
-  return whole.pipe(
-    Option.flatMap(textOf),
-    Option.orElse(() => wholeDocumentText),
-  );
+const eventText = (event: JsonObject): string | null => {
+  const directTexts = EVENT_TEXT_KEYS.map((key) => textOf(event[key])).filter(isTextPresent);
+  const lastDirectText = directTexts.at(-1) ?? null;
+  return messageText(event) ?? partText(event) ?? lastDirectText;
+};
+
+// A whole reply that is one JSON string or one JSON document with text in it.
+const wholeReplyText = (output: string): string | null => {
+  const whole = parseJsonOrNull(output);
+  const wholeString = textOf(whole);
+  if (wholeString !== null) {
+    return wholeString;
+  }
+
+  return isJsonObject(whole) ? documentText(whole) : null;
 };
 
 const jsonLineEvents = (output: string): ReadonlyArray<JsonObject> =>
   nonBlankLines(output)
     .filter((line) => line.startsWith("{"))
-    .flatMap((line) => decodeJson(line).pipe(Option.flatMap(decodeObject), Option.toArray));
+    .map(parseJsonOrNull)
+    .filter(isJsonObject);
 
 const longerText = (best: string, part: string): string => {
   if (part.length > best.length) {
@@ -319,16 +354,16 @@ export const replyTextFromJson = (output: string): string => {
   }
 
   const wholeText = wholeReplyText(trimmed);
-  if (Option.isSome(wholeText)) {
-    return wholeText.value;
+  if (wholeText !== null) {
+    return wholeText;
   }
 
   const events = jsonLineEvents(trimmed);
-  const parts = events.flatMap((event) => partText(event).pipe(Option.toArray));
+  const parts = events.map(partText).filter(isTextPresent);
   if (parts.length > 0) {
     return joinedParts(parts);
   }
 
-  const eventTexts = events.flatMap((event) => eventText(event).pipe(Option.toArray));
-  return eventTexts.at(-1) || "";
+  const eventTexts = events.map(eventText).filter(isTextPresent);
+  return eventTexts.at(-1) ?? "";
 };

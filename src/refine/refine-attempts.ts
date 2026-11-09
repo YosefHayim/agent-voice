@@ -1,5 +1,4 @@
-import { Effect, Either, Option, Schema } from "effect";
-
+import { describeError } from "#src/error-message.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { containsAny, dedupe } from "./agent-cli.js";
 import { CODEX_MODEL_FALLBACKS, isProviderInstalled, type ProviderId, providerModels } from "./provider-models.js";
@@ -13,7 +12,7 @@ import {
   type SavedChoice,
   saveRefineChoice,
 } from "./refine-choices.js";
-import { pickerEnabled, pickRefineTargetWithDialogs, SKIP_REFINE_LABEL } from "./refine-picker.js";
+import { isPickerEnabled, pickRefineTargetWithDialogs, SKIP_REFINE_LABEL } from "./refine-picker.js";
 import { namedModel, refineWithProvider } from "./refine-providers.js";
 import { isModelUnavailableError, looksLikeFailedModelOutput } from "./refine-reply.js";
 
@@ -38,11 +37,11 @@ const LAST_RESORT_MODEL: Readonly<Record<ProviderId, string>> = {
 // Generic failures (network, CLI errors) still move on to the next candidate.
 const ROTATE_MARKERS = ["failed", "error", "timeout", "timed out", "connection", "refused", "not found", "empty"];
 
-export const shouldRotate = (detail: string): boolean =>
+export const canRotate = (detail: string): boolean =>
   looksLikeFailedModelOutput(detail) || containsAny(detail, ROTATE_MARKERS);
 
 // Models that already failed for this account go last, so a ChatGPT-account rejection (~3 s) is not paid every time.
-export const codexModelCandidates = (request: {
+export const listCodexModelCandidates = (request: {
   readonly preferred: string;
   readonly lastGood: string;
   readonly failed: ReadonlySet<string>;
@@ -57,125 +56,126 @@ export const codexModelCandidates = (request: {
   return [...usable, ...deferred];
 };
 
-const savedModelFor = (saved: Option.Option<SavedChoice>, provider: ProviderId): string =>
-  saved.pipe(
-    Option.filter((choice) => choice.provider === provider),
-    Option.map((choice) => choice.model),
-    Option.getOrElse(() => ""),
-  );
+const pickSavedModel = (saved: SavedChoice | null, provider: ProviderId): string => {
+  if (saved === null) {
+    return "";
+  }
 
-const discoveredModels = (provider: ProviderId, preferred: string): Effect.Effect<ReadonlyArray<string>> => {
-  if (provider !== "codex") {
+  const isSavedForProvider = saved.provider === provider;
+  if (!isSavedForProvider) {
+    return "";
+  }
+
+  return saved.model;
+};
+
+const listDiscoveredModels = async (provider: ProviderId, preferred: string): Promise<ReadonlyArray<string>> => {
+  const isCodex = provider === "codex";
+  if (!isCodex) {
     return providerModels(provider);
   }
 
   const lastGood = codexLastGoodModel();
   const failed = codexFailedModels();
-  const candidates = codexModelCandidates({ preferred, lastGood, failed });
-  return Effect.succeed(candidates);
+  return listCodexModelCandidates({ preferred, lastGood, failed });
 };
 
 // The preferred model, the saved pick, then the discovered list.
-const modelCandidates = (provider: ProviderId, preferred: string): Effect.Effect<ReadonlyArray<string>> =>
-  Effect.gen(function* () {
-    const chosenModel = namedModel(preferred, ["default", "auto"]);
-    const saved = readSavedChoice();
-    const savedModel = savedModelFor(saved, provider);
-    const discovered = yield* discoveredModels(provider, preferred);
-    const candidates = dedupe([chosenModel, savedModel, ...discovered]).slice(0, MAX_MODELS_PER_PROVIDER);
-    if (candidates.length === 0) {
-      return [LAST_RESORT_MODEL[provider]];
-    }
-
+const listModelCandidates = async (provider: ProviderId, preferred: string): Promise<ReadonlyArray<string>> => {
+  const chosenModel = namedModel(preferred, ["default", "auto"]);
+  const saved = readSavedChoice();
+  const savedModel = pickSavedModel(saved, provider);
+  const discovered = await listDiscoveredModels(provider, preferred);
+  const candidates = dedupe([chosenModel, savedModel, ...discovered]).slice(0, MAX_MODELS_PER_PROVIDER);
+  const hasCandidates = candidates.length > 0;
+  if (hasCandidates) {
     return candidates;
-  });
-
-type AttemptTarget = { readonly provider: ProviderId; readonly model: string };
-
-const providerTargets = (provider: ProviderId, preferred: string): Effect.Effect<ReadonlyArray<AttemptTarget>> =>
-  modelCandidates(provider, preferred).pipe(Effect.map((models) => models.map((model) => ({ provider, model }))));
-
-const installedProviderTargets = (
-  provider: ProviderId,
-  preferred: string,
-): Effect.Effect<ReadonlyArray<AttemptTarget>> => {
-  if (!isProviderInstalled(provider)) {
-    return Effect.succeed([]);
   }
 
-  return providerTargets(provider, preferred);
+  return [LAST_RESORT_MODEL[provider]];
+};
+
+interface AttemptTarget {
+  readonly provider: ProviderId;
+  readonly model: string;
+}
+
+const listProviderTargets = async (provider: ProviderId, preferred: string): Promise<ReadonlyArray<AttemptTarget>> => {
+  const models = await listModelCandidates(provider, preferred);
+  return models.map((model) => ({ provider, model }));
+};
+
+const listInstalledProviderTargets = async (
+  provider: ProviderId,
+  preferred: string,
+): Promise<ReadonlyArray<AttemptTarget>> => {
+  const isNotInstalled = !isProviderInstalled(provider);
+  if (isNotInstalled) {
+    return [];
+  }
+
+  return listProviderTargets(provider, preferred);
 };
 
 // A fallback provider gets one attempt: its first candidate model.
-const fallbackTarget = (provider: ProviderId, saved: Option.Option<SavedChoice>): Effect.Effect<AttemptTarget> => {
-  const savedModel = savedModelFor(saved, provider);
-  return modelCandidates(provider, savedModel).pipe(
-    Effect.map((models) => ({ provider, model: models[0] || LAST_RESORT_MODEL[provider] })),
-  );
+const pickFallbackTarget = async (provider: ProviderId, saved: SavedChoice | null): Promise<AttemptTarget> => {
+  const savedModel = pickSavedModel(saved, provider);
+  const models = await listModelCandidates(provider, savedModel);
+  return { provider, model: models[0] || LAST_RESORT_MODEL[provider] };
 };
 
 // The requested model belongs to the saved provider; any other provider starts from its discovered list.
-const autoStartModel = (
+const pickAutoStartModel = (
   provider: ProviderId,
   request: { readonly savedProvider: string; readonly requestedModel: string },
 ): string => {
-  if (provider !== request.savedProvider) {
+  const isSavedProvider = provider === request.savedProvider;
+  if (!isSavedProvider) {
     return "";
   }
 
   return request.requestedModel;
 };
 
-const autoAttempts = (requestedModel: string): Effect.Effect<ReadonlyArray<AttemptTarget>> =>
-  Effect.gen(function* () {
-    const saved = readSavedChoice();
-    const savedProvider = saved.pipe(
-      Option.map((choice) => choice.provider),
-      Option.getOrElse(() => ""),
-    );
-    const savedFirst = [
-      ...FALLBACK_ORDER.filter((provider) => provider === savedProvider),
-      ...FALLBACK_ORDER.filter((provider) => provider !== savedProvider),
-    ];
-    const installed = savedFirst.filter(isProviderInstalled).slice(0, 1 + MAX_CROSS_PROVIDER_ATTEMPTS);
-    const [leadProvider, ...fallbackProviders] = installed;
-    if (leadProvider === undefined) {
-      return [];
-    }
+const listAutoAttempts = async (requestedModel: string): Promise<ReadonlyArray<AttemptTarget>> => {
+  const saved = readSavedChoice();
+  const savedProvider = saved?.provider ?? "";
+  const savedFirst = [
+    ...FALLBACK_ORDER.filter((provider) => provider === savedProvider),
+    ...FALLBACK_ORDER.filter((provider) => provider !== savedProvider),
+  ];
+  const installed = savedFirst.filter(isProviderInstalled).slice(0, 1 + MAX_CROSS_PROVIDER_ATTEMPTS);
+  const [leadProvider, ...fallbackProviders] = installed;
+  const hasNoProvider = leadProvider === undefined;
+  if (hasNoProvider) {
+    return [];
+  }
 
-    const leadModel = autoStartModel(leadProvider, { savedProvider, requestedModel });
-    const leadTargets = yield* providerTargets(leadProvider, leadModel);
-    const fallbackTargets = yield* Effect.forEach(fallbackProviders, (provider) => fallbackTarget(provider, saved));
-    return [...leadTargets, ...fallbackTargets];
-  });
+  const leadModel = pickAutoStartModel(leadProvider, { savedProvider, requestedModel });
+  const leadTargets = await listProviderTargets(leadProvider, leadModel);
+  const fallbackTargets = await Promise.all(fallbackProviders.map((provider) => pickFallbackTarget(provider, saved)));
+  return [...leadTargets, ...fallbackTargets];
+};
 
 // The preferred provider's models first, then the first model of each other installed provider.
-export const attemptQueue = (request: {
+export const createAttemptQueue = async (request: {
   readonly provider: Config["refineProvider"];
   readonly model: string;
-}): Effect.Effect<ReadonlyArray<AttemptTarget>> =>
-  Effect.gen(function* () {
-    if (request.provider === "auto") {
-      return yield* autoAttempts(request.model);
-    }
-
-    const preferredProvider = request.provider;
-    const ownTargets = yield* installedProviderTargets(preferredProvider, request.model);
-    const saved = readSavedChoice();
-    const otherProviders = FALLBACK_ORDER.filter(
-      (provider) => provider !== preferredProvider && isProviderInstalled(provider),
-    ).slice(0, MAX_CROSS_PROVIDER_ATTEMPTS);
-    const fallbackTargets = yield* Effect.forEach(otherProviders, (provider) => fallbackTarget(provider, saved));
-    return [...ownTargets, ...fallbackTargets].slice(0, MAX_TOTAL_ATTEMPTS);
-  });
-
-export class RefineFailed extends Schema.TaggedError<RefineFailed>()("RefineFailed", {
-  detail: Schema.String,
-}) {
-  get message(): string {
-    return this.detail;
+}): Promise<ReadonlyArray<AttemptTarget>> => {
+  const isAutoProvider = request.provider === "auto";
+  if (isAutoProvider) {
+    return listAutoAttempts(request.model);
   }
-}
+
+  const preferredProvider = request.provider;
+  const ownTargets = await listInstalledProviderTargets(preferredProvider, request.model);
+  const saved = readSavedChoice();
+  const otherProviders = FALLBACK_ORDER.filter(
+    (provider) => provider !== preferredProvider && isProviderInstalled(provider),
+  ).slice(0, MAX_CROSS_PROVIDER_ATTEMPTS);
+  const fallbackTargets = await Promise.all(otherProviders.map((provider) => pickFallbackTarget(provider, saved)));
+  return [...ownTargets, ...fallbackTargets].slice(0, MAX_TOTAL_ATTEMPTS);
+};
 
 type RefineRequest = {
   readonly draft: string;
@@ -183,112 +183,136 @@ type RefineRequest = {
   readonly model: string;
   readonly effort: string;
   readonly allowPicker: boolean;
+  readonly signal: AbortSignal;
   readonly log: (line: string) => void;
 };
 
-const savedEffort = (): string =>
-  readSavedChoice().pipe(
-    Option.map((choice) => choice.effort),
-    Option.getOrElse(() => ""),
-  );
+const readSavedEffort = (): string => readSavedChoice()?.effort ?? "";
 
 // The configured model, else the saved pick for this provider, else Codex's default.
-const startingModel = (request: RefineRequest): string => {
+const pickStartingModel = (request: RefineRequest): string => {
   const configuredModel = request.model.trim();
-  if (configuredModel !== "" || request.provider === "auto") {
+  const isModelChosen = configuredModel !== "" || request.provider === "auto";
+  if (isModelChosen) {
     return configuredModel;
   }
 
-  const saved = readSavedChoice();
-  const savedModel = savedModelFor(saved, request.provider);
-  if (savedModel !== "") {
+  const savedModel = pickSavedModel(readSavedChoice(), request.provider);
+  const hasSavedModel = savedModel !== "";
+  if (hasSavedModel) {
     return savedModel;
   }
 
-  if (request.provider === "codex") {
+  const isCodex = request.provider === "codex";
+  if (isCodex) {
     return DEFAULT_REFINE_MODEL;
   }
 
   return "";
 };
 
-const tryAttempts = (
+type TargetOutcome =
+  | { readonly status: "refined"; readonly refined: string }
+  | { readonly status: "failed"; readonly detail: string };
+
+const refineWithTarget = async (
+  target: AttemptTarget,
+  request: { readonly draft: string; readonly effort: string; readonly signal: AbortSignal },
+): Promise<TargetOutcome> => {
+  try {
+    const refined = await refineWithProvider(
+      { ...target, effort: request.effort, draft: request.draft },
+      request.signal,
+    );
+    return { status: "refined", refined };
+  } catch (error) {
+    return { status: "failed", detail: describeError(error) };
+  }
+};
+
+interface AttemptsOutcome {
+  readonly refined: string | null;
+  readonly failures: ReadonlyArray<string>;
+}
+
+const tryAttempts = async (
   request: RefineRequest & { readonly attempts: ReadonlyArray<AttemptTarget>; readonly effort: string },
-) =>
-  Effect.gen(function* () {
-    const failures: Array<string> = [];
-    for (const target of request.attempts) {
-      request.log(`refine try ${target.provider}/${target.model}`);
-      const attempt = yield* refineWithProvider({ ...target, effort: request.effort, draft: request.draft }).pipe(
-        Effect.either,
-      );
-      if (Either.isRight(attempt)) {
-        saveRefineChoice({ provider: target.provider, model: target.model, effort: request.effort });
-        return { refined: Option.some(attempt.right), failures };
-      }
-
-      const detail = attempt.left.detail;
-      failures.push(`${target.provider}/${target.model}: ${detail.slice(0, 400)}`);
-      const isUnavailableCodexModel = target.provider === "codex" && isModelUnavailableError(detail);
-      if (isUnavailableCodexModel) {
-        markCodexModelFailed(target.model);
-      }
-
-      if (!shouldRotate(detail)) {
-        break;
-      }
+): Promise<AttemptsOutcome> => {
+  const failures: Array<string> = [];
+  for (const target of request.attempts) {
+    request.log(`refine try ${target.provider}/${target.model}`);
+    const outcome = await refineWithTarget(target, request);
+    const isRefined = outcome.status === "refined";
+    if (isRefined) {
+      saveRefineChoice({ provider: target.provider, model: target.model, effort: request.effort });
+      return { refined: outcome.refined, failures };
     }
 
-    return { refined: Option.none<string>(), failures };
-  });
+    const detail = outcome.detail;
+    failures.push(`${target.provider}/${target.model}: ${detail.slice(0, 400)}`);
+    const isUnavailableCodexModel = target.provider === "codex" && isModelUnavailableError(detail);
+    if (isUnavailableCodexModel) {
+      markCodexModelFailed(target.model);
+    }
+
+    const isRotationStopped = !canRotate(detail);
+    if (isRotationStopped) {
+      break;
+    }
+  }
+
+  return { refined: null, failures };
+};
 
 // Refine with rotation; when every attempt fails, the picker (if allowed) can choose a model or skip refine.
-export const refinePrompt = (request: RefineRequest): Effect.Effect<string, RefineFailed> =>
-  Effect.gen(function* () {
-    const draft = request.draft.trim();
-    if (draft === "") {
-      return yield* new RefineFailed({ detail: "Nothing to refine" });
-    }
+// Throws an Error with the reason when refine fails and the user does not skip it.
+export const refinePrompt = async (request: RefineRequest): Promise<string> => {
+  const draft = request.draft.trim();
+  const isDraftEmpty = draft === "";
+  if (isDraftEmpty) {
+    throw new Error("Nothing to refine");
+  }
 
-    const effort = request.effort.trim().toLowerCase() || savedEffort() || DEFAULT_REFINE_EFFORT;
-    const model = startingModel(request);
-    const attempts = yield* attemptQueue({ provider: request.provider, model });
-    if (attempts.length === 0) {
-      return yield* new RefineFailed({
-        detail: "No refine provider found on PATH (install codex, claude, grok, ollama, …).",
-      });
-    }
+  const effort = request.effort.trim().toLowerCase() || readSavedEffort() || DEFAULT_REFINE_EFFORT;
+  const model = pickStartingModel(request);
+  const attempts = await createAttemptQueue({ provider: request.provider, model });
+  const hasNoAttempts = attempts.length === 0;
+  if (hasNoAttempts) {
+    throw new Error("No refine provider found on PATH (install codex, claude, grok, ollama, …).");
+  }
 
-    const tried = yield* tryAttempts({ ...request, draft, attempts, effort });
-    if (Option.isSome(tried.refined)) {
-      return tried.refined.value;
-    }
+  const tried = await tryAttempts({ ...request, draft, attempts, effort });
+  const refinedPrompt = tried.refined;
+  const hasRefined = refinedPrompt !== null;
+  if (hasRefined) {
+    return refinedPrompt;
+  }
 
-    const joined = (tried.failures.join("; ") || "all refine attempts failed").slice(0, 2_000);
-    const isPickerAllowed = request.allowPicker && pickerEnabled();
-    if (!isPickerAllowed) {
-      return yield* new RefineFailed({ detail: `refine failed after fallbacks: ${joined}` });
-    }
+  const joined = (tried.failures.join("; ") || "all refine attempts failed").slice(0, 2_000);
+  const isPickerAllowed = request.allowPicker && isPickerEnabled();
+  if (!isPickerAllowed) {
+    throw new Error(`refine failed after fallbacks: ${joined}`);
+  }
 
-    const picked = yield* pickRefineTargetWithDialogs({
-      reason: `Automatic refine fallbacks failed.\n${joined.slice(0, 500)}`,
-      preferredProvider: request.provider,
-      preferredModel: request.model,
-      preferredEffort: effort,
-      offerSkip: true,
-    });
-    if (Option.isNone(picked)) {
-      return yield* new RefineFailed({ detail: `refine cancelled at the picker: ${joined}` });
-    }
-
-    if (picked.value.model === SKIP_REFINE_LABEL) {
-      request.log("refine skipped at the picker; keeping the dictated text");
-      return draft;
-    }
-
-    const pickEffort = picked.value.effort || effort;
-    saveRefineChoice({ ...picked.value, effort: pickEffort });
-    return yield* refineWithProvider({ ...picked.value, effort: pickEffort, draft }).pipe(
-      Effect.mapError((failure) => new RefineFailed({ detail: failure.message })),
-    );
+  const picked = await pickRefineTargetWithDialogs({
+    reason: `Automatic refine fallbacks failed.\n${joined.slice(0, 500)}`,
+    preferredProvider: request.provider,
+    preferredModel: request.model,
+    preferredEffort: effort,
+    offerSkip: true,
   });
+  const isPickCancelled = picked === null;
+  if (isPickCancelled) {
+    throw new Error(`refine cancelled at the picker: ${joined}`);
+  }
+
+  const isSkipped = picked.model === SKIP_REFINE_LABEL;
+  if (isSkipped) {
+    request.log("refine skipped at the picker; keeping the dictated text");
+    return draft;
+  }
+
+  const pickEffort = picked.effort || effort;
+  saveRefineChoice({ ...picked, effort: pickEffort });
+  return refineWithProvider({ ...picked, effort: pickEffort, draft }, request.signal);
+};

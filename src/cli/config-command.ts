@@ -175,7 +175,7 @@ const pickEffort = (provider: DiscoveredProvider, config: Config) =>
 
 const pickInTerminal = (config: Config) =>
   Effect.gen(function* () {
-    const providers = yield* discoverProviders({ refresh: true });
+    const providers = yield* Effect.promise(() => discoverProviders({ refresh: true }));
     if (providers.length === 0) {
       return Option.none<RefinePick>();
     }

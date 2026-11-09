@@ -1,4 +1,3 @@
-import { Either } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -62,19 +61,26 @@ describe("refine reply checks", () => {
   it("keeps code, paths, URLs, and quoted literals, and rejects replies that drop one or are CLI help", () => {
     const draft = 'Please run `pnpm verify` for /srv/app and keep "exact value" from https://example.com/docs';
 
-    expect(checkRefinedPrompt({ draft, refined: `Precisely ${draft}` })).toEqual(Either.right(`Precisely ${draft}`));
+    expect(checkRefinedPrompt({ draft, refined: `Precisely ${draft}` })).toEqual({
+      status: "accepted",
+      prompt: `Precisely ${draft}`,
+    });
     const dropped = checkRefinedPrompt({ draft, refined: "Please verify it." });
-    expect(Either.isLeft(dropped) && dropped.left.message).toBe("The model changed a protected literal: `pnpm verify`");
+    expect(dropped).toEqual({
+      status: "rejected",
+      rejection: { reason: "droppedLiteral", literal: "`pnpm verify`" },
+    });
     const help = checkRefinedPrompt({ draft: "uh fix the thing", refined: openCodeHelpDump });
-    expect(Either.isLeft(help) && help.left.reason).toBe("cliHelp");
+    expect(help).toMatchObject({ status: "rejected", rejection: { reason: "cliHelp" } });
     const empty = checkRefinedPrompt({ draft: "fix it", refined: "  " });
-    expect(Either.isLeft(empty) && empty.left.reason).toBe("empty");
+    expect(empty).toMatchObject({ status: "rejected", rejection: { reason: "empty" } });
   });
 
   it("strips a code fence around the whole reply", () => {
-    expect(checkRefinedPrompt({ draft: "fix the bug", refined: "```\nFix the login bug.\n```" })).toEqual(
-      Either.right("Fix the login bug."),
-    );
+    expect(checkRefinedPrompt({ draft: "fix the bug", refined: "```\nFix the login bug.\n```" })).toEqual({
+      status: "accepted",
+      prompt: "Fix the login bug.",
+    });
   });
 
   it("finds each literal once, earlier patterns first", () => {
@@ -91,7 +97,7 @@ describe("refine reply checks", () => {
     expect(promptLiterals(draft)).toEqual(['"see https://x.dev/docs for details"']);
 
     const reworded = checkRefinedPrompt({ draft, refined: 'Reply with "read https://x.dev/docs for details".' });
-    expect(Either.isLeft(reworded) && reworded.left.reason).toBe("droppedLiteral");
+    expect(reworded).toMatchObject({ status: "rejected", rejection: { reason: "droppedLiteral" } });
   });
 });
 

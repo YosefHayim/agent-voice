@@ -1,6 +1,6 @@
-import { Effect, Either } from "effect";
-
+import { describeError } from "#src/error-message.js";
 import { readConfigOrDefaults } from "#src/settings/config-file.js";
+import { sleep } from "#src/sleep.js";
 import { appendSpeechLog } from "#src/workers/worker-log.js";
 import { claimWorkerLock, stopRequested } from "#src/workers/worker-processes.js";
 import { dictationOwnsAudio } from "#src/workers/worker-status.js";
@@ -9,111 +9,114 @@ import { makeSpeechPlayer, type SpeechPlayer, speakMarkdown } from "./speech-pla
 import { loadSupertonic, type SupertonicEngine } from "./supertonic.js";
 import { ensureSupertonicModels } from "./supertonic-models.js";
 
-// The dictation worker sends SIGUSR2 to stop speech now (a tap, or a new hold).
-const STOP_SPEECH_SIGNAL = "SIGUSR2";
+type SpeakStep = "wait" | "idle" | "spoke";
 
-export const speakNextReply = (engine: SupertonicEngine, player: SpeechPlayer) =>
-  Effect.gen(function* () {
-    // Before the claim, which can wait on Cmux: a stop that comes in meanwhile must still silence the reply.
-    player.reset();
-    const config = yield* Effect.sync(readConfigOrDefaults);
-    // Before the dictation wait, so a reply that came in while muted is never kept for after an unmute.
-    if (config.speechMuted) {
-      removeInboxFiles([".json"]);
-      return "wait";
-    }
+// Right after a reply the next one is often already queued, so look again sooner.
+const spokeStepPauseMilliseconds = 10;
+const nothingSpokenPauseMilliseconds = 150;
 
-    if (dictationOwnsAudio()) {
-      return "wait";
-    }
+// Reads the next reply and speaks it. Returns "wait" while muted or while the dictation owns the audio.
+export const speakNextReply = async (engine: SupertonicEngine, player: SpeechPlayer): Promise<SpeakStep> => {
+  // Before the claim, which can wait on Cmux: a stop that comes in meanwhile must still silence the reply.
+  player.reset();
+  const settings = readConfigOrDefaults();
 
-    const next = yield* Effect.tryPromise({
-      try: () => claimNextReply(config.speechMode),
-      catch: (error) => error,
-    });
-    const isThereNoNext = next === null;
-    if (isThereNoNext) {
-      return "idle";
-    }
+  // Before the dictation wait, so a reply that came in while muted is never kept for after an unmute.
+  if (settings.speechMuted) {
+    removeInboxFiles([".json"]);
+    return "wait";
+  }
 
-    const { file, reply } = next;
-    const spoken = yield* speakMarkdown({
+  const isDictationOwningAudio = dictationOwnsAudio();
+  if (isDictationOwningAudio) {
+    return "wait";
+  }
+
+  const nextReply = await claimNextReply(settings.speechMode);
+  const isThereNoNext = nextReply === null;
+  if (isThereNoNext) {
+    return "idle";
+  }
+
+  const { file, reply } = nextReply;
+  try {
+    await speakMarkdown({
       engine,
       player,
       markdown: reply.markdown,
-      voice: { voice: config.speechVoice, wordsPerMinute: config.speechWordsPerMinute },
-    }).pipe(Effect.either);
-    if (Either.isLeft(spoken)) {
-      appendSpeechLog(`speech failed: ${String(spoken.left)}`);
-      failReply(file);
-      return "spoke";
-    }
-
-    completeReply(file);
+      voice: { voice: settings.speechVoice, wordsPerMinute: settings.speechWordsPerMinute },
+    });
+  } catch (error) {
+    appendSpeechLog(`speech failed: ${describeError(error)}`);
+    failReply(file);
     return "spoke";
-  });
-
-// Right after a reply the next one is often already queued, so look again sooner.
-const pauseAfter = (step: string) => {
-  if (step === "spoke") {
-    return "10 millis";
   }
 
-  return "150 millis";
+  completeReply(file);
+  return "spoke";
 };
 
-const speakUntilStopped = (engine: SupertonicEngine, player: SpeechPlayer) =>
-  Effect.gen(function* () {
-    while (!stopRequested()) {
-      const config = yield* Effect.sync(readConfigOrDefaults);
-      if (config.speechMode === "off") {
-        removeInboxFiles([".json", ".speaking"]);
-        return;
-      }
+const pauseAfter = (step: SpeakStep): number => {
+  const isSpokeStep = step === "spoke";
+  if (isSpokeStep) {
+    return spokeStepPauseMilliseconds;
+  }
 
-      const step = yield* speakNextReply(engine, player);
-      const pause = pauseAfter(step);
-      yield* Effect.sleep(pause);
+  return nothingSpokenPauseMilliseconds;
+};
+
+const speakUntilStopped = async (engine: SupertonicEngine, player: SpeechPlayer): Promise<void> => {
+  while (!stopRequested()) {
+    const settings = readConfigOrDefaults();
+    const isSpeechOff = settings.speechMode === "off";
+    if (isSpeechOff) {
+      removeInboxFiles([".json", ".speaking"]);
+      return;
     }
-  });
+
+    const step = await speakNextReply(engine, player);
+    await sleep(pauseAfter(step));
+  }
+};
 
 const logDownload = (file: string, bytes: number): void => {
   const megabytes = Math.round(bytes / 1e6);
   appendSpeechLog(`downloading ${file}: ${megabytes} MB`);
 };
 
-const logFailure = (failure: unknown) => Effect.sync(() => appendSpeechLog(`worker failed: ${String(failure)}`));
+const loadAndSpeak = async (player: SpeechPlayer): Promise<void> => {
+  // A claim left by a crash would otherwise look like speech in progress forever.
+  removeInboxFiles([".speaking"]);
+  const settings = readConfigOrDefaults();
+  const isSpeechOff = settings.speechMode === "off";
+  if (isSpeechOff) {
+    removeInboxFiles([".json"]);
+    return;
+  }
 
-const loadAndSpeak = (player: SpeechPlayer) =>
-  Effect.gen(function* () {
-    // A claim left by a crash would otherwise look like speech in progress forever.
-    removeInboxFiles([".speaking"]);
-    const config = yield* Effect.sync(readConfigOrDefaults);
-    if (config.speechMode === "off") {
-      removeInboxFiles([".json"]);
-      return;
-    }
+  const modelFolder = await ensureSupertonicModels(logDownload);
+  const engine = await loadSupertonic(modelFolder);
+  appendSpeechLog(`ready pid=${process.pid}`);
+  await speakUntilStopped(engine, player);
+};
 
-    const folder = yield* Effect.tryPromise({
-      try: () => ensureSupertonicModels(logDownload),
-      catch: (error) => error,
-    });
-    const engine = yield* loadSupertonic(folder);
-    appendSpeechLog(`ready pid=${process.pid}`);
-    yield* speakUntilStopped(engine, player);
-  });
-
-export const runSpeechWorker = Effect.gen(function* () {
+export const runSpeechWorker = async (): Promise<void> => {
   // Installed first: the default action of SIGUSR2 would end the process while the models load.
+  // The dictation worker sends SIGUSR2 to stop speech now (a tap, or a new hold).
   const player = makeSpeechPlayer();
-  process.on(STOP_SPEECH_SIGNAL, player.stop);
-  const claimedLockRelease = yield* Effect.sync(() => claimWorkerLock("speech")).pipe(
-    Effect.acquireRelease((release) => Effect.sync(() => release?.())),
-  );
-  const isLockTaken = claimedLockRelease === null;
+  process.on("SIGUSR2", player.stop);
+  const releaseWorkerLock = claimWorkerLock("speech");
+  const isLockTaken = releaseWorkerLock === null;
   if (isLockTaken) {
     return;
   }
 
-  yield* loadAndSpeak(player).pipe(Effect.tapError(logFailure));
-}).pipe(Effect.scoped);
+  try {
+    await loadAndSpeak(player);
+  } catch (error) {
+    appendSpeechLog(`worker failed: ${describeError(error)}`);
+    throw error;
+  } finally {
+    releaseWorkerLock();
+  }
+};

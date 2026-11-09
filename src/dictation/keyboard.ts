@@ -1,15 +1,21 @@
 // Reads keys from HID state, which works without an event tap, and posts key events through CoreGraphics.
 
-import { Effect, Schema } from "effect";
-
 import { readConfigOrDefaults } from "#src/settings/config-file.js";
+import type { Config } from "#src/settings/config-schema.js";
 
-class KeyboardError extends Schema.TaggedError<KeyboardError>()("KeyboardError", {
-  issue: Schema.String,
-}) {
-  get message(): string {
-    return `Keyboard: ${this.issue}`;
-  }
+export interface Keyboard {
+  readonly holdKey: Config["dictationHoldKey"];
+  readonly holdDown: () => boolean;
+  readonly otherModifiersDown: () => boolean;
+  // Bit n is set while key code n is held.
+  readonly otherKeysDown: () => bigint;
+  readonly typeUnicode: (text: string) => void;
+  readonly pressReturn: () => void;
+  readonly pressCommandV: () => void;
+  readonly releaseHoldKey: () => void;
+  readonly accessibilityAllowed: () => boolean;
+  readonly inputMonitoringAllowed: () => boolean;
+  readonly postingAllowed: () => boolean;
 }
 
 const HID_SYSTEM_STATE = 1;
@@ -72,20 +78,26 @@ const postableChunk = (chunk: string): string => {
     return chunk;
   }
 
-  return `\u200b${chunk}`;
+  return `​${chunk}`;
 };
 
-export const loadKeyboard = Effect.gen(function* () {
-  const config = yield* Effect.sync(readConfigOrDefaults);
+// A failed native load is a keyboard error with the reason kept in the message.
+const importKoffi = async () => {
+  try {
+    return await import("koffi");
+  } catch (error) {
+    throw new Error(`Keyboard: ${String(error)}`, { cause: error });
+  }
+};
+
+export const loadKeyboard = async (): Promise<Keyboard> => {
+  const config = readConfigOrDefaults();
   const holdKeys = { shift: SHIFT_KEYS, "right-option": [RIGHT_OPTION_KEY] }[config.dictationHoldKey];
   const otherKeys = Array.from({ length: 0x80 }, (_unused, key) => key).filter(
     (key) => !holdKeys.includes(key) && key !== CAPS_LOCK_KEY,
   );
   const otherModifiers = MODIFIER_KEYS.filter((key) => !holdKeys.includes(key));
-  const koffiModule = yield* Effect.tryPromise({
-    try: () => import("koffi"),
-    catch: (error) => new KeyboardError({ issue: String(error) }),
-  });
+  const koffiModule = await importKoffi();
   const koffi = koffiModule.default;
   const coreGraphics = koffi.load("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics");
   const coreFoundation = koffi.load("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation");
@@ -170,6 +182,4 @@ export const loadKeyboard = Effect.gen(function* () {
     inputMonitoringAllowed: (): boolean => listenAllowed() === true,
     postingAllowed: (): boolean => postAllowed() === true,
   };
-});
-
-export type Keyboard = Effect.Effect.Success<typeof loadKeyboard>;
+};

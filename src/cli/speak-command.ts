@@ -5,7 +5,7 @@ import { Effect, Option } from "effect";
 
 import { readConfig } from "#src/settings/config-file.js";
 import type { Config } from "#src/settings/config-schema.js";
-import { makeSpeechPlayer, renderMarkdownToWav, speakMarkdown } from "#src/speech/speech-player.js";
+import { makeSpeechPlayer, speakMarkdown, writeMarkdownWav } from "#src/speech/speech-player.js";
 import { loadSupertonic } from "#src/speech/supertonic.js";
 import { ensureSupertonicModels, missingSupertonicFiles } from "#src/speech/supertonic-models.js";
 import * as TerminalUI from "./terminal-ui.js";
@@ -22,7 +22,7 @@ const loadEngine = Effect.gen(function* () {
     try: () => ensureSupertonicModels(() => undefined),
     catch: (error) => error,
   });
-  return yield* loadSupertonic(modelFolder);
+  return yield* Effect.tryPromise({ try: () => loadSupertonic(modelFolder), catch: (error) => error });
 });
 
 export const speakAloud = (markdown: string, config: Config) =>
@@ -30,7 +30,10 @@ export const speakAloud = (markdown: string, config: Config) =>
     const engine = yield* loadEngine;
     const player = makeSpeechPlayer();
     const voice = voiceOf(config);
-    yield* speakMarkdown({ engine, player, markdown, voice });
+    yield* Effect.tryPromise({
+      try: () => speakMarkdown({ engine, player, markdown, voice }),
+      catch: (error) => error,
+    });
   });
 
 const markdownArgument = Args.text({ name: "markdown" }).pipe(Args.withDescription("A complete reply, in Markdown"));
@@ -50,7 +53,10 @@ export const speakCommand = Command.make("speak", { markdown: markdownArgument, 
     const engine = yield* loadEngine;
     const voice = voiceOf(config);
     const outputFile = path.resolve(args.output.value);
-    const seconds = yield* renderMarkdownToWav({ engine, markdown: args.markdown, voice, outputFile });
+    const seconds = yield* Effect.tryPromise({
+      try: () => writeMarkdownWav({ engine, markdown: args.markdown, voice, outputFile }),
+      catch: (error) => error,
+    });
     yield* TerminalUI.success(`Wrote ${seconds.toFixed(1)} s of speech to ${outputFile}`);
   }),
 ).pipe(Command.withDescription("Read one Markdown reply aloud with the configured voice (or write it to a WAV file)"));

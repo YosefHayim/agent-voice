@@ -2,7 +2,6 @@ import { rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import path from "node:path";
 
-import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeTestFolder, makeTestSocketPath } from "#src/testing/test-folder.js";
@@ -17,36 +16,35 @@ let server: Server | undefined;
 beforeEach(() => {
   home = makeTestFolder("speech-worker");
   vi.stubEnv("AGENT_VOICE_HOME", home);
-  const configFile = path.join(home, "config.json");
-  const config = JSON.stringify({ speechMode: "auto", speechMuted: false });
-  writeFileSync(configFile, config);
+  const settingsFile = path.join(home, "config.json");
+  const settingsFileContents = JSON.stringify({ speechMode: "auto", speechMuted: false });
+  writeFileSync(settingsFile, settingsFileContents);
 });
 
 afterEach(async () => {
-  await new Promise((resolve) => {
+  await new Promise((finish) => {
     if (server === undefined) {
-      resolve(undefined);
+      finish(undefined);
       return;
     }
 
-    server.close(resolve);
+    server.close(finish);
   });
   server = undefined;
   vi.unstubAllEnvs();
   rmSync(home, { recursive: true, force: true });
 });
 
-const engine: SupertonicEngine = { sampleRate: 44_100, synthesize: () => Effect.succeed(new Float32Array(441)) };
+const engine: SupertonicEngine = { sampleRate: 44_100, synthesize: async () => new Float32Array(441) };
 
-const silentPlayer = () => ({ ...makeSpeechPlayer(), play: vi.fn(() => Effect.void) });
+const silentPlayer = () => ({ ...makeSpeechPlayer(), play: vi.fn(async () => undefined) });
 
 describe("speakNextReply", () => {
   it("plays a queued reply", async () => {
     const player = silentPlayer();
     queueReply({ markdown: "Done.", source: "claude-code", agentReplyId: "r1", origin: { kind: "terminal" } });
 
-    const speaking = speakNextReply(engine, player);
-    await Effect.runPromise(speaking);
+    await speakNextReply(engine, player);
 
     expect(player.play).toHaveBeenCalledOnce();
   });
@@ -59,7 +57,7 @@ describe("speakNextReply", () => {
       player.stop();
       connection.resume().end();
     });
-    await new Promise((resolve) => server?.listen(socketPath, () => resolve(undefined)));
+    await new Promise((finish) => server?.listen(socketPath, () => finish(undefined)));
     queueReply({
       markdown: "Done.",
       source: "claude-code",
@@ -67,8 +65,7 @@ describe("speakNextReply", () => {
       origin: { kind: "cmux", socketPath, workspaceId: "W1", surfaceId: "S1" },
     });
 
-    const speaking = speakNextReply(engine, player);
-    const step = await Effect.runPromise(speaking);
+    const step = await speakNextReply(engine, player);
 
     expect(step).toBe("spoke");
     expect(player.play).not.toHaveBeenCalled();
