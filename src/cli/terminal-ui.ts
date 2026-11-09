@@ -1,4 +1,4 @@
-import { createInterface } from "node:readline/promises";
+import { isCancel, select } from "@clack/prompts";
 
 import { describeError } from "#src/error-message.js";
 
@@ -66,49 +66,22 @@ export const printError = (error: unknown): void => {
   console.error(`  ✗ ${describeError(error)}`);
 };
 
-const descriptionNote = (description: string | undefined): string => {
-  if (description == null) {
-    return "";
-  }
-
-  return ` (${description})`;
-};
-
-const choiceFromAnswer = <Picked>(
-  orderedChoices: ReadonlyArray<ChoiceOption<Picked>>,
-  answer: string,
-): Picked | null => {
-  const trimmedAnswer = answer.trim();
-  const isEnterOnly = trimmedAnswer === "";
-  if (isEnterOnly) {
-    return orderedChoices[0]?.pick ?? null;
-  }
-
-  const chosenNumber = Number(trimmedAnswer);
-  const chosenChoice = orderedChoices[chosenNumber - 1];
-  return chosenChoice?.pick ?? null;
-};
-
-// One numbered question. The initial choice is listed first, so Enter takes it. Any answer that is not a listed number cancels (null).
+// One arrow-key question. Null when the user cancels (Escape or Ctrl+C).
 export const askChoice = async <Picked>(request: {
   readonly message: string;
   readonly choices: ReadonlyArray<ChoiceOption<Picked>>;
   readonly initial?: Picked;
 }): Promise<Picked | null> => {
-  const initialChoices = request.choices.filter((choice) => choice.pick === request.initial);
-  const otherChoices = request.choices.filter((choice) => choice.pick !== request.initial);
-  const orderedChoices = [...initialChoices, ...otherChoices];
+  const pickedChoice = await select({
+    message: request.message,
+    options: request.choices.map((choice) => ({ value: choice.pick, label: choice.title, hint: choice.description })),
+    initialValue: request.initial,
+  });
 
-  console.log(`\n  ${request.message}`);
-  for (const [index, choice] of orderedChoices.entries()) {
-    console.log(`  ${String(index + 1)}. ${choice.title}${descriptionNote(choice.description)}`);
+  const isPickCancelled = isCancel(pickedChoice);
+  if (isPickCancelled) {
+    return null;
   }
 
-  const answerReader = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = await answerReader.question("  Number [1]: ");
-    return choiceFromAnswer(orderedChoices, answer);
-  } finally {
-    answerReader.close();
-  }
+  return pickedChoice;
 };

@@ -7,3 +7,6 @@ allowBuilds:
   koffi: false
   msgpackr-extract: false
   onnxruntime-node: false
+minimumReleaseAgeExclude:
+  - '@clack/core@1.6.0'
+  - '@clack/prompts@1.9.0'
