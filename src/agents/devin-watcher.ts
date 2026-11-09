@@ -1,25 +1,32 @@
-import { Effect, Fiber, Option, Ref, Schema } from "effect";
+import { z } from "zod";
+import { describeError } from "#src/error-message.js";
+import { sleep } from "#src/sleep.js";
 import { queueReply } from "#src/speech/inbox.js";
 import { readJsonFile } from "#src/storage/state-files.js";
 import { appendSpeechLog } from "#src/workers/worker-log.js";
 
-const atifExportSchema = Schema.Struct({
-  steps: Schema.Array(
-    Schema.Struct({
-      step_id: Schema.optional(Schema.String),
-      source: Schema.optional(Schema.String),
-      message: Schema.optional(Schema.Unknown),
+const atifExportSchema = z.object({
+  steps: z.array(
+    z.object({
+      step_id: z.string().optional(),
+      source: z.string().optional(),
+      message: z.unknown().optional(),
     }),
   ),
 });
 
-type AtifExport = Schema.Schema.Type<typeof atifExportSchema>;
+type AtifExport = z.infer<typeof atifExportSchema>;
 
-const devinTurnSchema = Schema.Struct({ markdown: Schema.String, turnId: Schema.String });
+interface DevinTurn {
+  readonly markdown: string;
+  readonly turnId: string;
+}
 
-type DevinTurn = Schema.Schema.Type<typeof devinTurnSchema>;
-
-type WatchState = { readonly spokenTurn: string; readonly pendingTurn: string; readonly changedAt: number };
+interface WatchState {
+  readonly spokenTurn: string;
+  readonly pendingTurn: string;
+  readonly changedAt: number;
+}
 
 const noTurn: DevinTurn = { markdown: "", turnId: "" };
 
@@ -29,13 +36,7 @@ const TURN_SETTLE_MS = 800;
 const POLL_INTERVAL_MS = 200;
 
 // After Devin exits, long enough for a turn written as it exits to be seen, settle, and be queued.
-const EXIT_GRACE_MS = TURN_SETTLE_MS + 2 * POLL_INTERVAL_MS;
-
-const pollPause = Effect.sleep(POLL_INTERVAL_MS);
-
-const exitGrace = Effect.sleep(EXIT_GRACE_MS);
-
-const decodeString = Schema.decodeUnknownOption(Schema.String);
+const exitGraceMilliseconds = TURN_SETTLE_MS + 2 * POLL_INTERVAL_MS;
 
 // The agent messages after the latest user step, joined; the turn ID is the last agent step's ID.
 export const latestDevinTurn = (atif: AtifExport): DevinTurn => {
@@ -44,9 +45,7 @@ export const latestDevinTurn = (atif: AtifExport): DevinTurn => {
     .slice(lastUser + 1)
     .filter((step) => step.source === "agent")
     .flatMap((step) => {
-      const message = decodeString(step.message)
-        .pipe(Option.getOrElse(() => ""))
-        .trim();
+      const message = typeof step.message === "string" ? step.message.trim() : "";
       if (message === "") {
         return [];
       }
@@ -76,7 +75,7 @@ const confirmTurn = (request: {
   readonly exportFile: string;
   readonly pendingTurn: string;
   readonly spokenTurn: string;
-}) => {
+}): string => {
   const confirmed = readTurn(request.exportFile);
   if (confirmed.turnId !== request.pendingTurn || confirmed.markdown === "") {
     return request.spokenTurn;
@@ -90,7 +89,7 @@ const confirmTurn = (request: {
       origin: { kind: "terminal" },
     });
   } catch (error) {
-    appendSpeechLog(`devin turn ${confirmed.turnId} not queued: ${String(error)}`);
+    appendSpeechLog(`devin turn ${confirmed.turnId} not queued: ${describeError(error)}`);
   }
   return confirmed.turnId;
 };
@@ -120,21 +119,33 @@ const pollTurn = (exportFile: string, state: WatchState): WatchState => {
   return settleTurn(exportFile, tracked);
 };
 
-const watchDevinExport = (exportFile: string): Effect.Effect<never> =>
-  Effect.gen(function* () {
+// Polls until shutdown is aborted. A read failure is logged and ends the watch.
+const watchDevinExport = async (exportFile: string, shutdown: AbortSignal): Promise<void> => {
+  try {
     const firstTurn = readTurn(exportFile);
-    const watch = yield* Ref.make<WatchState>({ spokenTurn: firstTurn.turnId, pendingTurn: "", changedAt: Date.now() });
-    const poll = Ref.update(watch, (state) => pollTurn(exportFile, state));
-    return yield* poll.pipe(Effect.zipLeft(pollPause), Effect.forever);
-  });
+    let state: WatchState = { spokenTurn: firstTurn.turnId, pendingTurn: "", changedAt: Date.now() };
+    while (!shutdown.aborted) {
+      state = pollTurn(exportFile, state);
+      await sleep(POLL_INTERVAL_MS);
+    }
+  } catch (error) {
+    appendSpeechLog(`devin watcher stopped: ${describeError(error)}`);
+  }
+};
 
 // The watcher stops with the session however it ends, a Devin that never started included.
-export const watchDevinSession = <Value, Failure>(request: {
+export const watchDevinSession = async <SessionResult>(request: {
   readonly exportFile: string;
-  readonly session: Effect.Effect<Value, Failure>;
-}): Effect.Effect<Value, Failure> =>
-  Effect.gen(function* () {
-    const watcher = yield* watchDevinExport(request.exportFile).pipe(Effect.fork);
-    const stopWatcher = Fiber.interrupt(watcher);
-    return yield* request.session.pipe(Effect.zipLeft(exitGrace), Effect.ensuring(stopWatcher));
-  });
+  readonly session: () => Promise<SessionResult>;
+}): Promise<SessionResult> => {
+  const shutdown = new AbortController();
+  const watcher = watchDevinExport(request.exportFile, shutdown.signal);
+  try {
+    const sessionResult = await request.session();
+    await sleep(exitGraceMilliseconds);
+    return sessionResult;
+  } finally {
+    shutdown.abort();
+    await watcher;
+  }
+};

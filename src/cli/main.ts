@@ -77,7 +77,7 @@ const programFor = (commandLine: ReadonlyArray<string>): Effect.Effect<void> => 
   const commandName = commandLine[2];
   if (commandName === "reply") {
     const hookArguments = commandLine.slice(3);
-    return runReplyHookFromArguments(hookArguments);
+    return Effect.promise(() => runReplyHookFromArguments(hookArguments));
   }
 
   if (commandName === undefined) {

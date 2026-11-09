@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 
 import { Args, Command } from "@effect/cli";
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 
 import { watchDevinSession } from "#src/agents/devin-watcher.js";
 import { stateFolder } from "#src/settings/agent-voice-home.js";
@@ -10,30 +10,14 @@ import { makePrivateFolder } from "#src/storage/state-files.js";
 import { startWorkers } from "#src/workers/worker-processes.js";
 import * as TerminalUI from "./terminal-ui.js";
 
-class DevinFailed extends Schema.TaggedError<DevinFailed>()("DevinFailed", { issue: Schema.String }) {
-  get message(): string {
-    return `devin: ${this.issue}`;
-  }
-}
-
 // A child killed by a signal exits with no code; that counts as a failure.
-const exitedWith = (code: number | null) => {
-  if (code === null) {
-    return Effect.succeed(1);
-  }
+const killedExitCode = 1;
 
-  return Effect.succeed(code);
-};
-
-const runDevin = (args: ReadonlyArray<string>) =>
-  Effect.async<number, DevinFailed>((resume) => {
+const runDevin = (args: ReadonlyArray<string>): Promise<number> =>
+  new Promise((finishRun, failRun) => {
     const child = spawn("devin", [...args], { stdio: "inherit" });
-    child.on("error", (error) => resume(new DevinFailed({ issue: error.message })));
-    child.on("exit", (code) => {
-      const exited = exitedWith(code);
-      resume(exited);
-    });
-    return Effect.sync(() => child.kill("SIGTERM"));
+    child.on("error", (error) => failRun(new Error(`devin: ${error.message}`, { cause: error })));
+    child.on("exit", (code) => finishRun(code ?? killedExitCode));
   });
 
 const sessionFolder = (): string => {
@@ -56,8 +40,11 @@ export const devinCommand = Command.make("devin", { devinArguments }, (args) =>
     makePrivateFolder(folder);
     const exportFile = path.join(folder, "session.atif.json");
     yield* TerminalUI.detail(`Reading finished turns aloud from Devin's ATIF export (${exportFile}).`);
-    const session = runDevin(["--export", exportFile, ...args.devinArguments]);
-    const code = yield* watchDevinSession({ exportFile, session });
+    const session = () => runDevin(["--export", exportFile, ...args.devinArguments]);
+    const code = yield* Effect.tryPromise({
+      try: () => watchDevinSession({ exportFile, session }),
+      catch: (error) => error,
+    });
     yield* TerminalUI.outro(`Devin exited with ${String(code)}; the watcher stopped.`);
   }),
 ).pipe(Command.withDescription("Run Devin and read each finished turn aloud from its official ATIF export"));

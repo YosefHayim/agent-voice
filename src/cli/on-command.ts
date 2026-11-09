@@ -172,7 +172,7 @@ export const onCommand = Command.make("on", { hooksOnly: hooksOnlyOption }, (arg
   Effect.gen(function* () {
     yield* TerminalUI.intro("on");
     yield* TerminalUI.step("Registering `agent-voice reply` as the Stop hook of each installed agent");
-    const changes = yield* registerReplyHooks;
+    const changes = yield* Effect.sync(registerReplyHooks);
     yield* showHookChanges(changes);
     if (args.hooksOnly) {
       return yield* showHooksOnlyOutro(changes);

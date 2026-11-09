@@ -1,8 +1,6 @@
 import { readFileSync } from "node:fs";
 import { text } from "node:stream/consumers";
 
-import { Effect, Option, Schema } from "effect";
-
 import { readConfigOrDefaults } from "#src/settings/config-file.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { queueReply, type ReplyOrigin } from "#src/speech/inbox.js";
@@ -10,30 +8,23 @@ import { isWorkerRunning, spawnWorker, startSpeechWorker } from "#src/workers/wo
 import { type AgentId, agentIdSchema } from "./agent-catalog.js";
 import { readStopReply, replyFromTranscript } from "./agent-reply.js";
 
-const optionalVariable = Schema.optionalWith(Schema.Trim, { default: () => "" });
-
-const cmuxEnvironmentSchema = Schema.Struct({
-  CMUX_WORKSPACE_ID: optionalVariable,
-  CMUX_SURFACE_ID: optionalVariable,
-  CMUX_SOCKET_PATH: optionalVariable,
-});
-
 // Only the socket path is kept, never the socket capability.
 const replyOrigin = (): ReplyOrigin => {
-  const cmux = Schema.decodeUnknownSync(cmuxEnvironmentSchema)(process.env);
-  if (cmux.CMUX_WORKSPACE_ID === "" || cmux.CMUX_SURFACE_ID === "") {
+  const workspaceId = (process.env.CMUX_WORKSPACE_ID ?? "").trim();
+  const surfaceId = (process.env.CMUX_SURFACE_ID ?? "").trim();
+  const socketPath = (process.env.CMUX_SOCKET_PATH ?? "").trim();
+  const isThereNoCmuxPane = workspaceId === "" || surfaceId === "";
+  if (isThereNoCmuxPane) {
     return { kind: "terminal" };
   }
 
   return {
     kind: "cmux",
-    socketPath: cmux.CMUX_SOCKET_PATH || "/tmp/cmux.sock",
-    workspaceId: cmux.CMUX_WORKSPACE_ID,
-    surfaceId: cmux.CMUX_SURFACE_ID,
+    socketPath: socketPath || "/tmp/cmux.sock",
+    workspaceId,
+    surfaceId,
   };
 };
-
-const readStandardInput = Effect.tryPromise(() => text(process.stdin));
 
 const transcriptReply = (transcriptPath: string): string => {
   if (transcriptPath === "") {
@@ -57,56 +48,69 @@ const wakeWorkers = (config: Config): void => {
   }
 };
 
-const queueAgentReply = (agent: AgentId) =>
-  Effect.gen(function* () {
-    const hookInput = yield* readStandardInput;
-    const stopReply = readStopReply(hookInput);
-    const isThereNoStopReply = stopReply === null;
-    if (isThereNoStopReply) {
-      return;
-    }
+const queueAgentReply = async (agent: AgentId): Promise<void> => {
+  const hookInput = await text(process.stdin);
+  const stopReply = readStopReply(hookInput);
+  const isThereNoStopReply = stopReply === null;
+  if (isThereNoStopReply) {
+    return;
+  }
 
-    const config = yield* Effect.sync(readConfigOrDefaults);
-    // Every finished turn wakes dictation, so it comes back after a reboot even with speech off or muted.
-    wakeWorkers(config);
-    const isSpeechSilent = config.speechMode === "off" || config.speechMuted;
-    if (isSpeechSilent) {
-      return;
-    }
+  const config = readConfigOrDefaults();
+  // Every finished turn wakes dictation, so it comes back after a reboot even with speech off or muted.
+  wakeWorkers(config);
+  const isSpeechSilent = config.speechMode === "off" || config.speechMuted;
+  if (isSpeechSilent) {
+    return;
+  }
 
-    const markdown = stopReply.markdown || transcriptReply(stopReply.transcriptPath);
-    if (markdown.trim() === "") {
-      return;
-    }
+  const markdown = stopReply.markdown || transcriptReply(stopReply.transcriptPath);
+  const isThereNoMarkdown = markdown.trim() === "";
+  if (isThereNoMarkdown) {
+    return;
+  }
 
-    const origin = replyOrigin();
-    queueReply({ markdown, source: agent, agentReplyId: stopReply.agentReplyId, origin });
-  });
+  const origin = replyOrigin();
+  queueReply({ markdown, source: agent, agentReplyId: stopReply.agentReplyId, origin });
+};
 
-// The hook prints nothing and succeeds whatever happens, so it can never block or confuse the agent.
-const runReplyHook = (agent: AgentId): Effect.Effect<void> =>
-  queueAgentReply(agent).pipe(Effect.catchAllCause(() => Effect.void));
+// The hook exits 0 whatever happens, so it can never block or confuse the agent; a failure is only written to stderr.
+const runReplyHook = async (agent: AgentId): Promise<void> => {
+  try {
+    await queueAgentReply(agent);
+  } catch (error) {
+    console.error({ agent, error });
+  }
+};
 
-const decodeAgentId = Schema.decodeUnknownOption(agentIdSchema);
+const parseAgentId = (agentName: string | undefined): AgentId | null => {
+  const parsedAgent = agentIdSchema.safeParse(agentName);
+  return parsedAgent.success ? parsedAgent.data : null;
+};
 
-const agentFromArguments = (args: ReadonlyArray<string>): Option.Option<AgentId> => {
+const agentFromArguments = (args: ReadonlyArray<string>): AgentId | null => {
   const inlineFlag = args.find((argument) => argument.startsWith("--agent="));
   if (inlineFlag !== undefined) {
     const agentName = inlineFlag.slice("--agent=".length);
-    return decodeAgentId(agentName);
+    return parseAgentId(agentName);
   }
 
   const flagIndex = args.indexOf("--agent");
   if (flagIndex < 0) {
-    return Option.none();
+    return null;
   }
 
-  return decodeAgentId(args[flagIndex + 1]);
+  return parseAgentId(args[flagIndex + 1]);
 };
 
 // A Claude Code Stop hook that exits 2 blocks the agent, so wrong, missing, or extra arguments
 // (say, an agent ID renamed after the hook was registered) are a silent no-op.
-export const runReplyHookFromArguments = (args: ReadonlyArray<string>): Effect.Effect<void> => {
+export const runReplyHookFromArguments = async (args: ReadonlyArray<string>): Promise<void> => {
   const agent = agentFromArguments(args);
-  return Option.match(agent, { onNone: () => Effect.void, onSome: runReplyHook });
+  const isThereNoAgent = agent === null;
+  if (isThereNoAgent) {
+    return;
+  }
+
+  await runReplyHook(agent);
 };

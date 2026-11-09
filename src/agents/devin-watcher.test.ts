@@ -1,9 +1,9 @@
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { sleep } from "#src/sleep.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
 import { latestDevinTurn, watchDevinSession } from "./devin-watcher.js";
 
@@ -73,36 +73,35 @@ describe("watchDevinSession", () => {
 
   it("keeps reading turns after a turn fails to queue, and queues the turn written as Devin exits", async () => {
     const blockedInbox = path.join(home, "inbox");
-    const session = Effect.gen(function* () {
-      yield* Effect.sleep("100 millis");
+    const session = async () => {
+      await sleep(100);
       writeFileSync(blockedInbox, "a file where the inbox folder should be");
       writeTurn("turn-1", "First answer");
-      yield* Effect.sleep("1500 millis");
+      await sleep(1500);
       rmSync(blockedInbox);
       writeTurn("turn-2", "Second answer");
       return 0;
-    });
+    };
 
-    const watchedSession = watchDevinSession({ exportFile: exportFile(), session });
+    const exitCode = await watchDevinSession({ exportFile: exportFile(), session });
 
-    expect(await Effect.runPromise(watchedSession)).toBe(0);
+    expect(exitCode).toBe(0);
     expect(queuedMarkdown()).toEqual(["Second answer"]);
   });
 
   it("stops watching when Devin fails to start, even while the caller keeps running", async () => {
-    const program = Effect.gen(function* () {
-      const failure = yield* watchDevinSession({
-        exportFile: exportFile(),
-        session: Effect.fail("devin was not found" as const),
-      }).pipe(Effect.flip);
-      // A watcher left running would by now have read the empty export, so it would take this turn for a new one.
-      yield* Effect.sleep("400 millis");
-      writeTurn("late-turn", "A turn no watcher should read");
-      yield* Effect.sleep("1500 millis");
-      return failure;
-    });
+    const failingSession = async (): Promise<never> => {
+      throw new Error("devin was not found");
+    };
 
-    expect(await Effect.runPromise(program)).toBe("devin was not found");
+    await expect(watchDevinSession({ exportFile: exportFile(), session: failingSession })).rejects.toThrow(
+      "devin was not found",
+    );
+    // A watcher still running would read this turn and queue it.
+    await sleep(400);
+    writeTurn("late-turn", "A turn no watcher should read");
+    await sleep(1500);
+
     expect(queuedMarkdown()).toEqual([]);
   });
 });
