@@ -28,7 +28,7 @@ const KNOWN_CMUX_PATHS = [
 
 const knownCmuxPath = (): string => KNOWN_CMUX_PATHS.find((candidate) => existsSync(candidate)) || "cmux";
 
-const cmuxExecutable = (): string => findCli("cmux").pipe(Option.getOrElse(knownCmuxPath));
+const cmuxExecutable = (): string => findCli("cmux") ?? knownCmuxPath();
 
 const recordOf = Schema.decodeUnknownOption(Schema.Record({ key: Schema.String, value: Schema.Unknown }));
 
@@ -61,12 +61,16 @@ const cmuxReply = (stdout: string): unknown => {
 const cmuxJson = (request: { readonly args: ReadonlyArray<string>; readonly step: string }) =>
   Effect.gen(function* () {
     const executable = cmuxExecutable();
-    const cliRun = yield* runCli({
-      executable,
-      args: request.args,
-      timeoutMs: CMUX_TIMEOUT_MS,
-      environment: { CMUX_QUIET: "1" },
-    }).pipe(Effect.mapError((error) => new CmuxDeliveryFailed({ step: request.step, detail: error.message })));
+    const cliRun = yield* Effect.tryPromise({
+      try: () =>
+        runCli({
+          executable,
+          args: request.args,
+          timeoutMs: CMUX_TIMEOUT_MS,
+          environment: { CMUX_QUIET: "1" },
+        }),
+      catch: (error) => (error instanceof Error ? error.message : String(error)),
+    }).pipe(Effect.mapError((issue) => new CmuxDeliveryFailed({ step: request.step, detail: issue })));
     if (cliRun.exitCode !== 0) {
       const detail = cliFailureText(cliRun) || "failed";
       return yield* new CmuxDeliveryFailed({ step: request.step, detail });

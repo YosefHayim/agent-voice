@@ -86,7 +86,10 @@ const chooseFromList = (request: {
 on error errMsg
   return "ERROR:" & errMsg
 end try`;
-  return runCli({ executable: "osascript", args: ["-e", script], timeoutMs: DIALOG_TIMEOUT_MS }).pipe(
+  return Effect.tryPromise({
+    try: () => runCli({ executable: "osascript", args: ["-e", script], timeoutMs: DIALOG_TIMEOUT_MS }),
+    catch: (error) => error,
+  }).pipe(
     Effect.map((cliRun) => chosenItem(cliRun.stdout)),
     Effect.orElseSucceed(() => Option.none<string>()),
   );
@@ -97,7 +100,10 @@ const showAlert = (request: { readonly title: string; readonly message: string }
   const shortMessage = request.message.slice(0, 900);
   const message = appleScriptText(shortMessage);
   const script = `try\n  display alert "${title}" message "${message}" as warning buttons {"OK"} default button "OK"\nend try`;
-  return runCli({ executable: "osascript", args: ["-e", script], timeoutMs: ALERT_TIMEOUT_MS }).pipe(Effect.ignore);
+  return Effect.tryPromise({
+    try: () => runCli({ executable: "osascript", args: ["-e", script], timeoutMs: ALERT_TIMEOUT_MS }),
+    catch: (error) => error,
+  }).pipe(Effect.ignore);
 };
 
 const listedModels = (providers: ReadonlyArray<DiscoveredProvider>, id: DiscoveredProvider["id"]) => {

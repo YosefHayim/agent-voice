@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 
-import { Option } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { replyFromTranscript, stopReplyFromJson } from "./agent-reply.js";
+import { readStopReply, replyFromTranscript } from "./agent-reply.js";
 
 const fixture = (name: string) => {
   const fixtureUrl = new URL(`./fixtures/${name}`, import.meta.url);
@@ -20,39 +19,43 @@ const grokStop = (reason: string) =>
     transcript_path: "/grok/updates.jsonl",
   });
 
-describe("stopReplyFromJson", () => {
+describe("readStopReply", () => {
   it("reads the reply, transcript path, and turn ID that Claude Code, Codex, and Devin send", () => {
-    const stopInput = JSON.stringify({
+    const stopHookStdin = JSON.stringify({
       hook_event_name: "Stop",
       last_assistant_message: "# Done",
       transcript_path: "/x.jsonl",
       turn_id: "t-9",
     });
 
-    expect(stopReplyFromJson(stopInput)).toEqual(
-      Option.some({ markdown: "# Done", transcriptPath: "/x.jsonl", agentReplyId: "t-9" }),
-    );
+    expect(readStopReply(stopHookStdin)).toEqual({
+      markdown: "# Done",
+      transcriptPath: "/x.jsonl",
+      agentReplyId: "t-9",
+    });
   });
 
   it("reads a null or missing field as empty", () => {
-    const stopInput = JSON.stringify({ last_assistant_message: null, transcript_path: null });
+    const stopHookStdin = JSON.stringify({ last_assistant_message: null, transcript_path: null });
 
-    expect(stopReplyFromJson(stopInput)).toEqual(Option.some({ markdown: "", transcriptPath: "", agentReplyId: "" }));
+    expect(readStopReply(stopHookStdin)).toEqual({ markdown: "", transcriptPath: "", agentReplyId: "" });
   });
 
   it("reads a finished Grok turn, never its transcript, and skips a session close", () => {
     const finishedTurn = grokStop("end_turn");
     const sessionClose = grokStop("shutdown");
 
-    expect(stopReplyFromJson(finishedTurn)).toEqual(
-      Option.some({ markdown: "Complete answer", transcriptPath: "", agentReplyId: "" }),
-    );
-    expect(stopReplyFromJson(sessionClose)).toEqual(Option.none());
+    expect(readStopReply(finishedTurn)).toEqual({
+      markdown: "Complete answer",
+      transcriptPath: "",
+      agentReplyId: "",
+    });
+    expect(readStopReply(sessionClose)).toBeNull();
   });
 
   it("reads nothing from input that is not a JSON object", () => {
-    expect(stopReplyFromJson("not json")).toEqual(Option.none());
-    expect(stopReplyFromJson("null")).toEqual(Option.none());
+    expect(readStopReply("not json")).toBeNull();
+    expect(readStopReply("null")).toBeNull();
   });
 });
 

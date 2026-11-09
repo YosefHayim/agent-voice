@@ -1,7 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { Effect, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "#src/settings/config-schema.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
@@ -43,14 +42,16 @@ const reply = (agentReplyId: string): QueuedReply => ({
 const cmuxOrigin = (surfaceId: string) =>
   ({ kind: "cmux", socketPath: path.join(home, "no-cmux.sock"), workspaceId: "W1", surfaceId }) as const;
 
-const claimNext = (mode: Config["speechMode"]) => {
-  const claiming = claimNextReply(mode);
-  return Effect.runPromise(claiming);
-};
+const claimNext = (mode: Config["speechMode"]) => claimNextReply(mode);
 
 const claimReply = async () => {
   const claimed = await claimNext("auto");
-  return Option.getOrThrow(claimed);
+  const isThereNoClaim = claimed === null;
+  if (isThereNoClaim) {
+    throw new Error("no reply was claimed");
+  }
+
+  return claimed;
 };
 
 const inboxNames = (): ReadonlyArray<string> => {
@@ -134,7 +135,7 @@ describe("inbox", () => {
     queueReply({ markdown: "once", source: "codex", agentReplyId: "turn-9", origin: { kind: "terminal" } });
     const next = await claimNext("auto");
     expect(inboxNames()).toEqual([]);
-    expect(Option.isNone(next)).toBe(true);
+    expect(next).toBeNull();
   });
 
   it("lets the newest reply from a Cmux surface supersede older ones, and speaks it when Cmux cannot be asked", async () => {
@@ -149,7 +150,7 @@ describe("inbox", () => {
   it("empties the queue when speech is off", async () => {
     queueReply({ markdown: "missed while off", source: "grok", agentReplyId: "", origin: { kind: "terminal" } });
     const next = await claimNext("off");
-    expect(Option.isNone(next)).toBe(true);
+    expect(next).toBeNull();
     expect(inboxNames()).toEqual([]);
   });
 

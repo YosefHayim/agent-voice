@@ -8,7 +8,7 @@ import type { Config } from "#src/settings/config-schema.js";
 import { queueReply, type ReplyOrigin } from "#src/speech/inbox.js";
 import { isWorkerRunning, spawnWorker, startSpeechWorker } from "#src/workers/worker-processes.js";
 import { type AgentId, agentIdSchema } from "./agent-catalog.js";
-import { replyFromTranscript, stopReplyFromJson } from "./agent-reply.js";
+import { readStopReply, replyFromTranscript } from "./agent-reply.js";
 
 const optionalVariable = Schema.optionalWith(Schema.Trim, { default: () => "" });
 
@@ -60,12 +60,13 @@ const wakeWorkers = (config: Config): void => {
 const queueAgentReply = (agent: AgentId) =>
   Effect.gen(function* () {
     const hookInput = yield* readStandardInput;
-    const stopReply = stopReplyFromJson(hookInput);
-    if (Option.isNone(stopReply)) {
+    const stopReply = readStopReply(hookInput);
+    const isThereNoStopReply = stopReply === null;
+    if (isThereNoStopReply) {
       return;
     }
 
-    const config = yield* readConfigOrDefaults;
+    const config = yield* Effect.sync(readConfigOrDefaults);
     // Every finished turn wakes dictation, so it comes back after a reboot even with speech off or muted.
     wakeWorkers(config);
     const isSpeechSilent = config.speechMode === "off" || config.speechMuted;
@@ -73,13 +74,13 @@ const queueAgentReply = (agent: AgentId) =>
       return;
     }
 
-    const markdown = stopReply.value.markdown || transcriptReply(stopReply.value.transcriptPath);
+    const markdown = stopReply.markdown || transcriptReply(stopReply.transcriptPath);
     if (markdown.trim() === "") {
       return;
     }
 
     const origin = replyOrigin();
-    queueReply({ markdown, source: agent, agentReplyId: stopReply.value.agentReplyId, origin });
+    queueReply({ markdown, source: agent, agentReplyId: stopReply.agentReplyId, origin });
   });
 
 // The hook prints nothing and succeeds whatever happens, so it can never block or confuse the agent.

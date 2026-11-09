@@ -72,7 +72,7 @@ const writeSettings = (settings: HookSettingsFile, text: string): void => {
 // Settings files agent-voice created, so `agent-voice off` can delete one it leaves empty and keep any file that existed before.
 const createdFiles = (): ReadonlyArray<string> => {
   const createdPath = stateFile("created-hook-files.json");
-  return readJsonFile({ path: createdPath, schema: Schema.Array(Schema.String) }).pipe(Option.getOrElse(() => []));
+  return readJsonFile({ path: createdPath, schema: Schema.Array(Schema.String) }) ?? [];
 };
 
 const recordCreated = (request: { readonly file: string; readonly created: boolean }): void => {
@@ -104,7 +104,7 @@ const readSettings = (settings: HookSettingsFile): Either.Either<Option.Option<s
   Either.try({
     try: () => readTextIfPresent(settings.file),
     catch: (error) => new HookSettingsIssue({ issue: `the settings file could not be read (${String(error)})` }),
-  });
+  }).pipe(Either.map(Option.fromNullable));
 
 const agentVoiceReplyCommand = (settings: HookSettingsFile): string => {
   const invocation = agentVoiceInvocation();

@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { Option, Schema } from "effect";
+import { Schema } from "effect";
 import { stateFile } from "#src/settings/agent-voice-home.js";
 import { readJsonFile, writeJsonAtomically } from "#src/storage/state-files.js";
 import { type AgentHookTarget, agentHookTargets, agentIdSchema } from "./agent-catalog.js";
@@ -41,9 +41,7 @@ const configuredClaudeFolders = (): ReadonlyArray<string> => {
 
 const rememberedClaudeFolders = (): ReadonlyArray<string> => {
   const foldersPath = stateFile("claude-config-folders.json");
-  const remembered = readJsonFile({ path: foldersPath, schema: Schema.Array(Schema.String) }).pipe(
-    Option.getOrElse(() => []),
-  );
+  const remembered = readJsonFile({ path: foldersPath, schema: Schema.Array(Schema.String) }) ?? [];
   return remembered.filter((folder) => existsSync(folder));
 };
 

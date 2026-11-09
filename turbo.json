@@ -1,5 +1,12 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
+  "globalEnv": [
+    "AGENT_VOICE_HOME",
+    "AGENT_VOICE_CONFIG_FILE",
+    "AGENT_VOICE_DICTATION_MODEL",
+    "AGENT_VOICE_DICTATION_LIVE_PREVIEW",
+    "AGENT_VOICE_REFINE_PICKER"
+  ],
   "tasks": {
     "lint": {},
     "typecheck": {},

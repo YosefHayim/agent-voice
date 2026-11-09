@@ -14,7 +14,6 @@ import { readConfig } from "#src/settings/config-file.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { ensureSupertonicModels, missingSupertonicFiles } from "#src/speech/supertonic-models.js";
-import type { ModelDownloadError } from "#src/storage/model-download.js";
 import { startWorkers, stopWorkers } from "#src/workers/worker-processes.js";
 import * as TerminalUI from "./terminal-ui.js";
 
@@ -52,7 +51,7 @@ const megabytes = (bytes: number): string => {
 type Download = {
   readonly label: string;
   readonly partialFile: () => string;
-  readonly download: Effect.Effect<unknown, ModelDownloadError>;
+  readonly download: Effect.Effect<unknown, unknown>;
 };
 
 const progressLine = (request: Download) =>
@@ -81,14 +80,20 @@ export const prepareModels = (config: Config) =>
       yield* downloadWithProgress({
         label: model.label,
         partialFile: () => `${whisperModelPath(model)}.partial`,
-        download: ensureWhisperModel({ model, onProgress: () => undefined }),
+        download: Effect.tryPromise({
+          try: () => ensureWhisperModel({ model, onProgress: () => undefined }),
+          catch: (error) => error,
+        }),
       });
     }
 
     const isVoiceDownloadNeeded = config.speechMode !== "off" && missingSupertonicFiles().length > 0;
     if (isVoiceDownloadNeeded) {
       yield* TerminalUI.step("Downloading the Supertonic voices (~400 MB)");
-      yield* ensureSupertonicModels(() => undefined);
+      yield* Effect.tryPromise({
+        try: () => ensureSupertonicModels(() => undefined),
+        catch: (error) => error,
+      });
     }
   });
 
@@ -146,8 +151,8 @@ const showOnSummary = (config: Config) =>
 // Stop whatever runs first, so the fresh workers load the current config and models.
 export const restartWorkers = Effect.gen(function* () {
   yield* TerminalUI.step("Starting the dictation and speech workers");
-  yield* stopWorkers;
-  yield* startWorkers;
+  yield* Effect.promise(stopWorkers);
+  yield* Effect.tryPromise({ try: startWorkers, catch: (error) => error });
 });
 
 const hooksOnlyOption = Options.boolean("hooks-only").pipe(
@@ -173,7 +178,7 @@ export const onCommand = Command.make("on", { hooksOnly: hooksOnlyOption }, (arg
       return yield* showHooksOnlyOutro(changes);
     }
 
-    const config = yield* readConfig;
+    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
     yield* prepareModels(config);
     yield* restartWorkers.pipe(Effect.retry({ times: 1, schedule: Schedule.spaced("1 second") }));
     yield* TerminalUI.success("agent-voice is on.");

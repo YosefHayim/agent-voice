@@ -2,39 +2,42 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, renameSync } from "node:fs";
 import path from "node:path";
 
-import { Effect, Option, Schema } from "effect";
+import { z } from "zod";
 import { stateFile, stateFolder } from "#src/settings/agent-voice-home.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { makePrivateFolder, readJsonFile, removeIfPresent, writeJsonAtomically } from "#src/storage/state-files.js";
 import { type CmuxFocus, cmuxFocus } from "./cmux-focus.js";
 
-const terminalOriginSchema = Schema.Struct({ kind: Schema.Literal("terminal") });
+const terminalOriginSchema = z.object({ kind: z.literal("terminal") });
 
-const cmuxOriginSchema = Schema.Struct({
-  kind: Schema.Literal("cmux"),
-  socketPath: Schema.String.annotations({ description: "Cmux control socket that can say which surface is focused." }),
-  workspaceId: Schema.String,
-  surfaceId: Schema.String,
+const cmuxOriginSchema = z.object({
+  kind: z.literal("cmux"),
+  // Cmux control socket that can say which surface is focused.
+  socketPath: z.string(),
+  workspaceId: z.string(),
+  surfaceId: z.string(),
 });
 
-const replyOriginSchema = Schema.Union(terminalOriginSchema, cmuxOriginSchema);
+const replyOriginSchema = z.union([terminalOriginSchema, cmuxOriginSchema]);
 
-export type ReplyOrigin = Schema.Schema.Type<typeof replyOriginSchema>;
+export type ReplyOrigin = z.infer<typeof replyOriginSchema>;
 
-const queuedReplySchema = Schema.Struct({
-  markdown: Schema.String.annotations({ description: "Complete agent reply as Markdown." }),
-  origin: replyOriginSchema.annotations({ description: "Where the agent ran: a plain terminal or a Cmux surface." }),
-  receivedAt: Schema.Number.annotations({ description: "Unix time in seconds." }),
-  agentReplyId: Schema.String.annotations({ description: "The agent's reply or turn ID, else the content token." }),
-  source: Schema.String.annotations({ description: "Agent ID that produced the reply." }),
+const queuedReplySchema = z.object({
+  // Complete agent reply as Markdown.
+  markdown: z.string(),
+  // Where the agent ran: a plain terminal or a Cmux surface.
+  origin: replyOriginSchema,
+  // Unix time in seconds.
+  receivedAt: z.number(),
+  // The agent's reply or turn ID, else the content token.
+  agentReplyId: z.string(),
+  // Agent ID that produced the reply.
+  source: z.string(),
 });
 
-export type QueuedReply = Schema.Schema.Type<typeof queuedReplySchema>;
+export type QueuedReply = z.infer<typeof queuedReplySchema>;
 
-const seenKeysSchema = Schema.Record({ key: Schema.String, value: Schema.Number });
-
-const PENDING_TTL_SECONDS = 60 * 60;
-const SEEN_TTL_SECONDS = 24 * 60 * 60;
+const seenKeysSchema = z.record(z.string(), z.number());
 
 const nowSeconds = () => Date.now() / 1_000;
 
@@ -62,9 +65,9 @@ export const surfaceIdentity = (reply: QueuedReply): string => {
 };
 
 const replyPlace = (reply: QueuedReply): string => {
-  const source = reply.source || "unknown";
+  const agentId = reply.source || "unknown";
   const surface = surfaceIdentity(reply) || "terminal";
-  return `${source}:${surface}`;
+  return `${agentId}:${surface}`;
 };
 
 // The same text from the same place is one reply, whatever its ID.
@@ -123,8 +126,13 @@ export const isSpeaking = (): boolean => inboxFiles(".speaking").length > 0;
 const seenKeys = (): ReadonlyMap<string, number> => {
   const now = nowSeconds();
   const savedStamps = readJsonFile({ path: seenFile(), schema: seenKeysSchema });
-  const stamps = Option.getOrElse(savedStamps, () => ({}));
-  const freshStamps = Object.entries(stamps).filter(([, stamp]) => now - stamp <= SEEN_TTL_SECONDS);
+  const isThereNoSavedStamp = savedStamps === null;
+  if (isThereNoSavedStamp) {
+    return new Map();
+  }
+
+  const seenTtlSeconds = 24 * 60 * 60;
+  const freshStamps = Object.entries(savedStamps).filter(([, stamp]) => now - stamp <= seenTtlSeconds);
   return new Map(freshStamps);
 };
 
@@ -170,15 +178,18 @@ export const queueReply = (request: {
   const milliseconds = Date.now().toString().padStart(15, "0");
   const counter = process.hrtime.bigint().toString().padStart(20, "0");
   const replyFile = path.join(folder, `${milliseconds}-${counter}-${randomUUID()}.json`);
-  const encodedReply = Schema.encodeSync(queuedReplySchema)(reply);
-  writeJsonAtomically({ path: replyFile, value: encodedReply });
+  writeJsonAtomically({ path: replyFile, value: reply });
 };
 
-type PendingReply = { readonly file: string; readonly reply: QueuedReply };
+interface PendingReply {
+  readonly file: string;
+  readonly reply: QueuedReply;
+}
 
 const isSpeakable = (reply: QueuedReply): boolean => {
   const ageSeconds = nowSeconds() - reply.receivedAt;
-  const isExpired = reply.receivedAt > 0 && ageSeconds > PENDING_TTL_SECONDS;
+  const pendingTtlSeconds = 60 * 60;
+  const isExpired = reply.receivedAt > 0 && ageSeconds > pendingTtlSeconds;
   return reply.markdown.trim() !== "" && !isExpired;
 };
 
@@ -187,13 +198,13 @@ const pendingReplies = (): ReadonlyArray<PendingReply> => {
   const files = inboxFiles(".json");
   return files.flatMap((file) => {
     const storedReply = readJsonFile({ path: file, schema: queuedReplySchema });
-    const reply = Option.filter(storedReply, isSpeakable);
-    if (Option.isNone(reply)) {
+    const isThereNoReply = storedReply === null || !isSpeakable(storedReply);
+    if (isThereNoReply) {
       removeIfPresent(file);
       return [];
     }
 
-    return [{ file, reply: reply.value }];
+    return [{ file, reply: storedReply }];
   });
 };
 
@@ -217,60 +228,67 @@ const isSuperseded = (pending: ReadonlyArray<PendingReply>, candidate: PendingRe
   return newestFromSurface?.file !== candidate.file;
 };
 
-const speaksNow = (request: { readonly mode: Config["speechMode"]; readonly reply: QueuedReply }) => {
+const speaksNow = async (request: {
+  readonly mode: Config["speechMode"];
+  readonly reply: QueuedReply;
+}): Promise<boolean> => {
   const { origin } = request.reply;
   const surface = surfaceIdentity(request.reply);
-  if (request.mode === "immediate" || surface === "" || origin.kind !== "cmux") {
-    return Effect.succeed(true);
+  const isSpokenAtOnce = request.mode === "immediate" || surface === "" || origin.kind !== "cmux";
+  if (isSpokenAtOnce) {
+    return true;
   }
 
-  return cmuxFocus(origin.socketPath).pipe(Effect.map((focus) => speaksForFocus(surface, focus)));
+  const focus = await cmuxFocus(origin.socketPath);
+  return speaksForFocus(surface, focus);
 };
 
 // Another process may have claimed or deleted the file since it was listed.
-const claimFile = (file: string): string | undefined => {
+const claimFile = (file: string): string | null => {
   const claimed = file.replace(/\.json$/u, ".speaking");
   try {
     renameSync(file, claimed);
     return claimed;
   } catch {
-    return undefined;
+    return null;
   }
 };
 
 // The rename to `.speaking` stops a reply from being picked twice; one waiting for its Cmux surface stays queued.
-export const claimNextReply = (mode: Config["speechMode"]): Effect.Effect<Option.Option<PendingReply>> =>
-  Effect.gen(function* () {
-    const pending = pendingReplies();
-    if (mode === "off") {
-      removeInboxFiles([".json"]);
-      return Option.none();
+export const claimNextReply = async (mode: Config["speechMode"]): Promise<PendingReply | null> => {
+  const pending = pendingReplies();
+  const isModeOff = mode === "off";
+  if (isModeOff) {
+    removeInboxFiles([".json"]);
+    return null;
+  }
+
+  const seen = seenKeys();
+  for (const candidate of pending) {
+    const isStale = isSuperseded(pending, candidate) || alreadySpoken(seen, candidate.reply);
+    if (isStale) {
+      removeIfPresent(candidate.file);
+      continue;
     }
 
-    const seen = seenKeys();
-    for (const candidate of pending) {
-      if (isSuperseded(pending, candidate) || alreadySpoken(seen, candidate.reply)) {
-        removeIfPresent(candidate.file);
-        continue;
-      }
-
-      const isTimeToSpeak = yield* speaksNow({ mode, reply: candidate.reply });
-      if (!isTimeToSpeak) {
-        continue;
-      }
-
-      const claimed = claimFile(candidate.file);
-      if (claimed === undefined) {
-        continue;
-      }
-
-      // Mark it seen before playback, so a restart during speech never replays it.
-      rememberSpoken(candidate.reply);
-      return Option.some({ file: claimed, reply: candidate.reply });
+    const isTimeToSpeak = await speaksNow({ mode, reply: candidate.reply });
+    if (!isTimeToSpeak) {
+      continue;
     }
 
-    return Option.none();
-  });
+    const claimed = claimFile(candidate.file);
+    const isClaimLost = claimed === null;
+    if (isClaimLost) {
+      continue;
+    }
+
+    // Mark it seen before playback, so a restart during speech never replays it.
+    rememberSpoken(candidate.reply);
+    return { file: claimed, reply: candidate.reply };
+  }
+
+  return null;
+};
 
 export const completeReply = (claimedFile: string): void => removeIfPresent(claimedFile);
 

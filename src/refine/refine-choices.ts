@@ -1,4 +1,4 @@
-import { Either, Option, Schema } from "effect";
+import { Either, type Option, Schema } from "effect";
 import { stateFile } from "#src/settings/agent-voice-home.js";
 import {
   readJsonFile,
@@ -32,15 +32,11 @@ export const readSavedChoice = (): Option.Option<SavedChoice> =>
 
 export const codexLastGoodModel = (): string => {
   const lastGoodFile = stateFile(CODEX_LAST_GOOD_FILE);
-  return readTextIfReadable(lastGoodFile).pipe(
-    Option.getOrElse(() => ""),
-    (text) => text.trim(),
-  );
+  return (readTextIfReadable(lastGoodFile) ?? "").trim();
 };
 
-const modelSet = (text: Option.Option<string>): ReadonlySet<string> => {
-  const fileText = Option.getOrElse(text, () => "");
-  const models = nonBlankLines(fileText);
+const modelSet = (fileText: string | null): ReadonlySet<string> => {
+  const models = nonBlankLines(fileText ?? "");
   return new Set(models);
 };
 
@@ -55,7 +51,7 @@ export const codexFailedModels = (): ReadonlySet<string> =>
 
 const writeCodexFailedModels = (failed: ReadonlySet<string>): void => {
   const lines = [...failed].sort().map((model) => `${model}\n`);
-  writeFileAtomically({ path: stateFile(CODEX_FAILED_FILE), text: lines.join("") });
+  writeFileAtomically({ path: stateFile(CODEX_FAILED_FILE), contents: lines.join("") });
 };
 
 export const markCodexModelFailed = (model: string): void => {
@@ -93,7 +89,7 @@ export const saveRefineChoice = (request: {
     return;
   }
 
-  writeFileAtomically({ path: stateFile(CODEX_LAST_GOOD_FILE), text: `${model}\n` });
+  writeFileAtomically({ path: stateFile(CODEX_LAST_GOOD_FILE), contents: `${model}\n` });
   const failed = readCodexFailedModels();
   if (Either.isLeft(failed) || !failed.right.has(model)) {
     return;

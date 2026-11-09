@@ -1,5 +1,5 @@
 import { Command, Options } from "@effect/cli";
-import { Effect, Option } from "effect";
+import { Effect } from "effect";
 import { registeredSettingsFiles } from "#src/agents/hook-registration.js";
 import {
   isWhisperModelPresent,
@@ -32,12 +32,11 @@ const modelEntries = (selectedKey: string) =>
 const dictationStatus = (config: Config) => {
   const selected = selectWhisperModel({ environment: readEnvironment(), config });
   const isRunning = isWorkerRunning("dictation");
-  const pid = readPid("dictation.pid");
-  const savedStatus = readWorkerStatus();
-  const saved = Option.getOrElse(savedStatus, () => NOT_STARTED);
+  const pid = readPid("dictation.pid") ?? undefined;
+  const saved = readWorkerStatus() ?? NOT_STARTED;
   const dictation = {
     running: isRunning,
-    pid: Option.getOrUndefined(pid),
+    pid,
     stage: saved.stage,
     detail: saved.detail,
     model: saved.model,
@@ -62,7 +61,7 @@ const registeredAgents = (): ReadonlyArray<string> => {
 };
 
 const currentStatus = Effect.gen(function* () {
-  const config = yield* readConfigOrDefaults;
+  const config = yield* Effect.sync(readConfigOrDefaults);
   return {
     home: agentVoiceHome(),
     configFile: configFilePath(),

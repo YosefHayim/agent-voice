@@ -68,8 +68,8 @@ describe("private files", () => {
     chmodSync(chosen, 0o755);
     vi.stubEnv("AGENT_VOICE_HOME", home);
 
-    writeFileAtomically({ path: lastGood, text: "gpt-5\n" });
-    writeFileAtomically({ path: chosenConfig, text: "{}\n" });
+    writeFileAtomically({ path: lastGood, contents: "gpt-5\n" });
+    writeFileAtomically({ path: chosenConfig, contents: "{}\n" });
 
     expect(permissions(home)).toBe(0o700);
     expect(permissions(lastGood)).toBe(0o600);

@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
 import { makeClipBuffer, openMicrophone } from "./microphone.js";
@@ -52,13 +51,10 @@ describe("openMicrophone", () => {
     const clip = makeClipBuffer();
     clip.begin();
 
-    const readFailure = openMicrophone(clip).pipe(
-      Effect.flatMap((microphone) => Effect.flip(microphone.failure)),
-      Effect.scoped,
-    );
-    const failure = await Effect.runPromise(readFailure);
+    const microphone = await openMicrophone(clip);
+    await expect(microphone.failure).rejects.toThrow("Microphone: device gone");
+    microphone.close();
 
-    expect(failure.message).toBe("Microphone: device gone");
     expect(clip.sampleCount()).toBe(512);
   });
 });

@@ -1,7 +1,6 @@
 import { rmSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 
-import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { makeTestFolder, makeTestSocketPath } from "#src/testing/test-folder.js";
@@ -15,28 +14,32 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  await new Promise((resolve) => {
-    if (server === undefined) {
-      resolve(undefined);
-      return;
-    }
-
-    server.close(resolve);
-  });
+  const runningServer = server;
   server = undefined;
+  if (runningServer !== undefined) {
+    await new Promise<void>((closed) => runningServer.close(() => closed()));
+  }
+
   rmSync(folder, { recursive: true, force: true });
 });
 
 describe("cmuxFocus", () => {
-  it("is unknown, not stuck, when Cmux closes the connection without a reply line", async () => {
-    const socketPath = makeTestSocketPath(folder);
-    // Read the client's side too, so the server sees it close; the reply side ends with no line at all.
-    server = createServer((connection) => connection.resume().end());
-    await new Promise((resolve) => server?.listen(socketPath, () => resolve(undefined)));
+  // Cmux answers in well under a second; a longer wait means the call hung.
+  const answerTimeoutMilliseconds = 2_000;
 
-    const askFocus = cmuxFocus(socketPath).pipe(Effect.timeout("2 seconds"));
-    const focus = await Effect.runPromise(askFocus);
+  it(
+    "is unknown, not stuck, when Cmux closes the connection without a reply line",
+    async () => {
+      const socketPath = makeTestSocketPath(folder);
+      // Read the client's side too, so the server sees it close; the reply side ends with no line at all.
+      const silentServer = createServer((connection) => connection.resume().end());
+      server = silentServer;
+      await new Promise<void>((listening) => silentServer.listen(socketPath, () => listening()));
 
-    expect(focus).toEqual({ kind: "unknown" });
-  });
+      const focus = await cmuxFocus(socketPath);
+
+      expect(focus).toEqual({ kind: "unknown" });
+    },
+    answerTimeoutMilliseconds,
+  );
 });

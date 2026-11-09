@@ -1,15 +1,6 @@
-import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import {
-  configSchema,
-  configSettings,
-  defaultConfig,
-  settingValueFromText,
-  withSettingValue,
-} from "./config-schema.js";
-
-const decode = Schema.decodeUnknownSync(configSchema, { onExcessProperty: "error" });
+import { configSettings, decodeConfig, defaultConfig, parseSettingValue, withSettingValue } from "./config-schema.js";
 
 describe("configSchema", () => {
   it("decodes an empty file to the documented defaults", () => {
@@ -33,9 +24,9 @@ describe("configSchema", () => {
   });
 
   it("accepts Right Option and rejects unsupported hold keys", () => {
-    expect(decode({ dictationHoldKey: "right-option" }).dictationHoldKey).toBe("right-option");
-    expect(() => decode({ dictationHoldKey: "left-option" })).toThrow();
-    expect(() => decode({ dictationHoldKey: "command-s" })).toThrow();
+    expect(decodeConfig({ dictationHoldKey: "right-option" }).dictationHoldKey).toBe("right-option");
+    expect(() => decodeConfig({ dictationHoldKey: "left-option" })).toThrow();
+    expect(() => decodeConfig({ dictationHoldKey: "command-s" })).toThrow();
   });
 
   it.each([
@@ -46,7 +37,7 @@ describe("configSchema", () => {
     ["English", "en"],
     ["EN-US", "en"],
   ])("accepts the dictation language alias %j as %s", (spoken, language) => {
-    expect(decode({ dictationLanguage: spoken }).dictationLanguage).toBe(language);
+    expect(decodeConfig({ dictationLanguage: spoken }).dictationLanguage).toBe(language);
   });
 
   it.each([
@@ -58,8 +49,8 @@ describe("configSchema", () => {
     ["Hebrew", "ivrit"],
     ["turbo-q5", "turbo-q5"],
   ])("accepts the dictation model alias %j as %s", (spoken, model) => {
-    expect(decode({ dictationModel: spoken }).dictationModel).toBe(model);
-    expect(() => decode({ dictationModel: "gigantic" })).toThrow();
+    expect(decodeConfig({ dictationModel: spoken }).dictationModel).toBe(model);
+    expect(() => decodeConfig({ dictationModel: "gigantic" })).toThrow();
   });
 
   it.each([
@@ -68,20 +59,20 @@ describe("configSchema", () => {
     ["pie", "pi"],
     ["Codex", "codex"],
   ])("accepts the refine provider alias %j as %s", (name, provider) => {
-    expect(decode({ refineProvider: name }).refineProvider).toBe(provider);
+    expect(decodeConfig({ refineProvider: name }).refineProvider).toBe(provider);
   });
 
   it("accepts a voice in any case and rejects an unknown voice", () => {
-    expect(decode({ speechVoice: "m3" }).speechVoice).toBe("M3");
-    expect(() => decode({ speechVoice: "Z9" })).toThrow();
+    expect(decodeConfig({ speechVoice: "m3" }).speechVoice).toBe("M3");
+    expect(() => decodeConfig({ speechVoice: "Z9" })).toThrow();
   });
 
   it("rejects out-of-range numbers, unknown modes, the dropped local provider, and unknown keys", () => {
-    expect(() => decode({ dictationKeepListeningSeconds: 9 })).toThrow();
-    expect(() => decode({ speechWordsPerMinute: 10 })).toThrow();
-    expect(() => decode({ speechMode: "loud" })).toThrow();
-    expect(() => decode({ refineProvider: "local" })).toThrow();
-    expect(() => decode({ unknownSetting: "off" })).toThrow();
+    expect(() => decodeConfig({ dictationKeepListeningSeconds: 9 })).toThrow();
+    expect(() => decodeConfig({ speechWordsPerMinute: 10 })).toThrow();
+    expect(() => decodeConfig({ speechMode: "loud" })).toThrow();
+    expect(() => decodeConfig({ refineProvider: "local" })).toThrow();
+    expect(() => decodeConfig({ unknownSetting: "off" })).toThrow();
   });
 
   it("lists every setting with a kebab-case name, a label, a description, and its choices", () => {
@@ -111,19 +102,17 @@ describe("configSchema", () => {
       throw new Error("missing settings");
     }
 
-    const seconds = settingValueFromText({ setting: keepListening, text: "1" }).pipe(Effect.runSync);
-    const clearedModel = settingValueFromText({ setting: refineModel, text: " " }).pipe(Effect.runSync);
+    const seconds = parseSettingValue({ setting: keepListening, enteredWords: "1" });
+    const clearedModel = parseSettingValue({ setting: refineModel, enteredWords: " " });
     const withModel = withSettingValue({
       config: defaultConfig,
       key: "refineModel",
-      value: Option.some("grok-4.5"),
-    }).pipe(Effect.runSync);
-    const cleared = withSettingValue({ config: withModel, key: "refineModel", value: Option.none() }).pipe(
-      Effect.runSync,
-    );
+      value: "grok-4.5",
+    });
+    const cleared = withSettingValue({ config: withModel, key: "refineModel", value: null });
 
-    expect(seconds).toEqual(Option.some(1));
-    expect(clearedModel).toEqual(Option.none());
+    expect(seconds).toBe(1);
+    expect(clearedModel).toBeNull();
     expect(withModel.refineModel).toBe("grok-4.5");
     expect("refineModel" in cleared).toBe(false);
   });

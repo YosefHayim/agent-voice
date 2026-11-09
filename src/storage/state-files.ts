@@ -12,8 +12,9 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { Option, Schema } from "effect";
+import type { ZodType } from "zod";
 
+import { isErrorWithCode } from "#src/error-code.js";
 import { agentVoiceHome } from "#src/settings/agent-voice-home.js";
 
 // Dictated, refined, and reply text is readable by the user alone: its files are 0600 and its folders 0700.
@@ -28,7 +29,7 @@ export const makePrivateFolder = (folder: string): void => {
 };
 
 // Folders under agent-voice's home are tightened; a folder the user picked (say, for AGENT_VOICE_CONFIG_FILE) keeps its mode.
-const makeFolderFor = (filePath: string): void => {
+const makeParentFolder = (filePath: string): void => {
   const folder = path.dirname(filePath);
   const home = agentVoiceHome();
   const relative = path.relative(home, folder);
@@ -52,6 +53,7 @@ export const openPrivateFile = (request: { readonly path: string; readonly flags
     closeSync(descriptor);
     throw error;
   }
+
   return descriptor;
 };
 
@@ -69,57 +71,73 @@ export const writePrivateFile = (request: {
 };
 
 // Written through a temporary sibling and a rename, so readers never see half a file.
-export const writeFileAtomically = (request: { readonly path: string; readonly text: string }): void => {
-  makeFolderFor(request.path);
+export const writeFileAtomically = (request: { readonly path: string; readonly contents: string }): void => {
+  makeParentFolder(request.path);
   const folder = path.dirname(request.path);
   const fileName = path.basename(request.path);
   const staging = path.join(folder, `.${fileName}.${randomUUID()}.partial`);
-  writeFileSync(staging, request.text, { encoding: "utf8", mode: PRIVATE_FILE_MODE });
+  writeFileSync(staging, request.contents, { encoding: "utf8", mode: PRIVATE_FILE_MODE });
   renameSync(staging, request.path);
 };
 
 export const writeJsonAtomically = (request: { readonly path: string; readonly value: unknown }): void => {
-  const json = JSON.stringify(request.value);
-  writeFileAtomically({ path: request.path, text: `${json}\n` });
+  const serializedValue = JSON.stringify(request.value);
+  writeFileAtomically({ path: request.path, contents: `${serializedValue}\n` });
 };
 
-const isMissingFile = Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }));
-
-// Only a missing file is none; any other read failure is thrown, so a caller that writes the file back never
+// Only a missing file is null; any other read failure is thrown, so a caller that writes the file back never
 // mistakes an unreadable file for a missing one.
-export const readTextIfPresent = (filePath: string): Option.Option<string> => {
+export const readTextIfPresent = (filePath: string): string | null => {
   try {
-    const text = readFileSync(filePath, "utf8");
-    return Option.some(text);
+    return readFileSync(filePath, "utf8");
   } catch (error) {
-    if (isMissingFile(error)) {
-      return Option.none();
+    const isMissing = isErrorWithCode(error, "ENOENT");
+    if (isMissing) {
+      return null;
     }
 
     throw error;
   }
 };
 
-// For files agent-voice only reads, never writes back.
-export const readTextIfReadable = (filePath: string): Option.Option<string> => {
+// For files agent-voice only reads, never writes back: an unreadable file counts as missing.
+export const readTextIfReadable = (filePath: string): string | null => {
   try {
     return readTextIfPresent(filePath);
   } catch {
-    return Option.none();
+    // Read-only files: any failure to read means there is nothing to use, so the caller falls back to its default.
+    return null;
   }
 };
 
-export const readJsonFile = <Value, Encoded>(request: {
+// A file that is not JSON, or does not match the schema, reads as null.
+const parseJsonText = <Value>(fileContents: string, schema: ZodType<Value>): Value | null => {
+  try {
+    const jsonValue: unknown = JSON.parse(fileContents);
+    const checkedReply = schema.safeParse(jsonValue);
+    return checkedReply.success ? checkedReply.data : null;
+  } catch {
+    // Invalid JSON is an expected outcome for a state file, so it reads as missing.
+    return null;
+  }
+};
+
+export const readJsonFile = <Value>(request: {
   readonly path: string;
-  readonly schema: Schema.Schema<Value, Encoded>;
-}): Option.Option<Value> => {
-  const decodeJson = Schema.decodeUnknownOption(Schema.parseJson(request.schema));
-  return readTextIfReadable(request.path).pipe(Option.flatMap(decodeJson));
+  readonly schema: ZodType<Value>;
+}): Value | null => {
+  const fileContents = readTextIfReadable(request.path);
+  const isThereNoFileContents = fileContents === null;
+  if (isThereNoFileContents) {
+    return null;
+  }
+
+  return parseJsonText(fileContents, request.schema);
 };
 
 export const removeIfPresent = (filePath: string): void => rmSync(filePath, { force: true });
 
 export const touchFile = (filePath: string): void => {
-  makeFolderFor(filePath);
+  makeParentFolder(filePath);
   writeFileSync(filePath, "");
 };

@@ -50,7 +50,7 @@ const devinArguments = Args.text({ name: "devin-argument" }).pipe(
 export const devinCommand = Command.make("devin", { devinArguments }, (args) =>
   Effect.gen(function* () {
     yield* TerminalUI.intro("devin");
-    yield* startWorkers;
+    yield* Effect.tryPromise({ try: startWorkers, catch: (error) => error });
     const folder = sessionFolder();
     // Devin writes the whole session here, so the folder is private.
     makePrivateFolder(folder);

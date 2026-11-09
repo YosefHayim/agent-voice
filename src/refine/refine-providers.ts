@@ -54,7 +54,7 @@ const requireCli = (
   attempt: RefineAttempt,
   names: ReadonlyArray<string>,
 ): Effect.Effect<string, RefineAttemptFailed> => {
-  const installed = names.map(findCli);
+  const installed = names.map((name) => Option.fromNullable(findCli(name)));
   const executable = Option.firstSomeOf(installed);
   if (Option.isNone(executable)) {
     return failAttempt(attempt, `${names.join(" or ")} not found on PATH`);
@@ -73,7 +73,10 @@ const timeoutFor = (provider: ProviderId): number => {
 
 const run = (attempt: RefineAttempt, invocation: Invocation): Effect.Effect<CliRun, RefineAttemptFailed> => {
   const timeoutMs = timeoutFor(attempt.provider);
-  return runCli({ ...invocation, timeoutMs }).pipe(Effect.mapError((error) => attemptFailure(attempt, error.message)));
+  return Effect.tryPromise({
+    try: () => runCli({ ...invocation, timeoutMs }),
+    catch: (error) => (error instanceof Error ? error.message : String(error)),
+  }).pipe(Effect.mapError((issue) => attemptFailure(attempt, issue)));
 };
 
 // A CLI that exits non-zero failed, whatever it printed: its stderr is a diagnostic, never a refined prompt.
@@ -139,7 +142,7 @@ const codexArgs = (attempt: RefineAttempt, replyFile: string): ReadonlyArray<str
 };
 
 const fileReplyText = (replyFile: string): string => {
-  const text = readTextIfReadable(replyFile).pipe(Option.getOrElse(() => ""));
+  const text = readTextIfReadable(replyFile) ?? "";
   return text.trim();
 };
 

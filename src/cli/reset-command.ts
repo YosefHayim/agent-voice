@@ -6,7 +6,7 @@ import * as TerminalUI from "./terminal-ui.js";
 
 export const resetCommand = Command.make("reset", {}, () =>
   Effect.gen(function* () {
-    yield* resetWorkers;
+    yield* Effect.promise(resetWorkers);
     yield* TerminalUI.success("Stopped every agent-voice worker and pill and cleared the locks.");
     yield* TerminalUI.detail("Start again with `agent-voice on`.");
   }),

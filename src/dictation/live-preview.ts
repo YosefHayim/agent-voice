@@ -52,7 +52,7 @@ const captionOnce = (request: CaptionRequest) =>
       return;
     }
 
-    const config = yield* readConfigOrDefaults;
+    const config = yield* Effect.sync(readConfigOrDefaults);
     const clipNumber = request.clip.clipNumber();
     const samples = request.clip.tail(CAPTION_TAIL_SECONDS);
     const heard = yield* request.transcriber.caption({ samples, language: config.dictationLanguage });

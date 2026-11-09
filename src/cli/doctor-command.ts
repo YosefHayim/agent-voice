@@ -85,7 +85,7 @@ const nativeModuleCheck = (module: (typeof NATIVE_MODULES)[number]) =>
   );
 
 const toolCheck = (systemTool: (typeof SYSTEM_TOOLS)[number]): DoctorCheck => {
-  const toolPath = findCli(systemTool.tool);
+  const toolPath = Option.fromNullable(findCli(systemTool.tool));
   if (Option.isNone(toolPath)) {
     const detail = `missing (${systemTool.purpose})`;
     return problem({ name: systemTool.tool, status: "fail", detail, fix: "It ships with macOS; check PATH." });
@@ -134,10 +134,14 @@ const microphoneCheckFor = (authorization: string): DoctorCheck => {
   return problem({ name: "Microphone", status: "fail", detail: "denied", fix: MICROPHONE_FIX });
 };
 
-const microphoneCheck = runCli({
-  executable: "osascript",
-  args: ["-l", "JavaScript", "-e", MICROPHONE_STATUS_SCRIPT],
-  timeoutMs: 10_000,
+const microphoneCheck = Effect.tryPromise({
+  try: () =>
+    runCli({
+      executable: "osascript",
+      args: ["-l", "JavaScript", "-e", MICROPHONE_STATUS_SCRIPT],
+      timeoutMs: 10_000,
+    }),
+  catch: (error) => error,
 }).pipe(
   Effect.match({
     onSuccess: (cliRun) => {
@@ -211,7 +215,7 @@ const cmuxCheck = (config: Config): DoctorCheck => {
     return ok("cmux", "not needed (refine sends to the caret)");
   }
 
-  const cmuxPath = findCli("cmux");
+  const cmuxPath = Option.fromNullable(findCli("cmux"));
   if (Option.isNone(cmuxPath)) {
     return problem({
       name: "cmux",
@@ -240,16 +244,18 @@ const settingChecks = (config: Config) =>
     return [ok("Config", "valid"), whisperCheck(config), supertonicCheck(config), ...refine];
   });
 
-const configFailedChecks = (error: Error) => {
+const configFailedChecks = (error: unknown) => {
   const fix = "Fix the file, or reset a setting: agent-voice config unset <name>";
-  return Effect.succeed([problem({ name: "Config", status: "fail", detail: error.message, fix })]);
+  const isErrorObject = error instanceof Error;
+  const detail = isErrorObject ? error.message : String(error);
+  return Effect.succeed([problem({ name: "Config", status: "fail", detail, fix })]);
 };
 
 const runDoctorChecks = Effect.gen(function* () {
   const natives = yield* Effect.forEach(NATIVE_MODULES, nativeModuleCheck);
   const keyboard = yield* keyboardChecks;
   const microphone = yield* microphoneCheck;
-  const settings = yield* readConfig.pipe(
+  const settings = yield* Effect.try({ try: readConfig, catch: (error) => error }).pipe(
     Effect.matchEffect({ onSuccess: settingChecks, onFailure: configFailedChecks }),
   );
   const tools = SYSTEM_TOOLS.map(toolCheck);

@@ -2,18 +2,7 @@ import { createWriteStream, mkdirSync, renameSync, rmSync, statSync } from "node
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 
-import { Effect, Schema } from "effect";
-
 import { waitForLock } from "./file-lock.js";
-
-export class ModelDownloadError extends Schema.TaggedError<ModelDownloadError>()("ModelDownloadError", {
-  url: Schema.String,
-  issue: Schema.String,
-}) {
-  get message(): string {
-    return `Could not download ${this.url}: ${this.issue}`;
-  }
-}
 
 type DownloadRequest = {
   readonly url: string;
@@ -21,7 +10,7 @@ type DownloadRequest = {
   readonly onProgress: (receivedBytes: number) => void;
 };
 
-const PROGRESS_STEP_BYTES = 20_000_000;
+const progressStepBytes = 20_000_000;
 
 // A callback that throws errors the stream, which fails the copy as a network error would, so the `.partial` file
 // is still removed.
@@ -31,20 +20,23 @@ const progressCounter = (onProgress: (receivedBytes: number) => void): Transform
   return new TransformStream({
     transform: (chunk, controller) => {
       received += chunk.length;
-      if (received - reported >= PROGRESS_STEP_BYTES) {
+      const isProgressDue = received - reported >= progressStepBytes;
+      if (isProgressDue) {
         reported = received;
         onProgress(received);
       }
+
       controller.enqueue(chunk);
     },
     flush: () => onProgress(received),
   });
 };
 
-const fetchIntoPlace = async (request: DownloadRequest & { readonly signal: AbortSignal }): Promise<void> => {
+const fetchIntoPlace = async (request: DownloadRequest): Promise<void> => {
   const partial = `${request.destination}.partial`;
-  const reply = await fetch(request.url, { signal: request.signal, redirect: "follow" });
-  if (!reply.ok || reply.body === null) {
+  const reply = await fetch(request.url, { redirect: "follow" });
+  const isReplyFailed = !reply.ok || reply.body === null;
+  if (isReplyFailed) {
     throw new Error(`HTTP ${String(reply.status)}`);
   }
 
@@ -59,6 +51,7 @@ const fetchIntoPlace = async (request: DownloadRequest & { readonly signal: Abor
     rmSync(partial, { force: true });
     throw error;
   }
+
   renameSync(partial, request.destination);
 };
 
@@ -72,7 +65,7 @@ const fileIdentity = (filePath: string): string => {
   return `${String(stats.dev)}:${String(stats.ino)}`;
 };
 
-const issueOf = (error: unknown): string => {
+const describeIssue = (error: unknown): string => {
   if (error instanceof Error) {
     return error.message;
   }
@@ -80,23 +73,31 @@ const issueOf = (error: unknown): string => {
   return String(error);
 };
 
-// One download of a file runs at a time across processes: a second caller waits on `<file>.lock`, then reuses the
-// file the first one renamed into place. A crashed holder's lock ends with its process, and the next holder
-// overwrites its `.partial` file.
-export const downloadFile = (request: DownloadRequest): Effect.Effect<void, ModelDownloadError> => {
-  const failed = (error: unknown) => new ModelDownloadError({ url: request.url, issue: issueOf(error) });
-  const folder = path.dirname(request.destination);
+const downloadFileUnderLock = async (request: DownloadRequest): Promise<void> => {
   const lockPath = `${request.destination}.lock`;
-  return Effect.gen(function* () {
-    yield* Effect.try({ try: () => mkdirSync(folder, { recursive: true }), catch: failed });
-    const before = yield* Effect.try({ try: () => fileIdentity(request.destination), catch: failed });
-    yield* waitForLock(lockPath).pipe(Effect.mapError(failed));
-    const current = yield* Effect.try({ try: () => fileIdentity(request.destination), catch: failed });
+  mkdirSync(path.dirname(request.destination), { recursive: true });
+  const before = fileIdentity(request.destination);
+  const releaseLock = await waitForLock(lockPath);
+  try {
+    const current = fileIdentity(request.destination);
     const isFinishedByAnother = current !== "" && current !== before;
     if (isFinishedByAnother) {
       return;
     }
 
-    yield* Effect.tryPromise({ try: (signal) => fetchIntoPlace({ ...request, signal }), catch: failed });
-  }).pipe(Effect.scoped);
+    await fetchIntoPlace(request);
+  } finally {
+    releaseLock();
+  }
+};
+
+// One download of a file runs at a time across processes: a second caller waits on `<file>.lock`, then reuses the
+// file the first one renamed into place. A crashed holder's lock ends with its process, and the next holder
+// overwrites its `.partial` file.
+export const downloadFile = async (request: DownloadRequest): Promise<void> => {
+  try {
+    await downloadFileUnderLock(request);
+  } catch (error) {
+    throw new Error(`Could not download ${request.url}: ${describeIssue(error)}`, { cause: error });
+  }
 };
