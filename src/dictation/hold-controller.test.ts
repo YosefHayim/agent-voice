@@ -3,9 +3,8 @@ import path from "node:path";
 
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { makeTestFolder } from "#src/scripts/test-folder.js";
 import { readConfig } from "#src/settings/config-file.js";
+import { makeTestFolder } from "#src/testing/test-folder.js";
 import { stopSpeech } from "#src/workers/worker-processes.js";
 import { makeStatusWriter } from "#src/workers/worker-status.js";
 import { makeHoldController } from "./hold-controller.js";

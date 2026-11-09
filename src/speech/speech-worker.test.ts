@@ -5,7 +5,7 @@ import path from "node:path";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeTestFolder, makeTestSocketPath } from "#src/scripts/test-folder.js";
+import { makeTestFolder, makeTestSocketPath } from "#src/testing/test-folder.js";
 import { queueReply } from "./inbox.js";
 import { makeSpeechPlayer } from "./speech-player.js";
 import { speakNextReply } from "./speech-worker.js";

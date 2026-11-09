@@ -3,8 +3,8 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, renameSync, rmSync, sta
 import path from "node:path";
 
 import { Effect, Either, Option, Schema } from "effect";
-import { makePrivateFolder, readJsonFile, readTextIfPresent, writeJsonAtomically } from "#src/files/state-files.js";
 import { stateFile, stateFolder } from "#src/settings/agent-voice-home.js";
+import { makePrivateFolder, readJsonFile, readTextIfPresent, writeJsonAtomically } from "#src/storage/state-files.js";
 import { agentVoiceInvocation } from "#src/workers/worker-processes.js";
 import { agentIdSchema } from "./agent-catalog.js";
 import {

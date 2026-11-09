@@ -1,6 +1,6 @@
 import { Option, Schema } from "effect";
-import { readJsonFile, writeJsonAtomically } from "#src/files/state-files.js";
 import { stateFile } from "#src/settings/agent-voice-home.js";
+import { readJsonFile, writeJsonAtomically } from "#src/storage/state-files.js";
 
 const dictationStageSchema = Schema.Literal(
   "starting",

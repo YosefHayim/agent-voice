@@ -3,9 +3,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import { Option, Schema } from "effect";
-
-import { readJsonFile, writeJsonAtomically } from "#src/files/state-files.js";
 import { stateFile } from "#src/settings/agent-voice-home.js";
+import { readJsonFile, writeJsonAtomically } from "#src/storage/state-files.js";
 import { type AgentHookTarget, agentHookTargets, agentIdSchema } from "./agent-catalog.js";
 
 const hookSettingsFileSchema = Schema.Struct({

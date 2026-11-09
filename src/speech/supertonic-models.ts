@@ -2,9 +2,9 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { Effect } from "effect";
-import { downloadFile, type ModelDownloadError } from "#src/files/model-download.js";
 import { stateFolder } from "#src/settings/agent-voice-home.js";
 import { speechVoices } from "#src/settings/config-schema.js";
+import { downloadFile, type ModelDownloadError } from "#src/storage/model-download.js";
 
 // The revision the supertonic 1.3.1 PyPI package pinned, so voices sound exactly as before.
 const SUPERTONIC_REVISION = "724fb5abbf5502583fb520898d45929e62f02c0b";

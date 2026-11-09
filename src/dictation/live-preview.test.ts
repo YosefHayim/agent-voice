@@ -3,7 +3,7 @@ import { rmSync } from "node:fs";
 import { Effect, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeTestFolder } from "#src/scripts/test-folder.js";
+import { makeTestFolder } from "#src/testing/test-folder.js";
 import { makeStatusWriter } from "#src/workers/worker-status.js";
 import { captionLoop, makeLiveCaption } from "./live-preview.js";
 import { makeClipBuffer } from "./microphone.js";

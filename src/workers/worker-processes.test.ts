@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { isMacOS, makeTestFolder, repositoryRoot } from "#src/scripts/test-folder.js";
+import { isMacOS, makeTestFolder, repositoryRoot } from "#src/testing/test-folder.js";
 import { isWorkerRunning, stopWorkers } from "./worker-processes.js";
 
 const workerProcessesModule = fileURLToPath(new URL("./worker-processes.js", import.meta.url));

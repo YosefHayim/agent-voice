@@ -10,11 +10,11 @@ import {
   selectWhisperModel,
   whisperModelPath,
 } from "#src/dictation/whisper-models.js";
-import type { ModelDownloadError } from "#src/files/model-download.js";
 import { readConfig } from "#src/settings/config-file.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { ensureSupertonicModels, missingSupertonicFiles } from "#src/speech/supertonic-models.js";
+import type { ModelDownloadError } from "#src/storage/model-download.js";
 import { startWorkers, stopWorkers } from "#src/workers/worker-processes.js";
 import * as TerminalUI from "./terminal-ui.js";
 
