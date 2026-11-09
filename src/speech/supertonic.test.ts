@@ -6,12 +6,12 @@ import path from "node:path";
 import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { samplesFromPcm } from "../dictation/clipAudio.js";
+import { samplesFromPcm } from "../dictation/clip-audio.js";
 import { loadTranscriber } from "../dictation/transcriber.js";
-import { makeTestFolder } from "../scripts/testFolder.js";
-import { renderMarkdownToWav } from "./speechPlayer.js";
+import { makeTestFolder } from "../scripts/test-folder.js";
+import { renderMarkdownToWav } from "./speech-player.js";
 import { loadSupertonic } from "./supertonic.js";
-import { decodeWav } from "./wavFile.js";
+import { decodeWav } from "./wav-file.js";
 
 // Smoke tests only read the models already in ~/.agent-voice/models and never download them.
 const home = homedir();

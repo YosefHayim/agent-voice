@@ -1,9 +1,9 @@
 import { type ChildProcess, spawn } from "node:child_process";
 
 import { Option } from "effect";
-import { removeIfPresent } from "../files/stateFiles.js";
-import { agentVoiceHome, stateFile } from "../settings/agentVoiceHome.js";
-import { runningPid, signalGroup, writePid } from "./workerProcesses.js";
+import { removeIfPresent } from "../files/state-files.js";
+import { agentVoiceHome, stateFile } from "../settings/agent-voice-home.js";
+import { runningPid, signalGroup, writePid } from "./worker-processes.js";
 
 // A bottom-centre panel that shows the dictation stage from status.json. It is a JavaScript for Automation script
 // run by `osascript`, so it needs no compiler and no app bundle, and it exits when the worker it serves is gone.

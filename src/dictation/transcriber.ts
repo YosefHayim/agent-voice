@@ -5,10 +5,10 @@ import { availableParallelism } from "node:os";
 import path from "node:path";
 
 import { Effect, Option, Schema } from "effect";
-import type { Config } from "../settings/configSchema.js";
-import { pcmFromSamples, prepareForWhisper, rootMeanSquare, syntheticSpeech } from "./clipAudio.js";
-import { tidyWhisperText } from "./transcriptText.js";
-import type { TranscribeOptions, WhisperModule } from "./whisperNode.js";
+import type { Config } from "../settings/config-schema.js";
+import { pcmFromSamples, prepareForWhisper, rootMeanSquare, syntheticSpeech } from "./clip-audio.js";
+import { tidyWhisperText } from "./transcript-text.js";
+import type { TranscribeOptions, WhisperModule } from "./whisper-node.js";
 
 export class TranscriberError extends Schema.TaggedError<TranscriberError>()("TranscriberError", {
   issue: Schema.String,
@@ -68,7 +68,7 @@ export const WHISPER_PACKAGE = "@fugood/whisper.node";
 
 const importWhisper = async (): Promise<WhisperModule> => {
   const loaded: unknown = await import(WHISPER_PACKAGE);
-  // The package ships no declarations (external type); whisperNode.d.ts describes the part agent-voice calls.
+  // The package ships no declarations (external type); whisper-node.d.ts describes the part agent-voice calls.
   return loaded as WhisperModule;
 };
 

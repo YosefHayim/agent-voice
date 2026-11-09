@@ -3,23 +3,23 @@ import { CliConfig, Command, ValidationError } from "@effect/cli";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Effect, ParseResult } from "effect";
 
-import { runReplyHookFromArguments } from "../agents/replyHook.js";
-import { agentVoiceVersion } from "./agentVoiceVersion.js";
-import { CliUsageError } from "./cliUsageError.js";
-import { configCommand } from "./configCommand.js";
-import { devinCommand } from "./devinCommand.js";
-import { doctorCommand } from "./doctorCommand.js";
-import { hotkeyCheckCommand } from "./hotkeyCheckCommand.js";
-import { offCommand } from "./offCommand.js";
-import { onCommand } from "./onCommand.js";
-import { refineCommand } from "./refineCommand.js";
-import { renderCommand } from "./renderCommand.js";
-import { replyCommand } from "./replyCommand.js";
-import { resetCommand } from "./resetCommand.js";
-import { speakCommand } from "./speakCommand.js";
-import { statusCommand } from "./statusCommand.js";
-import * as TerminalUI from "./TerminalUI.js";
-import { workerCommand } from "./workerCommand.js";
+import { runReplyHookFromArguments } from "../agents/reply-hook.js";
+import { agentVoiceVersion } from "./agent-voice-version.js";
+import { CliUsageError } from "./cli-usage-error.js";
+import { configCommand } from "./config-command.js";
+import { devinCommand } from "./devin-command.js";
+import { doctorCommand } from "./doctor-command.js";
+import { hotkeyCheckCommand } from "./hotkey-check-command.js";
+import { offCommand } from "./off-command.js";
+import { onCommand } from "./on-command.js";
+import { refineCommand } from "./refine-command.js";
+import { renderCommand } from "./render-command.js";
+import { replyCommand } from "./reply-command.js";
+import { resetCommand } from "./reset-command.js";
+import { speakCommand } from "./speak-command.js";
+import { statusCommand } from "./status-command.js";
+import * as TerminalUI from "./terminal-ui.js";
+import { workerCommand } from "./worker-command.js";
 
 const agentVoice = Command.make("agent-voice").pipe(
   Command.withDescription("Hold Shift to dictate into any text field and hear coding-agent replies read aloud."),

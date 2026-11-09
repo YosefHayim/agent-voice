@@ -3,10 +3,10 @@ import { existsSync, readdirSync, renameSync } from "node:fs";
 import path from "node:path";
 
 import { Effect, Option, Schema } from "effect";
-import { makePrivateFolder, readJsonFile, removeIfPresent, writeJsonAtomically } from "../files/stateFiles.js";
-import { stateFile, stateFolder } from "../settings/agentVoiceHome.js";
-import type { Config } from "../settings/configSchema.js";
-import { type CmuxFocus, cmuxFocus } from "./cmuxFocus.js";
+import { makePrivateFolder, readJsonFile, removeIfPresent, writeJsonAtomically } from "../files/state-files.js";
+import { stateFile, stateFolder } from "../settings/agent-voice-home.js";
+import type { Config } from "../settings/config-schema.js";
+import { type CmuxFocus, cmuxFocus } from "./cmux-focus.js";
 
 const terminalOriginSchema = Schema.Struct({ kind: Schema.Literal("terminal") });
 

@@ -6,10 +6,10 @@ import path from "node:path";
 import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { makeTestFolder } from "../scripts/testFolder.js";
-import { decodeWav } from "../speech/wavFile.js";
-import { samplesFromPcm } from "./clipAudio.js";
-import { formatDictation } from "./dictationFormat.js";
+import { makeTestFolder } from "../scripts/test-folder.js";
+import { decodeWav } from "../speech/wav-file.js";
+import { samplesFromPcm } from "./clip-audio.js";
+import { formatDictation } from "./dictation-format.js";
 import { loadTranscriber } from "./transcriber.js";
 
 // Smoke tests only read a Whisper model already in ~/.agent-voice/models and never download one.
