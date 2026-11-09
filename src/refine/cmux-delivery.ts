@@ -62,12 +62,13 @@ const cmuxJson = (request: { readonly args: ReadonlyArray<string>; readonly step
   Effect.gen(function* () {
     const executable = cmuxExecutable();
     const cliRun = yield* Effect.tryPromise({
-      try: () =>
+      try: (signal) =>
         runCli({
           executable,
           args: request.args,
           timeoutMs: CMUX_TIMEOUT_MS,
           environment: { CMUX_QUIET: "1" },
+          signal,
         }),
       catch: (error) => (error instanceof Error ? error.message : String(error)),
     }).pipe(Effect.mapError((issue) => new CmuxDeliveryFailed({ step: request.step, detail: issue })));

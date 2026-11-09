@@ -24,7 +24,7 @@ const waitForStop: Effect.Effect<void> = Effect.repeat(Effect.void, {
 });
 
 // The microphone rejects with an Error; anything else is wrapped so the failure text still reads.
-const asError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
+const createErrorFromUnknown = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 const runWorker = Effect.gen(function* () {
   const config = yield* Effect.sync(readConfigOrDefaults);
@@ -76,7 +76,7 @@ const runWorker = Effect.gen(function* () {
   const controller = makeHoldController({ keyboard, clip, caption, status, queue });
   const pollEvery = Schedule.spaced(HOLD_POLL_MS);
   yield* controller.poll.pipe(Effect.repeat(pollEvery), Effect.forkScoped);
-  const microphoneFailure = Effect.tryPromise({ try: () => microphone.failure, catch: asError });
+  const microphoneFailure = Effect.tryPromise({ try: () => microphone.failure, catch: createErrorFromUnknown });
   yield* Effect.raceFirst(waitForStop, microphoneFailure);
 });
 

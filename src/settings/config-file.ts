@@ -31,12 +31,22 @@ export const readConfig = (): Config => {
   return decodeSavedText({ filePath, text: savedFileContents });
 };
 
+// Each distinct broken-config message is logged once per process, since workers read the config often.
+const loggedConfigErrors = new Set<string>();
+
 // Workers read the config on every decision; a broken file means defaults, never a crashed worker.
 export const readConfigOrDefaults = (): Config => {
   try {
     return readConfig();
   } catch (error) {
-    console.error({ error });
+    const issue = error instanceof Error ? error.message : String(error);
+    const isIssueNew = !loggedConfigErrors.has(issue);
+
+    if (isIssueNew) {
+      loggedConfigErrors.add(issue);
+      console.error({ error });
+    }
+
     return defaultConfig;
   }
 };

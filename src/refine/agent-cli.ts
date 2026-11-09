@@ -71,17 +71,21 @@ const createCliRunError = (executable: string, issue: string): Error =>
 
 // stdin stays closed: several agent CLIs block on "reading additional input from stdin" when a pipe is inherited.
 // Rejects when the CLI cannot start, times out, or errors. A non-zero exit is still a run.
+// An aborted signal kills the child, so a caller that gave up leaves no process running.
 export const runCli = (request: {
   readonly executable: string;
   readonly args: ReadonlyArray<string>;
   readonly timeoutMs: number;
   readonly environment?: Readonly<Record<string, string>>;
+  readonly signal: AbortSignal;
 }): Promise<CliRun> =>
   new Promise<CliRun>((finishRun, failRun) => {
     const child = spawn(request.executable, [...request.args], {
       cwd: homedir(),
       env: { ...process.env, ...request.environment, NO_COLOR: "1", PATH: searchPath() },
       stdio: ["ignore", "pipe", "pipe"],
+      signal: request.signal,
+      killSignal: "SIGKILL",
     });
     const stdoutChunks: Array<Buffer> = [];
     const stderrChunks: Array<Buffer> = [];
@@ -122,16 +126,18 @@ export const nonBlankLines = (text: string): ReadonlyArray<string> =>
     .map((line) => line.trim())
     .filter((line) => line !== "");
 
-// A CLI that is missing, fails to start, or times out has no lines, so this never rejects.
+// A CLI that fails to start, times out, or errors is logged and has no lines, so this never rejects.
 export const runCliLines = async (request: {
   readonly executable: string;
   readonly args: ReadonlyArray<string>;
   readonly timeoutMs: number;
+  readonly signal: AbortSignal;
 }): Promise<ReadonlyArray<string>> => {
   try {
     const run = await runCli(request);
     return nonBlankLines(`${run.stdout}\n${run.stderr}`);
-  } catch {
+  } catch (error) {
+    console.error({ executable: request.executable, error });
     return [];
   }
 };

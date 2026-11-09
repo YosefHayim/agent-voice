@@ -87,7 +87,7 @@ on error errMsg
   return "ERROR:" & errMsg
 end try`;
   return Effect.tryPromise({
-    try: () => runCli({ executable: "osascript", args: ["-e", script], timeoutMs: DIALOG_TIMEOUT_MS }),
+    try: (signal) => runCli({ executable: "osascript", args: ["-e", script], timeoutMs: DIALOG_TIMEOUT_MS, signal }),
     catch: (error) => error,
   }).pipe(
     Effect.map((cliRun) => chosenItem(cliRun.stdout)),
@@ -101,7 +101,7 @@ const showAlert = (request: { readonly title: string; readonly message: string }
   const message = appleScriptText(shortMessage);
   const script = `try\n  display alert "${title}" message "${message}" as warning buttons {"OK"} default button "OK"\nend try`;
   return Effect.tryPromise({
-    try: () => runCli({ executable: "osascript", args: ["-e", script], timeoutMs: ALERT_TIMEOUT_MS }),
+    try: (signal) => runCli({ executable: "osascript", args: ["-e", script], timeoutMs: ALERT_TIMEOUT_MS, signal }),
     catch: (error) => error,
   }).pipe(Effect.ignore);
 };

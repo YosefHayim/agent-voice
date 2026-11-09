@@ -45,10 +45,10 @@ const MAX_LISTED_MODELS = 80;
 const EDGE_BRACKETS = /^[()[\],]+|[()[\],]+$/gu;
 
 const listLines = (request: { readonly executable: string; readonly args: ReadonlyArray<string> }) =>
-  Effect.promise(() => runCliLines({ ...request, timeoutMs: LISTING_TIMEOUT_MS }));
+  Effect.promise((signal) => runCliLines({ ...request, timeoutMs: LISTING_TIMEOUT_MS, signal }));
 
 const helpLines = (executable: string) =>
-  Effect.promise(() => runCliLines({ executable, args: ["--help"], timeoutMs: HELP_TIMEOUT_MS }));
+  Effect.promise((signal) => runCliLines({ executable, args: ["--help"], timeoutMs: HELP_TIMEOUT_MS, signal }));
 
 const matchesOf = (text: string, pattern: RegExp): ReadonlyArray<string> => text.match(pattern) || [];
 

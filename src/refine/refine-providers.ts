@@ -74,7 +74,7 @@ const timeoutFor = (provider: ProviderId): number => {
 const run = (attempt: RefineAttempt, invocation: Invocation): Effect.Effect<CliRun, RefineAttemptFailed> => {
   const timeoutMs = timeoutFor(attempt.provider);
   return Effect.tryPromise({
-    try: () => runCli({ ...invocation, timeoutMs }),
+    try: (signal) => runCli({ ...invocation, timeoutMs, signal }),
     catch: (error) => (error instanceof Error ? error.message : String(error)),
   }).pipe(Effect.mapError((issue) => attemptFailure(attempt, issue)));
 };

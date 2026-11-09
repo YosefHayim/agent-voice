@@ -135,11 +135,12 @@ const microphoneCheckFor = (authorization: string): DoctorCheck => {
 };
 
 const microphoneCheck = Effect.tryPromise({
-  try: () =>
+  try: (signal) =>
     runCli({
       executable: "osascript",
       args: ["-l", "JavaScript", "-e", MICROPHONE_STATUS_SCRIPT],
       timeoutMs: 10_000,
+      signal,
     }),
   catch: (error) => error,
 }).pipe(
