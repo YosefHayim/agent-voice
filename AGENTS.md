@@ -18,19 +18,19 @@ The folder map is in [README → Project structure](README.md#project-structure)
 
 ## Settings
 
-- Every setting is in `src/settings/configSchema.ts`. The README settings table is checked against it.
-- Every `AGENT_VOICE_*` variable is in `src/settings/environmentVariables.ts`. README and `.env.example` are checked against it.
+- Every setting is in `src/settings/config-schema.ts`. The README settings table is checked against it.
+- Every `AGENT_VOICE_*` variable is in `src/settings/environment-variables.ts`. README and `.env.example` are checked against it.
 
 ## Recipes
 
-- Agent settings change only through `src/agents/hookSettings.ts`: one owned Stop entry, found by its command, backed up first, every other byte kept.
+- Agent settings change only through `src/agents/hook-settings.ts`: one owned Stop entry, found by its command, backed up first, every other byte kept.
 - Native modules load lazily (`koffi`, PvRecorder, whisper.node, onnxruntime-node). `agent-voice reply` must stay fast and never fail, so new imports on that path stay lazy.
-- Tests never touch the real `~/.agent-voice` or agent settings. Set `AGENT_VOICE_HOME` and `HOME` to a folder from `makeTestFolder` (`src/scripts/testFolder.ts`, under the gitignored `.test-home/`) and put fake CLIs on `PATH`. Smoke tests only read models from `~/.agent-voice/models`.
-- The file lock tests need macOS `O_EXLOCK`. They skip on Linux (`isMacOS` in `src/scripts/testFolder.ts`), so `pnpm check` on the Mac is where they run.
+- Tests never touch the real `~/.agent-voice` or agent settings. Set `AGENT_VOICE_HOME` and `HOME` to a folder from `makeTestFolder` (`src/scripts/test-folder.ts`, under the gitignored `.test-home/`) and put fake CLIs on `PATH`. Smoke tests only read models from `~/.agent-voice/models`.
+- The file lock tests need macOS `O_EXLOCK`. They skip on Linux (`isMacOS` in `src/scripts/test-folder.ts`), so `pnpm check` on the Mac is where they run.
 
 ## Version and install
 
-- The version lives only in `package.json`. `src/cli/agentVoiceVersion.ts` reads it.
+- The version lives only in `package.json`. `src/cli/agent-voice-version.ts` reads it.
 - The package is private and not published to npm. Installs and updates follow README → Install and Update.
 
 ## CI

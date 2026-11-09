@@ -8,15 +8,15 @@
     "agent-voice": "dist/src/cli/main.js"
   },
   "scripts": {
-    "dev": "tsx watch src/scripts/cliFromSource.ts status",
-    "dev:cli": "tsx src/scripts/cliFromSource.ts",
+    "dev": "tsx watch src/scripts/cli-from-source.ts status",
+    "dev:cli": "tsx src/scripts/cli-from-source.ts",
     "prod": "pnpm build && node dist/src/cli/main.js status",
     "prepare": "husky",
     "prebuild": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc && node -e \"require('node:fs').chmodSync('dist/src/cli/main.js',0o755)\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:bench": "tsx src/scripts/benchDictation.ts",
+    "test:bench": "tsx src/scripts/bench-dictation.ts",
     "lint": "biome check . && knip",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",

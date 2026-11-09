@@ -4,9 +4,9 @@ import path from "node:path";
 import { Effect, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeTestFolder } from "../scripts/testFolder.js";
-import type { Config } from "../settings/configSchema.js";
-import { focusFrom } from "./cmuxFocus.js";
+import { makeTestFolder } from "../scripts/test-folder.js";
+import type { Config } from "../settings/config-schema.js";
+import { focusFrom } from "./cmux-focus.js";
 import {
   claimNextReply,
   completeReply,

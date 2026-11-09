@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 import { Effect, Either, Schema } from "effect";
 
-import { appendDictationLog } from "../workers/workerLog.js";
+import { appendDictationLog } from "../workers/worker-log.js";
 import type { Keyboard } from "./keyboard.js";
 
 export class CaretError extends Schema.TaggedError<CaretError>()("CaretError", {
