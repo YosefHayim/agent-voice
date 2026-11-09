@@ -18,8 +18,23 @@ const HID_EVENT_TAP = 0;
 const LEFT_SHIFT_KEY = 0x38;
 const RIGHT_SHIFT_KEY = 0x3c;
 const SHIFT_KEYS = [LEFT_SHIFT_KEY, RIGHT_SHIFT_KEY];
+const LEFT_OPTION_KEY = 0x3a;
 const RIGHT_OPTION_KEY = 0x3d;
-const MODIFIER_KEYS = [0x36, 0x37, LEFT_SHIFT_KEY, 0x3a, 0x3b, RIGHT_SHIFT_KEY, RIGHT_OPTION_KEY, 0x3e, 0x3f];
+const OPTION_KEY_FLAGS = new Map([
+  [LEFT_OPTION_KEY, 0x0008_0020n],
+  [RIGHT_OPTION_KEY, 0x0008_0040n],
+]);
+const MODIFIER_KEYS = [
+  0x36,
+  0x37,
+  LEFT_SHIFT_KEY,
+  LEFT_OPTION_KEY,
+  0x3b,
+  RIGHT_SHIFT_KEY,
+  RIGHT_OPTION_KEY,
+  0x3e,
+  0x3f,
+];
 // Caps Lock reads as held while its light is on, not while it is pressed.
 const CAPS_LOCK_KEY = 0x39;
 const RETURN_KEY = 0x24;
@@ -78,6 +93,7 @@ export const loadKeyboard = Effect.gen(function* () {
     "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices",
   );
   const keyState = coreGraphics.func("bool CGEventSourceKeyState(int32_t state, uint16_t key)");
+  const flagsState = coreGraphics.func("uint64_t CGEventSourceFlagsState(int32_t state)");
   const createSource = coreGraphics.func("void* CGEventSourceCreate(int32_t state)");
   const createKeyEvent = coreGraphics.func("void* CGEventCreateKeyboardEvent(void* source, uint16_t key, bool down)");
   const setUnicode = coreGraphics.func(
@@ -91,7 +107,17 @@ export const loadKeyboard = Effect.gen(function* () {
   const trusted = applicationServices.func("bool AXIsProcessTrusted()");
   const source = createSource(COMBINED_SESSION_STATE);
 
-  const isKeyDown = (key: number): boolean => keyState(HID_SYSTEM_STATE, key) === true;
+  const isKeyDown = (key: number): boolean => {
+    const optionFlags = OPTION_KEY_FLAGS.get(key);
+    if (optionFlags === undefined) {
+      return keyState(HID_SYSTEM_STATE, key) === true;
+    }
+
+    // Key state can alias Right Option to Left Option; device flags retain the physical side.
+    const nativeFlags = flagsState(HID_SYSTEM_STATE);
+    const flags = BigInt(nativeFlags);
+    return (flags & optionFlags) === optionFlags;
+  };
 
   const postKey = (request: { readonly key: number; readonly down: boolean; readonly flags: bigint }) => {
     const event = createKeyEvent(source, request.key, request.down);
