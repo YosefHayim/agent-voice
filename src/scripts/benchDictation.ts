@@ -1,4 +1,4 @@
-// `pnpm bench [--models tiny,base,small,turbo-q5] [--seconds 1,2,4] [--runs 3]`: Whisper load and warm decode times
+// `pnpm test:bench [--models tiny,base,small,turbo-q5] [--seconds 1,2,4] [--runs 3]`: Whisper load and warm decode times
 // on synthetic speech (no mic, no typing). Downloads a missing model first.
 
 import { parseArgs } from "node:util";
