@@ -39,6 +39,19 @@ describe("agent-voice config errors", () => {
   });
 });
 
+describe("agent-voice dictation hold key", () => {
+  it("persists Right Option and reports it in status", async () => {
+    const changed = await agentVoice(["config", "set", "dictation-hold-key", "right-option"]);
+    expect(changed.status).toBe(0);
+    const configured = await agentVoice(["config", "get", "dictation-hold-key"]);
+    expect(configured.stdout.trim()).toBe('"right-option"');
+    const status = await agentVoice(["status", "--json"]);
+    const parsedStatus = JSON.parse(status.stdout);
+    expect(parsedStatus.dictation.hotkey).toBe("hold-right-option");
+    expect(parsedStatus.dictation.running).toBe(false);
+  });
+});
+
 // A stand-in speech worker that writes "stopped" to the marker file when it gets the stop-speech signal.
 const startStandInSpeechWorker = async (marker: string) => {
   const listener = `process.on("SIGUSR2", () => { require("node:fs").writeFileSync(process.argv[1], "stopped"); process.exit(0); }); setInterval(() => {}, 1 << 30);`;

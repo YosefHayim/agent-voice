@@ -1,48 +1,47 @@
-// Shift is also a typing key, so a press becomes dictation only when it is held alone past the threshold;
-// any other key pressed meanwhile makes it a shortcut.
+export const holdKeyLabels = { shift: "Shift", "right-option": "Right Option" } as const;
 
 export type HoldState = "idle" | "waiting" | "shortcut" | "listening";
 
-export type HoldEvent = "shiftDown" | "shiftUp" | "otherDown" | "holdElapsed";
+export type HoldEvent = "holdDown" | "holdUp" | "otherDown" | "holdElapsed";
 
 export type HoldAction = "none" | "schedule" | "cancel" | "tap" | "start" | "stop";
 
 type HoldStep = readonly [HoldState, HoldAction];
 
-type ShiftSample = "down" | "up";
+type HoldSample = "down" | "up";
 
-type ShiftEdge = "shiftDown" | "shiftUp" | "none";
+type HoldEdge = "holdDown" | "holdUp" | "none";
 
-// Longer than the Shift press for a capital letter; the mic buffer already started at Shift down.
+// The threshold distinguishes an intentional hold from a tap or a typing shortcut.
 export const HOLD_THRESHOLD_MS = 300;
 
 const DOUBLE_TAP_MS = 400;
 
-export const SHIFT_POLL_MS = 8;
+export const HOLD_POLL_MS = 8;
 
 const holdSteps: Record<HoldState, Record<HoldEvent, HoldStep>> = {
   idle: {
-    shiftDown: ["waiting", "schedule"],
-    shiftUp: ["idle", "none"],
+    holdDown: ["waiting", "schedule"],
+    holdUp: ["idle", "none"],
     otherDown: ["idle", "none"],
     holdElapsed: ["idle", "none"],
   },
   waiting: {
-    shiftDown: ["waiting", "none"],
-    shiftUp: ["idle", "tap"],
+    holdDown: ["waiting", "none"],
+    holdUp: ["idle", "tap"],
     otherDown: ["shortcut", "cancel"],
     holdElapsed: ["listening", "start"],
   },
   shortcut: {
-    shiftDown: ["shortcut", "none"],
-    shiftUp: ["idle", "none"],
+    holdDown: ["shortcut", "none"],
+    holdUp: ["idle", "none"],
     otherDown: ["shortcut", "none"],
     holdElapsed: ["shortcut", "none"],
   },
-  // A slow capital letter can outlast the threshold, so a key pressed while listening drops the clip.
+  // A slow shortcut can outlast the threshold, so another key drops the clip.
   listening: {
-    shiftDown: ["listening", "none"],
-    shiftUp: ["idle", "stop"],
+    holdDown: ["listening", "none"],
+    holdUp: ["idle", "stop"],
     otherDown: ["shortcut", "cancel"],
     holdElapsed: ["listening", "none"],
   },
@@ -50,15 +49,15 @@ const holdSteps: Record<HoldState, Record<HoldEvent, HoldStep>> = {
 
 export const holdTransition = (state: HoldState, event: HoldEvent): HoldStep => holdSteps[state][event];
 
-// Keys already held at Shift down never count: macOS can report a key as held forever (seen with key code 0),
+// Keys already held when a hold begins never count: macOS can report a key as held forever (seen with key code 0),
 // which would cancel every hold.
-export const newlyPressed = (heldAtShiftDown: bigint, heldNow: bigint): boolean => (heldNow & ~heldAtShiftDown) !== 0n;
+export const newlyPressed = (heldAtHoldDown: bigint, heldNow: bigint): boolean => (heldNow & ~heldAtHoldDown) !== 0n;
 
-type ShiftDebounce = { readonly isDown: boolean; readonly downStreak: number; readonly upStreak: number };
+type HoldDebounce = { readonly isDown: boolean; readonly downStreak: number; readonly upStreak: number };
 
-export const initialShiftDebounce: ShiftDebounce = { isDown: false, downStreak: 0, upStreak: 0 };
+export const initialHoldDebounce: HoldDebounce = { isDown: false, downStreak: 0, upStreak: 0 };
 
-const nextStreaks = (debounce: ShiftDebounce, sample: ShiftSample) => {
+const nextStreaks = (debounce: HoldDebounce, sample: HoldSample) => {
   if (sample === "down") {
     return { downStreak: debounce.downStreak + 1, upStreak: 0 };
   }
@@ -68,26 +67,26 @@ const nextStreaks = (debounce: ShiftDebounce, sample: ShiftSample) => {
 
 // 2 samples down (about 16 ms) and 4 samples up (about 32 ms), so a HID blip or another app probing modifiers
 // never ends a real hold mid-recording.
-export const debounceShift = (debounce: ShiftDebounce, sample: ShiftSample): readonly [ShiftDebounce, ShiftEdge] => {
+export const debounceHold = (debounce: HoldDebounce, sample: HoldSample): readonly [HoldDebounce, HoldEdge] => {
   const streaks = nextStreaks(debounce, sample);
   const isPressed = streaks.downStreak >= 2 && !debounce.isDown;
   if (isPressed) {
-    return [{ isDown: true, ...streaks }, "shiftDown"];
+    return [{ isDown: true, ...streaks }, "holdDown"];
   }
 
   const isReleased = streaks.upStreak >= 4 && debounce.isDown;
   if (isReleased) {
-    return [{ isDown: false, ...streaks }, "shiftUp"];
+    return [{ isDown: false, ...streaks }, "holdUp"];
   }
 
   return [{ isDown: debounce.isDown, ...streaks }, "none"];
 };
 
-type ShiftTracker = { readonly debounce: ShiftDebounce; readonly heldAtShiftDown: bigint };
+type HoldTracker = { readonly debounce: HoldDebounce; readonly heldAtHoldDown: bigint };
 
-export const initialShiftTracker: ShiftTracker = { debounce: initialShiftDebounce, heldAtShiftDown: 0n };
+export const initialHoldTracker: HoldTracker = { debounce: initialHoldDebounce, heldAtHoldDown: 0n };
 
-const edgeEvents = (edge: ShiftEdge): ReadonlyArray<HoldEvent> => {
+const edgeEvents = (edge: HoldEdge): ReadonlyArray<HoldEvent> => {
   if (edge === "none") {
     return [];
   }
@@ -95,38 +94,38 @@ const edgeEvents = (edge: ShiftEdge): ReadonlyArray<HoldEvent> => {
   return [edge];
 };
 
-// The keys held when Shift first reads down are the baseline, so a key pressed while the down edge still
+// The keys held when the hold key first reads down are the baseline, so a key pressed while the down edge still
 // debounces counts as typing.
-const baselineKeys = (tracker: ShiftTracker, heldNow: bigint): bigint => {
+const baselineKeys = (tracker: HoldTracker, heldNow: bigint): bigint => {
   const isPressStart = !tracker.debounce.isDown && tracker.debounce.downStreak === 0;
   if (isPressStart) {
     return heldNow;
   }
 
-  return tracker.heldAtShiftDown;
+  return tracker.heldAtHoldDown;
 };
 
-// Once Shift reads up no key counts, so typing right after a release never cancels the clip.
+// Once the hold key reads up no key counts, so typing right after a release never cancels the clip.
 // A key released during the hold counts again when it is pressed again.
-export const sampleShift = (
-  tracker: ShiftTracker,
-  sample: { readonly shift: ShiftSample; readonly otherKeys: () => bigint },
-): readonly [ShiftTracker, ReadonlyArray<HoldEvent>] => {
-  const [debounce, edge] = debounceShift(tracker.debounce, sample.shift);
-  const shiftEvents = edgeEvents(edge);
-  if (sample.shift === "up") {
-    return [{ debounce, heldAtShiftDown: tracker.heldAtShiftDown }, shiftEvents];
+export const sampleHold = (
+  tracker: HoldTracker,
+  sample: { readonly hold: HoldSample; readonly otherKeys: () => bigint },
+): readonly [HoldTracker, ReadonlyArray<HoldEvent>] => {
+  const [debounce, edge] = debounceHold(tracker.debounce, sample.hold);
+  const holdEvents = edgeEvents(edge);
+  if (sample.hold === "up") {
+    return [{ debounce, heldAtHoldDown: tracker.heldAtHoldDown }, holdEvents];
   }
 
   const heldNow = sample.otherKeys();
   const baseline = baselineKeys(tracker, heldNow);
-  const next = { debounce, heldAtShiftDown: baseline & heldNow };
+  const next = { debounce, heldAtHoldDown: baseline & heldNow };
   const isTyping = debounce.isDown && newlyPressed(baseline, heldNow);
   if (!isTyping) {
-    return [next, shiftEvents];
+    return [next, holdEvents];
   }
 
-  return [next, [...shiftEvents, "otherDown"]];
+  return [next, [...holdEvents, "otherDown"]];
 };
 
 export type TapAction = "stopSpeaking" | "refineClipboard" | "toggleMute";

@@ -12,6 +12,7 @@ describe("configSchema", () => {
       speechMuted: true,
       speechVoice: "F4",
       speechWordsPerMinute: 230,
+      dictationHoldKey: "shift",
       dictationLanguage: "en",
       dictationModel: "auto",
       dictationKeepListeningSeconds: 0.2,
@@ -23,6 +24,12 @@ describe("configSchema", () => {
       refineCmuxCommand: "",
       refineCmuxPressEnter: false,
     });
+  });
+
+  it("accepts Right Option and rejects unsupported hold keys", () => {
+    expect(decode({ dictationHoldKey: "right-option" }).dictationHoldKey).toBe("right-option");
+    expect(() => decode({ dictationHoldKey: "left-option" })).toThrow();
+    expect(() => decode({ dictationHoldKey: "command-s" })).toThrow();
   });
 
   it.each([

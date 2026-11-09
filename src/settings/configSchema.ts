@@ -100,7 +100,7 @@ export const configSchema = Schema.Struct({
   speechMuted: withDefault(Schema.Boolean, true).annotations({
     title: "speech muted",
     description:
-      "Read nothing while true; replies that arrive meanwhile are dropped, not saved for later. Double-tap Shift flips it (outside clipboard refine mode).",
+      "Read nothing while true; replies that arrive meanwhile are dropped, not saved for later. In shift hold-key mode, double-tap Shift flips it (outside clipboard refine mode).",
   }),
   speechVoice: withDefault(speechVoiceSchema, "F4").annotations({
     title: "speech voice",
@@ -112,6 +112,11 @@ export const configSchema = Schema.Struct({
     fallback: 230,
     title: "speech rate (words per minute)",
     description: "Speed of read-aloud replies, in words per minute (the voice speed is clamped to 0.7-2.0x).",
+  }),
+  dictationHoldKey: withDefault(Schema.Literal("shift", "right-option"), "shift").annotations({
+    title: "dictation hold key",
+    description:
+      "Hold alone to dictate: shift or right-option. Right Option is hold-only: taps do nothing. Changing this restarts dictation.",
   }),
   dictationLanguage: withDefault(dictationLanguageSchema, "en").annotations({
     title: "dictation language",
@@ -128,7 +133,7 @@ export const configSchema = Schema.Struct({
     outOfRange: "Dictation keep-listening time must be between 0 and 2 seconds.",
     fallback: 0.2,
     title: "dictation keep listening (seconds)",
-    description: "Seconds the microphone stays open after Shift is released, so trailing words are not cut off.",
+    description: "Seconds the microphone stays open after the hold key is released, so trailing words are not cut off.",
   }),
   dictationReplacements: withDefault(trimmedText, "").annotations({
     title: "dictation replacements",
@@ -138,7 +143,7 @@ export const configSchema = Schema.Struct({
   refineMode: withDefault(refineModeSchema, "off").annotations({
     title: "refine mode",
     description:
-      "Prompt refine: off; clipboard = double-tap Shift refines the copied prompt; dictation = refine the dictation before it is typed; both.",
+      "Prompt refine: off; clipboard = double-tap Shift (in shift hold-key mode) refines the copied prompt; dictation = refine the dictation before it is typed; both.",
   }),
   refineProvider: withDefault(refineProviderSchema, "codex").annotations({
     title: "refine provider",

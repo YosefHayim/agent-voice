@@ -2,7 +2,7 @@
 
 Hold Shift to dictate into any text field, and hear your coding agent's replies read aloud — all on your Mac, in TypeScript.
 
-- **Dictation.** Hold Shift on its own for 300 ms, speak, release. Whisper (whisper.cpp large-v3-turbo with Metal) transcribes on your Mac and agent-voice types the text at the caret. Any other key pressed while Shift is down cancels, so capital letters and Shift shortcuts never start dictation. A small pill at the bottom of the screen shows "Recording", a live caption, then "Working".
+- **Dictation.** By default, hold Shift on its own for 300 ms, speak, release. Whisper (whisper.cpp large-v3-turbo with Metal) transcribes on your Mac and agent-voice types the text at the caret. Any other key pressed while Shift is down cancels, so capital letters and Shift shortcuts never start dictation. `dictation-hold-key right-option` selects Right Option instead, with no tap actions. A small pill at the bottom of the screen shows "Recording", a live caption, then "Working".
 - **Speech.** When Claude Code, Codex, or Grok finishes a turn, its Stop hook (`agent-voice reply`) queues the reply and agent-voice reads it aloud with a Supertonic voice. Markdown becomes speech: headings and lists as sentences, tables row by row with their column names, code blocks announced and read symbol by symbol.
 - **Refine.** Optionally rewrite what you dictated (or what you copied) into a clean prompt with an agent CLI you already have — codex, claude, gemini, grok, ollama, opencode, or pi — before it is typed.
 
@@ -54,21 +54,29 @@ No Homebrew audio tools are needed: the microphone, Whisper, the voices, and the
 | `agent-voice off` | Stop every agent-voice process and remove only agent-voice's hook entries. Config and models stay. |
 | `agent-voice status [--json]` | Workers, dictation stage, model, speech, refine, and hooks. |
 | `agent-voice doctor [--json]` | Check macOS, Node, native modules, system tools, models, permissions, hooks, and refine CLIs. |
-| `agent-voice config list \| get \| set \| unset` | Show or change a setting; `set` applies at once (a new dictation language restarts dictation, speech starts or stops). |
+| `agent-voice config list \| get \| set \| unset` | Show or change a setting; `set` applies at once (a new dictation language or hold key restarts dictation, speech starts or stops). |
 | `agent-voice config describe` | Print every setting as JSON (name, label, description, kind, choices, value), for tools that draw a settings screen. |
 | `agent-voice config pick-refine [--gui]` | Pick the refine provider, model, and effort from the agent CLIs on this Mac. |
 | `agent-voice speak <markdown> [--output file.wav]` | Read one reply aloud, or write it to a WAV file. |
 | `agent-voice render <markdown>` | Print the sentences agent-voice would read. |
 | `agent-voice refine <prompt> [--speak --provider --model --effort --send-to --cmux-command --press-enter]` | Refine one prompt and print it; `--list-providers` prints the CLIs found as JSON. |
 | `agent-voice devin -- <devin arguments>` | Run Devin with its ATIF export and read each finished turn aloud. |
-| `agent-voice hotkey-check [--seconds 8]` | Print Shift presses, to check that agent-voice can see the keyboard. |
+| `agent-voice hotkey-check [--seconds 8]` | Print the configured hold-key presses, to check that agent-voice can see the keyboard. |
 | `agent-voice reset` | Kill every agent-voice worker and pill and clear the locks. |
 | `agent-voice reply --agent <id>` | The agent Stop hook (registered by `agent-voice on`). Prints nothing, always exits 0. |
 | `agent-voice worker dictation \| speech` | Internal: the background workers. |
 
 ## Dictation
 
-Hold Shift alone for 300 ms, speak, release. The mic stays open for `dictation-keep-listening-seconds` after release so the last word is not clipped. Clips are decoded one after another, so you can start the next hold while the previous one is still decoding. Say punctuation and structure:
+Shift is the default. To use only the Right Option key for dictation:
+
+```bash
+agent-voice config set dictation-hold-key right-option
+```
+
+Hold Right Option alone for 300 ms, speak, then release to finish. Left Option and Shift do not start dictation in this mode. A tap or double-tap does nothing; speech mute and clipboard-refine tap actions are available only in `shift` mode. Other modifiers held before or during Right Option cancel the hold, as does typing another key. Use `agent-voice config set dictation-hold-key shift` to restore the default.
+
+Hold the configured key alone for 300 ms, speak, release. The mic stays open for `dictation-keep-listening-seconds` after release so the last word is not clipped. Clips are decoded one after another, so you can start the next hold while the previous one is still decoding. Say punctuation and structure:
 
 ```text
 hello comma my name is Joseph period
@@ -88,6 +96,8 @@ Hebrew uses the [ivrit.ai](https://huggingface.co/ivrit-ai/whisper-large-v3-turb
 Pick any other model with `agent-voice config set dictation-model small` (it downloads the model if missing and restarts dictation); `agent-voice status --json` lists every model under `dictation.models` (key, label, megabytes, path, present, selected) for a picker, and `dictation.modelKey` is the selected one.
 
 ## Speech
+
+In the default `shift` hold-key mode, Shift taps control speech. In `right-option` mode, use the CLI settings instead.
 
 Speech starts muted: replies are dropped, not read, until you unmute. Double-tap Shift to unmute or mute again (or, in clipboard refine mode, where double-tap refines the copied prompt, run `agent-voice config set speech-muted false`). Tap Shift to stop the current reply. Starting a hold also stops speech.
 
@@ -124,14 +134,15 @@ agent-voice config unset speech-voice    # back to the default
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `speech-mode` | `"auto"` | When agent replies are read aloud: auto holds a Cmux reply until its surface is focused and Cmux is in front, and speaks other replies at once; immediate speaks every reply at once; off reads nothing. |
-| `speech-muted` | `true` | Read nothing while true; replies that arrive meanwhile are dropped, not saved for later. Double-tap Shift flips it (outside clipboard refine mode). |
+| `speech-muted` | `true` | Read nothing while true; replies that arrive meanwhile are dropped, not saved for later. In shift hold-key mode, double-tap Shift flips it (outside clipboard refine mode). |
 | `speech-voice` | `"F4"` | Supertonic voice: F1-F5 or M1-M5. |
 | `speech-words-per-minute` | `230` | Speed of read-aloud replies, in words per minute (the voice speed is clamped to 0.7-2.0x). |
+| `dictation-hold-key` | `"shift"` | Hold alone to dictate: shift or right-option. Right Option is hold-only: taps do nothing. Changing this restarts dictation. |
 | `dictation-language` | `"en"` | Dictation language: en (whisper.cpp large-v3-turbo) or he (ivrit.ai Hebrew large-v3-turbo). Accepts english, hebrew, ivrit, iw. With dictation-model auto it picks the model. |
 | `dictation-model` | `"auto"` | Whisper model for dictation: auto (turbo-q5 for en, ivrit for he), tiny, base, small, turbo-q5, turbo-q8, turbo, or ivrit. The tiny, base, and small models are English only and ivrit is Hebrew only: set dictation-language to match. Changing it downloads the model if missing and restarts dictation. AGENT_VOICE_DICTATION_MODEL overrides it. |
-| `dictation-keep-listening-seconds` | `0.2` | Seconds the microphone stays open after Shift is released, so trailing words are not cut off. |
+| `dictation-keep-listening-seconds` | `0.2` | Seconds the microphone stays open after the hold key is released, so trailing words are not cut off. |
 | `dictation-replacements` | `""` | Semicolon-separated heard=written pairs applied to dictation, e.g. Joseph=Yosef;type script=TypeScript. |
-| `refine-mode` | `"off"` | Prompt refine: off; clipboard = double-tap Shift refines the copied prompt; dictation = refine the dictation before it is typed; both. |
+| `refine-mode` | `"off"` | Prompt refine: off; clipboard = double-tap Shift (in shift hold-key mode) refines the copied prompt; dictation = refine the dictation before it is typed; both. |
 | `refine-provider` | `"codex"` | Agent CLI that refines: codex \| auto \| grok \| ollama \| opencode \| claude \| gemini \| pi. `agent-voice config pick-refine` lists only the CLIs found on this Mac. |
 | `refine-model` | unset | Model ID for the refine provider (e.g. gpt-5.3-codex-spark, grok-4.5, llama3.2). Unset: gpt-5.3-codex-spark for codex, the provider's own models otherwise. |
 | `refine-effort` | unset | Reasoning effort for providers that support it. Unset: low, so dictation refine stays fast. |
@@ -149,7 +160,7 @@ These change where agent-voice keeps its files and switch a few features off. Fo
 | `AGENT_VOICE_HOME` | `~/.agent-voice` | Folder for config, state, models, and logs. |
 | `AGENT_VOICE_CONFIG_FILE` | `$AGENT_VOICE_HOME/config.json` | The only config file read when set. |
 | `AGENT_VOICE_DICTATION_MODEL` | unset | Force the Whisper model: `turbo-q5`, `turbo-q8`, `turbo`, `small`, `base`, `tiny`, or `ivrit`. Overrides the `dictation-model` setting. |
-| `AGENT_VOICE_DICTATION_LIVE_PREVIEW` | on | `off` (or `0`, `false`, `no`) stops the live caption while Shift is held. |
+| `AGENT_VOICE_DICTATION_LIVE_PREVIEW` | on | `off` (or `0`, `false`, `no`) stops the live caption while the hold key is held. |
 | `AGENT_VOICE_REFINE_PICKER` | on | `off` (or `0`, `false`, `no`) never opens the macOS model picker; it is also off when `CI` is set. |
 
 ## Files
@@ -201,10 +212,10 @@ Tests never touch your real `~/.agent-voice` or agent settings. Each test makes 
 Hand checks need a mic, a keyboard, and macOS permissions. After `agent-voice on`:
 
 1. `agent-voice doctor` passes Microphone and Accessibility.
-2. `agent-voice hotkey-check --seconds 8` prints each Shift press.
-3. In a text field, hold Shift and say "hello comma world period": `Hello, world.` is typed.
+2. `agent-voice hotkey-check --seconds 8` prints each press of the configured hold key.
+3. In a text field, hold the configured key and say "hello comma world period": `Hello, world.` is typed.
 4. Shift+A types `A`, and Shift held with another key types nothing.
-5. `agent-voice speak "Release status: **ready**."` reads one sentence, and a tap on Shift stops it.
+5. In `shift` hold-key mode, `agent-voice speak "Release status: **ready**."` reads one sentence, and a tap on Shift stops it.
 6. `agent-voice off` leaves each agent settings file as its copy in `~/.agent-voice/backups/`, minus the agent-voice Stop entry.
 
 Agents start at [AGENTS.md](AGENTS.md).

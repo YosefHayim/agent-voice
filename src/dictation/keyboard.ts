@@ -2,6 +2,8 @@
 
 import { Effect, Schema } from "effect";
 
+import { readConfigOrDefaults } from "../settings/configFile.js";
+
 class KeyboardError extends Schema.TaggedError<KeyboardError>()("KeyboardError", {
   issue: Schema.String,
 }) {
@@ -16,6 +18,23 @@ const HID_EVENT_TAP = 0;
 const LEFT_SHIFT_KEY = 0x38;
 const RIGHT_SHIFT_KEY = 0x3c;
 const SHIFT_KEYS = [LEFT_SHIFT_KEY, RIGHT_SHIFT_KEY];
+const LEFT_OPTION_KEY = 0x3a;
+const RIGHT_OPTION_KEY = 0x3d;
+const OPTION_KEY_FLAGS = new Map([
+  [LEFT_OPTION_KEY, 0x0008_0020n],
+  [RIGHT_OPTION_KEY, 0x0008_0040n],
+]);
+const MODIFIER_KEYS = [
+  0x36,
+  0x37,
+  LEFT_SHIFT_KEY,
+  LEFT_OPTION_KEY,
+  0x3b,
+  RIGHT_SHIFT_KEY,
+  RIGHT_OPTION_KEY,
+  0x3e,
+  0x3f,
+];
 // Caps Lock reads as held while its light is on, not while it is pressed.
 const CAPS_LOCK_KEY = 0x39;
 const RETURN_KEY = 0x24;
@@ -25,10 +44,6 @@ const V_KEY = 0x09;
 const COMMAND_FLAG = 0x0010_0000n;
 // CGEventKeyboardSetUnicodeString truncates longer strings.
 const UNICODE_CHUNK_UNITS = 20;
-
-const OTHER_KEYS = Array.from({ length: 0x80 }, (_unused, key) => key).filter(
-  (key) => !SHIFT_KEYS.includes(key) && key !== CAPS_LOCK_KEY,
-);
 
 // Iterating by character keeps a surrogate pair inside one chunk.
 export const unicodeChunks = (text: string): ReadonlyArray<string> => {
@@ -61,6 +76,12 @@ const postableChunk = (chunk: string): string => {
 };
 
 export const loadKeyboard = Effect.gen(function* () {
+  const config = yield* readConfigOrDefaults;
+  const holdKeys = { shift: SHIFT_KEYS, "right-option": [RIGHT_OPTION_KEY] }[config.dictationHoldKey];
+  const otherKeys = Array.from({ length: 0x80 }, (_unused, key) => key).filter(
+    (key) => !holdKeys.includes(key) && key !== CAPS_LOCK_KEY,
+  );
+  const otherModifiers = MODIFIER_KEYS.filter((key) => !holdKeys.includes(key));
   const koffiModule = yield* Effect.tryPromise({
     try: () => import("koffi"),
     catch: (error) => new KeyboardError({ issue: String(error) }),
@@ -72,6 +93,7 @@ export const loadKeyboard = Effect.gen(function* () {
     "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices",
   );
   const keyState = coreGraphics.func("bool CGEventSourceKeyState(int32_t state, uint16_t key)");
+  const flagsState = coreGraphics.func("uint64_t CGEventSourceFlagsState(int32_t state)");
   const createSource = coreGraphics.func("void* CGEventSourceCreate(int32_t state)");
   const createKeyEvent = coreGraphics.func("void* CGEventCreateKeyboardEvent(void* source, uint16_t key, bool down)");
   const setUnicode = coreGraphics.func(
@@ -85,7 +107,17 @@ export const loadKeyboard = Effect.gen(function* () {
   const trusted = applicationServices.func("bool AXIsProcessTrusted()");
   const source = createSource(COMBINED_SESSION_STATE);
 
-  const isKeyDown = (key: number): boolean => keyState(HID_SYSTEM_STATE, key) === true;
+  const isKeyDown = (key: number): boolean => {
+    const optionFlags = OPTION_KEY_FLAGS.get(key);
+    if (optionFlags === undefined) {
+      return keyState(HID_SYSTEM_STATE, key) === true;
+    }
+
+    // Key state can alias Right Option to Left Option; device flags retain the physical side.
+    const nativeFlags = flagsState(HID_SYSTEM_STATE);
+    const flags = BigInt(nativeFlags);
+    return (flags & optionFlags) === optionFlags;
+  };
 
   const postKey = (request: { readonly key: number; readonly down: boolean; readonly flags: bigint }) => {
     const event = createKeyEvent(source, request.key, request.down);
@@ -99,7 +131,7 @@ export const loadKeyboard = Effect.gen(function* () {
     postKey({ key, down: false, flags });
   };
 
-  // Flags are cleared, so a Shift still held by the hand cannot capitalize the typed text.
+  // Flags are cleared, so a modifier still held by the hand cannot alter the typed text.
   const postUnicode = (chunk: string) => {
     const event = createKeyEvent(source, 0, true);
     const units = utf16Units(chunk);
@@ -121,13 +153,19 @@ export const loadKeyboard = Effect.gen(function* () {
   };
 
   return {
-    shiftDown: (): boolean => SHIFT_KEYS.some(isKeyDown),
+    holdKey: config.dictationHoldKey,
+    holdDown: (): boolean => holdKeys.some(isKeyDown),
+    otherModifiersDown: (): boolean => otherModifiers.some(isKeyDown),
     // Bit n is set while key code n is held.
-    otherKeysDown: (): bigint => OTHER_KEYS.filter(isKeyDown).reduce((held, key) => held | (1n << BigInt(key)), 0n),
+    otherKeysDown: (): bigint => otherKeys.filter(isKeyDown).reduce((held, key) => held | (1n << BigInt(key)), 0n),
     typeUnicode,
     pressReturn: () => pressKey(RETURN_KEY, 0n),
     pressCommandV: () => pressKey(V_KEY, COMMAND_FLAG),
-    releaseShift: () => postKey({ key: LEFT_SHIFT_KEY, down: false, flags: 0n }),
+    releaseHoldKey: () => {
+      for (const key of holdKeys) {
+        postKey({ key, down: false, flags: 0n });
+      }
+    },
     accessibilityAllowed: (): boolean => trusted() === true,
     inputMonitoringAllowed: (): boolean => listenAllowed() === true,
     postingAllowed: (): boolean => postAllowed() === true,

@@ -105,13 +105,13 @@ const accessibilityCheck = (keyboard: Keyboard): DoctorCheck => {
 };
 
 const inputMonitoringCheck = (keyboard: Keyboard): DoctorCheck => {
-  const canReadShift = keyboard.inputMonitoringAllowed();
-  if (!canReadShift) {
+  const canReadKeys = keyboard.inputMonitoringAllowed();
+  if (!canReadKeys) {
     const fix = `${PRIVACY_PANE} Input Monitoring: ${ALLOW_TERMINAL}`;
     return problem({ name: "Input Monitoring", status: "warn", detail: "not allowed", fix });
   }
 
-  return ok("Input Monitoring", "agent-voice can read Shift");
+  return ok("Input Monitoring", "agent-voice can read keyboard state");
 };
 
 const keyboardChecks = loadKeyboard.pipe(

@@ -2,8 +2,8 @@ import { existsSync, statSync } from "node:fs";
 
 import { Command, Options } from "@effect/cli";
 import { Effect, Schedule } from "effect";
-
 import { type HookChange, registerReplyHooks } from "../agents/hookRegistration.js";
+import { holdKeyLabels } from "../dictation/holdKey.js";
 import {
   ensureWhisperModel,
   isWhisperModelPresent,
@@ -17,8 +17,6 @@ import { readEnvironment } from "../settings/environmentVariables.js";
 import { ensureSupertonicModels, missingSupertonicFiles } from "../speech/supertonicModels.js";
 import { startWorkers, stopWorkers } from "../workers/workerProcesses.js";
 import * as TerminalUI from "./TerminalUI.js";
-
-const HOLD_TO_DICTATE = "Hold Shift (alone) to dictate; release to finish. Tap Shift to stop speech.";
 
 const backupNote = (change: HookChange): string => {
   if (change.backup === undefined) {
@@ -130,9 +128,13 @@ const showOnSummary = (config: Config) =>
     const speech = describeSpeech(config);
     const isClipboardRefineOn = config.refineMode === "clipboard" || config.refineMode === "both";
     const isDictationRefineOn = config.refineMode === "dictation" || config.refineMode === "both";
-    yield* TerminalUI.detail(HOLD_TO_DICTATE);
+    const holdLabel = holdKeyLabels[config.dictationHoldKey];
+    yield* TerminalUI.detail(`Hold ${holdLabel} alone to dictate; release to finish.`);
+    if (config.dictationHoldKey === "shift") {
+      yield* TerminalUI.detail("Tap Shift to stop speech.");
+    }
     yield* TerminalUI.detail(speech);
-    if (isClipboardRefineOn) {
+    if (isClipboardRefineOn && config.dictationHoldKey === "shift") {
       yield* TerminalUI.detail("Double-tap Shift to refine the copied prompt, then press ⌘V.");
     }
 

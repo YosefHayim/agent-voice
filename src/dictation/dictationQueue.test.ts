@@ -39,14 +39,16 @@ afterEach(() => {
 const fakeKeyboard = (): { readonly keyboard: Keyboard; readonly typed: ReadonlyArray<string> } => {
   const typed: Array<string> = [];
   const keyboard: Keyboard = {
-    shiftDown: () => false,
+    holdKey: "shift",
+    otherModifiersDown: () => false,
+    holdDown: () => false,
     otherKeysDown: () => 0n,
     typeUnicode: (text) => {
       typed.push(text);
     },
     pressReturn: () => undefined,
     pressCommandV: () => undefined,
-    releaseShift: () => undefined,
+    releaseHoldKey: () => undefined,
     accessibilityAllowed: () => true,
     inputMonitoringAllowed: () => true,
     postingAllowed: () => true,

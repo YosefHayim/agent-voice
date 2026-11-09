@@ -4,7 +4,7 @@ Entrypoint for coding agents and maintainers (Claude Code, Codex, Cursor, and ot
 
 ## What this is
 
-**agent-voice** is a macOS TypeScript CLI for local voice around coding agents: hold Shift to dictate at the caret (Whisper), hear an agent's finished reply read aloud (Supertonic), and optionally refine a dictated or copied prompt with an agent CLI.
+**agent-voice** is a macOS TypeScript CLI for local voice around coding agents: hold the configured key (Shift or Right Option) to dictate at the caret (Whisper), hear an agent's finished reply read aloud (Supertonic), and optionally refine a dictated or copied prompt with an agent CLI.
 
 ## Source-of-truth map
 
