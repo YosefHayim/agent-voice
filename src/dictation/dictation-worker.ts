@@ -23,18 +23,25 @@ const waitForStop: Effect.Effect<void> = Effect.repeat(Effect.void, {
   until: () => stopRequested(),
 });
 
+// The microphone rejects with an Error; anything else is wrapped so the failure text still reads.
+const createErrorFromUnknown = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
+
 const runWorker = Effect.gen(function* () {
-  const config = yield* readConfigOrDefaults;
+  const config = yield* Effect.sync(readConfigOrDefaults);
   const environment = readEnvironment();
   const model = selectWhisperModel({ environment, config });
   const loading = makeStatusWriter({ model: model.file, backend: whisperBackend(), recording: () => false });
   loading.write("starting", `Loading ${model.label}`);
-  const modelPath = yield* ensureWhisperModel({
-    model,
-    onProgress: (bytes) => {
-      const megabytes = Math.round(bytes / 1e6);
-      loading.write("starting", `Downloading ${model.label}: ${String(megabytes)} MB`);
-    },
+  const modelPath = yield* Effect.tryPromise({
+    try: () =>
+      ensureWhisperModel({
+        model,
+        onProgress: (bytes) => {
+          const megabytes = Math.round(bytes / 1e6);
+          loading.write("starting", `Downloading ${model.label}: ${String(megabytes)} MB`);
+        },
+      }),
+    catch: (error) => error,
   });
   const loadStarted = performance.now();
   const transcriber = yield* loadTranscriber(modelPath).pipe(Effect.acquireRelease((loaded) => loaded.release));
@@ -46,7 +53,10 @@ const runWorker = Effect.gen(function* () {
     recording: clip.isConfirmedHold,
   });
   const keyboard = yield* loadKeyboard;
-  const microphone = yield* openMicrophone(clip);
+  const microphone = yield* Effect.tryPromise({
+    try: () => openMicrophone(clip),
+    catch: (error) => error,
+  }).pipe(Effect.acquireRelease((opened) => Effect.sync(() => opened.close())));
   appendDictationLog(
     `worker pid=${String(process.pid)} model=${model.file} load_ms=${loadMs} mic=${microphone.device}`,
   );
@@ -66,14 +76,18 @@ const runWorker = Effect.gen(function* () {
   const controller = makeHoldController({ keyboard, clip, caption, status, queue });
   const pollEvery = Schedule.spaced(HOLD_POLL_MS);
   yield* controller.poll.pipe(Effect.repeat(pollEvery), Effect.forkScoped);
-  yield* Effect.raceFirst(waitForStop, microphone.failure);
+  const microphoneFailure = Effect.tryPromise({ try: () => microphone.failure, catch: createErrorFromUnknown });
+  yield* Effect.raceFirst(waitForStop, microphoneFailure);
 });
 
 // A failure goes to status.json for `agent-voice on` and `agent-voice status`, and the next agent turn (or `agent-voice on`)
 // starts a fresh worker.
 export const runDictationWorker = Effect.gen(function* () {
-  const claimed = yield* claimWorkerLock("dictation");
-  if (!claimed) {
+  const claimedLockRelease = yield* Effect.sync(() => claimWorkerLock("dictation")).pipe(
+    Effect.acquireRelease((release) => Effect.sync(() => release?.())),
+  );
+  const isLockTaken = claimedLockRelease === null;
+  if (isLockTaken) {
     return;
   }
 

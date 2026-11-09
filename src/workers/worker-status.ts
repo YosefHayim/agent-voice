@@ -1,35 +1,29 @@
-import { Option, Schema } from "effect";
+import { z } from "zod";
+
 import { stateFile } from "#src/settings/agent-voice-home.js";
 import { readJsonFile, writeJsonAtomically } from "#src/storage/state-files.js";
 
-const dictationStageSchema = Schema.Literal(
-  "starting",
-  "inactive",
-  "listening",
-  "finishing",
-  "refining",
-  "done",
-  "unavailable",
-);
+const dictationStages = ["starting", "inactive", "listening", "finishing", "refining", "done", "unavailable"] as const;
 
-type DictationStage = Schema.Schema.Type<typeof dictationStageSchema>;
+type DictationStage = (typeof dictationStages)[number];
 
 // status.json is read by the pill every 80 ms and by `agent-voice status`.
-const workerStatusSchema = Schema.Struct({
-  stage: dictationStageSchema,
-  detail: Schema.String.annotations({ description: "Short text for the pill and `agent-voice status`." }),
-  preview: Schema.String.annotations({ description: "Live caption while the hold key is held; never typed." }),
-  recording: Schema.Boolean.annotations({
-    description: "True while the mic captures a confirmed hold, through its release tail; speech waits.",
-  }),
-  model: Schema.String,
-  backend: Schema.String,
-  updatedAt: Schema.Number,
+const workerStatusSchema = z.object({
+  stage: z.enum(dictationStages),
+  // Short text for the pill and `agent-voice status`.
+  detail: z.string(),
+  // Live caption while the hold key is held; never typed.
+  preview: z.string(),
+  // True while the mic captures a confirmed hold, through its release tail; speech waits.
+  recording: z.boolean(),
+  model: z.string(),
+  backend: z.string(),
+  updatedAt: z.number(),
 });
 
-export type WorkerStatus = Schema.Schema.Type<typeof workerStatusSchema>;
+type WorkerStatus = z.infer<typeof workerStatusSchema>;
 
-export const readWorkerStatus = (): Option.Option<WorkerStatus> =>
+export const readWorkerStatus = (): WorkerStatus | null =>
   readJsonFile({ path: stateFile("status.json"), schema: workerStatusSchema });
 
 export const writeWorkerStatus = (status: Omit<WorkerStatus, "updatedAt">): void =>
@@ -47,12 +41,20 @@ export const makeStatusWriter = (request: {
     write: (stage: DictationStage, detail: string) => writeWorkerStatus({ ...fields(), stage, detail, preview: "" }),
     writePreview: (caption: string) =>
       writeWorkerStatus({ ...fields(), stage: "listening", detail: "", preview: caption }),
-    stage: (): Option.Option<DictationStage> => readWorkerStatus().pipe(Option.map((status) => status.stage)),
+    stage: (): DictationStage | null => readWorkerStatus()?.stage ?? null,
   };
 };
 
 export type StatusWriter = ReturnType<typeof makeStatusWriter>;
 
 // Speech waits while the dictation worker starts and while a hold is captured, release tail included.
-export const dictationOwnsAudio = (): boolean =>
-  readWorkerStatus().pipe(Option.exists((status) => status.stage === "starting" || status.recording));
+export const dictationOwnsAudio = (): boolean => {
+  const status = readWorkerStatus();
+  const isThereNoStatus = status === null;
+  if (isThereNoStatus) {
+    return false;
+  }
+
+  const isStarting = status.stage === "starting";
+  return isStarting || status.recording;
+};

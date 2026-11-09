@@ -60,11 +60,15 @@ export const latestDevinTurn = (atif: AtifExport): DevinTurn => {
   };
 };
 
-const readTurn = (exportFile: string): DevinTurn =>
-  readJsonFile({ path: exportFile, schema: atifExportSchema }).pipe(
-    Option.map(latestDevinTurn),
-    Option.getOrElse(() => noTurn),
-  );
+const readTurn = (exportFile: string): DevinTurn => {
+  const savedExport = readJsonFile({ path: exportFile, schema: atifExportSchema });
+  const isThereNoSavedExport = savedExport === null;
+  if (isThereNoSavedExport) {
+    return noTurn;
+  }
+
+  return latestDevinTurn(savedExport);
+};
 
 // Returns the turn now spoken. A turn that cannot be queued is logged and passed over, so the watcher keeps reading
 // later turns.

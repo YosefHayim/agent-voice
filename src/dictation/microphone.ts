@@ -1,24 +1,13 @@
 // The microphone stays open for the dictation worker's lifetime (PvRecorder, 16 kHz mono), so the hold key only flips a
 // recording flag and the first word is never clipped by device start-up.
 
-import { Effect, Fiber, Schema } from "effect";
+import type { PvRecorder } from "@picovoice/pvrecorder-node";
 
 import { SAMPLE_RATE, samplesFromPcm } from "./clip-audio.js";
 
-class MicrophoneError extends Schema.TaggedError<MicrophoneError>()("MicrophoneError", {
-  issue: Schema.String,
-}) {
-  get message(): string {
-    return `Microphone: ${this.issue}`;
-  }
-}
-
-const microphoneError = (error: unknown): MicrophoneError => {
-  if (error instanceof Error) {
-    return new MicrophoneError({ issue: error.message });
-  }
-
-  return new MicrophoneError({ issue: String(error) });
+const createMicrophoneError = (error: unknown): Error => {
+  const issue = error instanceof Error ? error.message : String(error);
+  return new Error(`Microphone: ${issue}`, { cause: error });
 };
 
 const FRAME_SAMPLES = 512;
@@ -98,32 +87,57 @@ export const makeClipBuffer = () => {
 
 export type ClipBuffer = ReturnType<typeof makeClipBuffer>;
 
-// `failure` fails when a read fails, so the worker ends (and is started fresh) instead of recording silence.
-export const openMicrophone = (clip: ClipBuffer) =>
-  Effect.gen(function* () {
-    const { PvRecorder } = yield* Effect.tryPromise({
-      try: () => import("@picovoice/pvrecorder-node"),
-      catch: microphoneError,
-    });
-    const startRecorder = Effect.try({
-      try: () => {
-        const opened = new PvRecorder(FRAME_SAMPLES, DEFAULT_DEVICE, BUFFERED_FRAMES);
-        opened.start();
-        return opened;
-      },
-      catch: microphoneError,
-    });
-    const recorder = yield* Effect.acquireRelease(startRecorder, (opened) =>
-      Effect.sync(() => {
-        opened.stop();
-        opened.release();
-      }),
-    );
-    const readFrame = Effect.tryPromise({ try: () => recorder.read(), catch: microphoneError });
-    const reader = yield* readFrame.pipe(
-      Effect.flatMap((frame) => Effect.sync(() => clip.append(frame))),
-      Effect.forever,
-      Effect.forkScoped,
-    );
-    return { device: recorder.getSelectedDevice(), failure: Fiber.join(reader) };
-  });
+export interface Microphone {
+  readonly device: string;
+  // Rejects when a read fails. Settles without error only after close().
+  readonly failure: Promise<void>;
+  readonly close: () => void;
+}
+
+const startRecorder = async (): Promise<PvRecorder> => {
+  try {
+    const recorderModule = await import("@picovoice/pvrecorder-node");
+    const opened = new recorderModule.PvRecorder(FRAME_SAMPLES, DEFAULT_DEVICE, BUFFERED_FRAMES);
+    opened.start();
+    return opened;
+  } catch (error) {
+    throw createMicrophoneError(error);
+  }
+};
+
+const readFramesUntilStopped = async (request: {
+  readonly recorder: PvRecorder;
+  readonly clip: ClipBuffer;
+  readonly stop: AbortSignal;
+}): Promise<void> => {
+  while (!request.stop.aborted) {
+    try {
+      const frame = await request.recorder.read();
+      request.clip.append(frame);
+    } catch (error) {
+      // A read that fails because close() stopped the recorder is expected, not a microphone failure.
+      const isStopRequested = request.stop.aborted;
+      if (isStopRequested) {
+        return;
+      }
+
+      throw createMicrophoneError(error);
+    }
+  }
+};
+
+// `failure` rejects when a read fails, so the worker ends (and is started fresh) instead of recording silence.
+export const openMicrophone = async (clip: ClipBuffer): Promise<Microphone> => {
+  const recorder = await startRecorder();
+  const readingStop = new AbortController();
+  const failure = readFramesUntilStopped({ recorder, clip, stop: readingStop.signal });
+  return {
+    device: recorder.getSelectedDevice(),
+    failure,
+    close: () => {
+      readingStop.abort();
+      recorder.stop();
+      recorder.release();
+    },
+  };
+};

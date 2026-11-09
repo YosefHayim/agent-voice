@@ -45,7 +45,10 @@ const benchModel = (request: {
       return { model: request.key, issue: "unknown model key" };
     }
 
-    const modelPath = yield* ensureWhisperModel({ model, onProgress: () => undefined });
+    const modelPath = yield* Effect.tryPromise({
+      try: () => ensureWhisperModel({ model, onProgress: () => undefined }),
+      catch: (error) => error,
+    });
     const loadStarted = performance.now();
     const transcriber = yield* loadTranscriber(modelPath);
     const loadMs = performance.now() - loadStarted;

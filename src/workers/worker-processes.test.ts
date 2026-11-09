@@ -3,7 +3,6 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { isMacOS, makeTestFolder, repositoryRoot } from "#src/testing/test-folder.js";
@@ -84,7 +83,7 @@ describe("worker pid files", () => {
     writePidFile("speech.pid", speech);
     expect(await eventually(() => isWorkerRunning("speech"))).toBe(true);
 
-    await Effect.runPromise(stopWorkers);
+    await stopWorkers();
 
     const dictationPidFile = homeFile("dictation.pid");
     expect(await eventually(() => !isAlive(speech))).toBe(true);
@@ -99,19 +98,17 @@ describe("worker pid files", () => {
 const STARTER = `
 const [modulePath, go, holdMs] = process.argv.slice(1);
 const { existsSync } = await import("node:fs");
-const { Effect } = await import("effect");
 const { claimWorkerLock } = await import(modulePath);
 process.stdout.write("ready\\n");
 while (!existsSync(go)) await new Promise((resolve) => setTimeout(resolve, 1));
-await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-  const owns = yield* claimWorkerLock("dictation");
-  if (!owns) {
-    process.stdout.write("busy\\n");
-    return;
-  }
+const releaseLock = claimWorkerLock("dictation");
+if (releaseLock === null) {
+  process.stdout.write("busy\\n");
+} else {
   process.stdout.write("owner\\n");
-  yield* Effect.sleep(Number(holdMs));
-})));
+  await new Promise((resolve) => setTimeout(resolve, Number(holdMs)));
+  releaseLock();
+}
 `;
 
 const startStarter = (request: { readonly go: string; readonly holdMs: number }) => {
@@ -124,12 +121,12 @@ const startStarter = (request: { readonly go: string; readonly holdMs: number })
     { cwd: repositoryRoot, env: { ...process.env, AGENT_VOICE_HOME: home }, stdio: ["ignore", "pipe", "inherit"] },
   );
   started.push(child);
-  let output = "";
+  let stdout = "";
   child.stdout?.on("data", (chunk: Buffer) => {
-    output += chunk.toString();
+    stdout += chunk.toString();
   });
   const exited = new Promise((resolve) => child.once("exit", resolve));
-  return { pid: child.pid || 0, output: () => output, exited };
+  return { pid: child.pid || 0, stdoutSoFar: () => stdout, exited };
 };
 
 describe("worker lock", () => {
@@ -141,7 +138,7 @@ describe("worker lock", () => {
       const pidFile = homeFile("dictation.pid");
       writeFileSync(go, "");
       const crashed = startStarter({ go, holdMs: 60_000 });
-      expect(await eventually(() => crashed.output().includes("owner"), 20_000)).toBe(true);
+      expect(await eventually(() => crashed.stdoutSoFar().includes("owner"), 20_000)).toBe(true);
       process.kill(crashed.pid, "SIGKILL");
       await crashed.exited;
       expect(existsSync(lockFile)).toBe(true);
@@ -149,16 +146,16 @@ describe("worker lock", () => {
       rmSync(go);
 
       const racers = Array.from({ length: 8 }, () => startStarter({ go, holdMs: 2_000 }));
-      expect(await eventually(() => racers.every((racer) => racer.output().includes("ready")), 20_000)).toBe(true);
+      expect(await eventually(() => racers.every((racer) => racer.stdoutSoFar().includes("ready")), 20_000)).toBe(true);
       writeFileSync(go, "");
-      expect(await eventually(() => racers.some((racer) => racer.output().includes("owner")), 20_000)).toBe(true);
-      const owner = racers.find((racer) => racer.output().includes("owner"));
+      expect(await eventually(() => racers.some((racer) => racer.stdoutSoFar().includes("owner")), 20_000)).toBe(true);
+      const owner = racers.find((racer) => racer.stdoutSoFar().includes("owner"));
       expect(readFileSync(pidFile, "utf8")).toBe(String(owner?.pid));
 
       for (const racer of racers) {
         await racer.exited;
       }
-      expect(racers.map((racer) => racer.output().replace("ready\n", "")).sort()).toEqual([
+      expect(racers.map((racer) => racer.stdoutSoFar().replace("ready\n", "")).sort()).toEqual([
         "busy\n",
         "busy\n",
         "busy\n",

@@ -14,7 +14,7 @@ export const offCommand = Command.make("off", {}, () =>
     const changes = yield* unregisterReplyHooks;
     yield* showHookChanges(changes);
     yield* TerminalUI.step("Stopping the workers and the pill");
-    yield* resetWorkers;
+    yield* Effect.promise(resetWorkers);
     yield* TerminalUI.outro("agent-voice is off. Your config and models stay in ~/.agent-voice.");
   }),
 ).pipe(

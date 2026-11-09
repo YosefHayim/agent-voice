@@ -18,7 +18,10 @@ const loadEngine = Effect.gen(function* () {
     yield* TerminalUI.step("Downloading the Supertonic voices (~400 MB, once)");
   }
 
-  const modelFolder = yield* ensureSupertonicModels(() => undefined);
+  const modelFolder = yield* Effect.tryPromise({
+    try: () => ensureSupertonicModels(() => undefined),
+    catch: (error) => error,
+  });
   return yield* loadSupertonic(modelFolder);
 });
 
@@ -39,7 +42,7 @@ const outputOption = Options.file("output").pipe(
 
 export const speakCommand = Command.make("speak", { markdown: markdownArgument, output: outputOption }, (args) =>
   Effect.gen(function* () {
-    const config = yield* readConfig;
+    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
     if (Option.isNone(args.output)) {
       return yield* speakAloud(args.markdown, config);
     }

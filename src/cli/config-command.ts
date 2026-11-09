@@ -7,9 +7,10 @@ import { pickerModels, pickRefineTargetWithDialogs, type RefinePick } from "#src
 import { readConfig, saveConfig } from "#src/settings/config-file.js";
 import {
   type Config,
+  type ConfigValue,
   configSettings,
   defaultConfig,
-  settingValueFromText,
+  parseSettingValue,
   withSettingValue,
 } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
@@ -58,7 +59,7 @@ const jsonOption = Options.boolean("json").pipe(Options.withDescription("Print o
 
 const listCommand = Command.make("list", { json: jsonOption }, (args) =>
   Effect.gen(function* () {
-    const config = yield* readConfig;
+    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
     if (args.json) {
       return yield* TerminalUI.json(config);
     }
@@ -80,7 +81,7 @@ const describedSetting = (config: Config, setting: ConfigSetting) => {
 
 const describeCommand = Command.make("describe", {}, () =>
   Effect.gen(function* () {
-    const config = yield* readConfig;
+    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
     const settings = configSettings.map((setting) => describedSetting(config, setting));
     yield* TerminalUI.json(settings);
   }),
@@ -89,7 +90,7 @@ const describeCommand = Command.make("describe", {}, () =>
 const getCommand = Command.make("get", { name: nameArgument }, (args) =>
   Effect.gen(function* () {
     const setting = yield* findSetting(args.name);
-    const config = yield* readConfig;
+    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
     const value = shownValue(config, setting);
     yield* TerminalUI.text(value);
   }),
@@ -132,11 +133,11 @@ const applyChange = (previous: Config, next: Config) =>
     yield* TerminalUI.detail("Applies from the next dictation or reply.");
   });
 
-const saveSetting = (request: { readonly setting: ConfigSetting; readonly value: Option.Option<unknown> }) =>
+const saveSetting = (request: { readonly setting: ConfigSetting; readonly value: ConfigValue | null }) =>
   Effect.gen(function* () {
-    const previous = yield* readConfig;
+    const previous = yield* Effect.try({ try: readConfig, catch: (error) => error });
     const next = yield* withSettingValue({ config: previous, key: request.setting.key, value: request.value });
-    yield* saveConfig(next);
+    yield* Effect.try({ try: () => saveConfig(next), catch: (error) => error });
     yield* TerminalUI.success(`${request.setting.name} = ${shownValue(next, request.setting)}`);
     yield* applyChange(previous, next);
   });
@@ -146,7 +147,10 @@ const valueArgument = Args.text({ name: "value" }).pipe(Args.withDescription("Th
 const setCommand = Command.make("set", { name: nameArgument, value: valueArgument }, (args) =>
   Effect.gen(function* () {
     const setting = yield* findSetting(args.name);
-    const value = yield* settingValueFromText({ setting, text: args.value });
+    const value = yield* Effect.try({
+      try: () => parseSettingValue({ setting, enteredWords: args.value }),
+      catch: (error) => error,
+    });
     yield* saveSetting({ setting, value });
   }),
 ).pipe(Command.withDescription("Change one setting, e.g. `agent-voice config set dictation-language he`"));
@@ -154,8 +158,7 @@ const setCommand = Command.make("set", { name: nameArgument, value: valueArgumen
 const unsetCommand = Command.make("unset", { name: nameArgument }, (args) =>
   Effect.gen(function* () {
     const setting = yield* findSetting(args.name);
-    const fallback: unknown = defaultConfig[setting.key];
-    const value = Option.fromNullable(fallback);
+    const value = defaultConfig[setting.key] ?? null;
     yield* saveSetting({ setting, value });
   }),
 ).pipe(Command.withDescription("Put one setting back to its default"));
@@ -231,7 +234,7 @@ const guiOption = Options.boolean("gui").pipe(
 
 const pickRefineCommand = Command.make("pick-refine", { gui: guiOption }, (args) =>
   Effect.gen(function* () {
-    const config = yield* readConfig;
+    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
     const picked = yield* pickRefineTarget({ config, gui: args.gui });
     if (Option.isNone(picked)) {
       return yield* new CliUsageError({ issue: "No refine provider picked (none found, or cancelled)." });
@@ -241,7 +244,7 @@ const pickRefineCommand = Command.make("pick-refine", { gui: guiOption }, (args)
     const pickedConfig = { ...config, refineProvider: picked.value.provider, refineModel: picked.value.model };
     const effortValue = Option.fromNullable(effort);
     const next = yield* withSettingValue({ config: pickedConfig, key: "refineEffort", value: effortValue });
-    yield* saveConfig(next);
+    yield* Effect.try({ try: () => saveConfig(next), catch: (error) => error });
     saveRefineChoice(picked.value);
     const summary = pickSummary(picked.value, effort);
     yield* TerminalUI.success(summary);

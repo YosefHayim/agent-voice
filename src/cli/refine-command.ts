@@ -50,7 +50,7 @@ export const refineCommand = Command.make("refine", refineOptions, (args) =>
       return yield* new CliUsageError({ issue: "Pass the prompt to refine, or --list-providers." });
     }
 
-    const saved = yield* readConfig;
+    const saved = yield* Effect.try({ try: readConfig, catch: (error) => error });
     const config = {
       ...saved,
       refineProvider: Option.getOrElse(args.provider, () => saved.refineProvider),

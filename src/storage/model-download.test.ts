@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
 import { chmodSync, existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createServer, type Server, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Duration, Effect, Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { isMacOS, makeTestFolder, repositoryRoot } from "#src/testing/test-folder.js";
@@ -27,7 +27,15 @@ const half = Buffer.alloc(MODEL_BYTES / 2, 7);
 
 const largeModel = Buffer.alloc(LARGE_BYTES, 7);
 
-const decodeAddress = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }));
+// The test server listens on a TCP port, so its address is an object that carries the port.
+const portOf = (address: AddressInfo | string | null): number => {
+  const isTcpAddress = address !== null && typeof address === "object";
+  if (!isTcpAddress) {
+    throw new Error("the test server is not on a TCP port");
+  }
+
+  return address.port;
+};
 
 const sendInHalves = (served: ServerResponse, delayMs: number): void => {
   served.write(half);
@@ -58,7 +66,7 @@ beforeEach(async () => {
   });
   await new Promise((resolve) => server?.listen(0, "127.0.0.1", () => resolve(undefined)));
   const address = server.address();
-  const { port } = decodeAddress(address);
+  const port = portOf(address);
   origin = `http://127.0.0.1:${String(port)}`;
 });
 
@@ -71,9 +79,8 @@ afterEach(async () => {
 
 const DOWNLOADER = `
 const [modulePath, url, destination] = process.argv.slice(1);
-const { Effect } = await import("effect");
 const { downloadFile } = await import(modulePath);
-await downloadFile({ url, destination, onProgress: () => undefined }).pipe(Effect.runPromise);
+await downloadFile({ url, destination, onProgress: () => undefined });
 `;
 
 // Another process downloading the same file with the same code, as a second `agent-voice on` or worker would.
@@ -95,14 +102,16 @@ const eventually = async (check: () => boolean): Promise<boolean> => {
 };
 
 // A download that waits on a lock nobody will release fails the test instead of hanging it.
-const download = (request: { readonly url: string; readonly destination: string }) =>
-  downloadFile({ ...request, onProgress: () => undefined }).pipe(
-    Effect.timeoutFail({
-      duration: Duration.seconds(10),
-      onTimeout: () => new Error("the download is still blocked"),
-    }),
-    Effect.runPromise,
-  );
+const download = async (request: { readonly url: string; readonly destination: string }): Promise<void> => {
+  const downloadAttempt = downloadFile({ ...request, onProgress: () => undefined });
+  const blockedAfterMilliseconds = 10_000;
+  const blockedAttempt = new Promise<never>((_, reject) => {
+    const timer = setTimeout(() => reject(new Error("the download is still blocked")), blockedAfterMilliseconds);
+    timer.unref();
+  });
+
+  await Promise.race([downloadAttempt, blockedAttempt]);
+};
 
 describe("downloadFile", () => {
   it("writes the file through a .partial file and reports the bytes received", async () => {
@@ -113,7 +122,7 @@ describe("downloadFile", () => {
       url: `${origin}/model.bin`,
       destination,
       onProgress: (bytes) => progress.push(bytes),
-    }).pipe(Effect.runPromise);
+    });
 
     expect(readFileSync(destination).length).toBe(MODEL_BYTES);
     expect(progress.at(-1)).toBe(MODEL_BYTES);
@@ -124,28 +133,27 @@ describe("downloadFile", () => {
   it("fails with a download error, instead of crashing, when the file cannot be written", async () => {
     chmodSync(folder, 0o500);
 
-    const failure = await downloadFile({
+    const downloadAttempt = downloadFile({
       url: `${origin}/model.bin`,
       destination: path.join(folder, "model.bin"),
       onProgress: () => undefined,
-    }).pipe(Effect.flip, Effect.runPromise);
+    });
 
-    expect(failure._tag).toBe("ModelDownloadError");
-    expect(failure.issue).toContain("EACCES");
+    await expect(downloadAttempt).rejects.toThrow("EACCES");
   });
 
   it("fails with a download error, instead of crashing, when the progress callback throws mid-download or at the end", async () => {
     for (const name of ["large.bin", "model.bin"]) {
       const destination = path.join(folder, name);
-      const failure = await downloadFile({
+      const downloadAttempt = downloadFile({
         url: `${origin}/${name}`,
         destination,
         onProgress: () => {
           throw new Error("the progress line broke");
         },
-      }).pipe(Effect.flip, Effect.runPromise);
+      });
 
-      expect(failure.issue).toBe("the progress line broke");
+      await expect(downloadAttempt).rejects.toThrow("the progress line broke");
       expect([name, existsSync(destination), existsSync(`${destination}.partial`)]).toEqual([name, false, false]);
     }
   });

@@ -1,51 +1,57 @@
-import { Effect, Option, ParseResult, Schema } from "effect";
-
 import { readTextIfPresent, writeFileAtomically } from "#src/storage/state-files.js";
 import { configFilePath } from "./agent-voice-home.js";
-import { type Config, configSchema, defaultConfig } from "./config-schema.js";
+import { type Config, decodeConfig, defaultConfig } from "./config-schema.js";
 
-export class ConfigFileError extends Schema.TaggedError<ConfigFileError>()("ConfigFileError", {
-  path: Schema.String,
-  issue: Schema.String,
-}) {
-  get message(): string {
-    return `${this.path} is not a valid agent-voice config: ${this.issue}`;
+const readSavedText = (filePath: string): string | null => {
+  try {
+    return readTextIfPresent(filePath);
+  } catch (error) {
+    throw new Error(`${filePath} is not a valid agent-voice config: ${String(error)}`, { cause: error });
   }
-}
+};
 
-const decodeConfigText = Schema.decodeUnknown(Schema.parseJson(configSchema), { onExcessProperty: "error" });
-
-const encodeConfig = Schema.encodeSync(configSchema);
+const decodeSavedText = (request: { readonly filePath: string; readonly text: string }): Config => {
+  try {
+    return decodeConfig(JSON.parse(request.text));
+  } catch (error) {
+    const issue = error instanceof Error ? error.message : String(error);
+    throw new Error(`${request.filePath} is not a valid agent-voice config: ${issue}`, { cause: error });
+  }
+};
 
 // A file that cannot be read is an error, never the defaults, so `config set` never replaces it.
-export const readConfig: Effect.Effect<Config, ConfigFileError> = Effect.gen(function* () {
+export const readConfig = (): Config => {
   const filePath = configFilePath();
-  const savedText = yield* Effect.try({
-    try: () => readTextIfPresent(filePath),
-    catch: (error) => new ConfigFileError({ path: filePath, issue: String(error) }),
-  });
-  if (Option.isNone(savedText)) {
+  const savedFileContents = readSavedText(filePath);
+  const isThereNoSavedFile = savedFileContents === null;
+  if (isThereNoSavedFile) {
     return defaultConfig;
   }
 
-  return yield* decodeConfigText(savedText.value).pipe(
-    Effect.mapError(
-      (error) => new ConfigFileError({ path: filePath, issue: ParseResult.TreeFormatter.formatErrorSync(error) }),
-    ),
-  );
-});
+  return decodeSavedText({ filePath, text: savedFileContents });
+};
+
+// Each distinct broken-config message is logged once per process, since workers read the config often.
+const loggedConfigErrors = new Set<string>();
 
 // Workers read the config on every decision; a broken file means defaults, never a crashed worker.
-export const readConfigOrDefaults: Effect.Effect<Config> = Effect.orElseSucceed(readConfig, () => defaultConfig);
+export const readConfigOrDefaults = (): Config => {
+  try {
+    return readConfig();
+  } catch (error) {
+    const issue = error instanceof Error ? error.message : String(error);
+    const isIssueNew = !loggedConfigErrors.has(issue);
 
-export const saveConfig = (config: Config): Effect.Effect<void, ConfigFileError> => {
-  const filePath = configFilePath();
-  return Effect.try({
-    try: () => {
-      const savedConfig = encodeConfig(config);
-      const text = JSON.stringify(savedConfig, null, 2);
-      writeFileAtomically({ path: filePath, text: `${text}\n` });
-    },
-    catch: (error) => new ConfigFileError({ path: filePath, issue: String(error) }),
-  });
+    if (isIssueNew) {
+      loggedConfigErrors.add(issue);
+      console.error({ error });
+    }
+
+    return defaultConfig;
+  }
+};
+
+export const saveConfig = (config: Config): void => {
+  const savedFileContents = JSON.stringify(config, null, 2);
+  writeFileAtomically({ path: configFilePath(), contents: `${savedFileContents}\n` });
 };

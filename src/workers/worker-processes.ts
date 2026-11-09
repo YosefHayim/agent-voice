@@ -1,11 +1,10 @@
 import { spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-
-import { Effect, Option, Schema, type Scope } from "effect";
 import { agentVoiceHome, stateFile } from "#src/settings/agent-voice-home.js";
+import { sleep } from "#src/sleep.js";
 import { removeInboxFiles } from "#src/speech/inbox.js";
-import { type FileLockError, holdLock, removeFreeLock } from "#src/storage/file-lock.js";
+import { holdLock, type ReleaseLock, removeFreeLock } from "#src/storage/file-lock.js";
 import {
   makePrivateFolder,
   openPrivateFile,
@@ -15,7 +14,7 @@ import {
 } from "#src/storage/state-files.js";
 import { readWorkerStatus, writeWorkerStatus } from "./worker-status.js";
 
-export type WorkerKind = "dictation" | "speech";
+type WorkerKind = "dictation" | "speech";
 
 type PidFileName = "dictation.pid" | "speech.pid" | "pill.pid";
 
@@ -26,21 +25,6 @@ const WORKER_FILES = {
 
 const PROCESS_ROW = /^\s*(\S+)\s+(.*)$/u;
 const WORKER_COMMAND = / worker (?:dictation|speech)$/u;
-
-export class WorkerStartError extends Schema.TaggedError<WorkerStartError>()("WorkerStartError", {
-  worker: Schema.String,
-  logFile: Schema.String,
-  lastLines: Schema.String,
-}) {
-  get message(): string {
-    const summary = `The ${this.worker} worker did not start. See ${this.logFile}.`;
-    if (this.lastLines === "") {
-      return summary;
-    }
-
-    return `${summary}\n${this.lastLines}`;
-  }
-}
 
 const workerLockPath = (kind: WorkerKind): string => stateFile(WORKER_FILES[kind].lock);
 
@@ -62,8 +46,8 @@ const sendSignal = (pid: number, signal: NodeJS.Signals | 0): boolean => {
 
 // A zombie still answers signal 0 until it is reaped, so it is checked by its ps state.
 const isZombie = (pid: number): boolean => {
-  const state = runPs(["-o", "state=", "-p", String(pid)]);
-  return state.startsWith("Z");
+  const processState = runPs(["-o", "state=", "-p", String(pid)]);
+  return processState.startsWith("Z");
 };
 
 const isProcessAlive = (pid: number): boolean => sendSignal(pid, 0) && !isZombie(pid);
@@ -75,15 +59,16 @@ const isPillCommand = (commandLine: string): boolean => {
 
 const isUsablePid = (pid: number): boolean => Number.isInteger(pid) && pid > 1;
 
-const decodePid = Schema.decodeUnknownOption(Schema.NumberFromString);
+// The pid file's text as a pid, or null when the file is missing, empty, or not a number.
+export const readPid = (name: PidFileName): number | null => {
+  const pidText = readTextIfReadable(stateFile(name));
+  const isThereNoPidText = pidText === null;
+  if (isThereNoPidText) {
+    return null;
+  }
 
-export const readPid = (name: PidFileName): Option.Option<number> => {
-  const pidPath = stateFile(name);
-  return readTextIfReadable(pidPath).pipe(
-    Option.map((text) => text.trim()),
-    Option.flatMap(decodePid),
-    Option.filter(isUsablePid),
-  );
+  const pid = Number(pidText.trim());
+  return isUsablePid(pid) ? pid : null;
 };
 
 export const writePid = (name: PidFileName, pid: number): void => {
@@ -108,39 +93,59 @@ const isNamedProcess = (name: PidFileName, commandLine: string): boolean => {
 
 const isRunningAs = (name: PidFileName, pid: number): boolean => {
   const processRow = runPs(["-o", "state=,args=", "-p", String(pid)]);
-  const match = PROCESS_ROW.exec(processRow);
-  if (match === null) {
+  const processRowMatch = PROCESS_ROW.exec(processRow);
+  if (processRowMatch === null) {
     return false;
   }
 
-  const state = match[1] || "";
-  const commandLine = match[2] || "";
-  return !state.startsWith("Z") && isNamedProcess(name, commandLine);
+  const processState = processRowMatch[1] || "";
+  const commandLine = processRowMatch[2] || "";
+  return !processState.startsWith("Z") && isNamedProcess(name, commandLine);
 };
 
-export const runningPid = (name: PidFileName): Option.Option<number> =>
-  readPid(name).pipe(Option.filter((pid) => isRunningAs(name, pid)));
+// The pid from the pid file, only when that process still runs as the named worker.
+export const runningPid = (name: PidFileName): number | null => {
+  const savedPid = readPid(name);
+  const isThereNoSavedPid = savedPid === null;
+  if (isThereNoSavedPid) {
+    return null;
+  }
+
+  return isRunningAs(name, savedPid) ? savedPid : null;
+};
+
+const runningPidList = (name: PidFileName): ReadonlyArray<number> => {
+  const workerPid = runningPid(name);
+  const isThereNoRunningPid = workerPid === null;
+  if (isThereNoRunningPid) {
+    return [];
+  }
+
+  return [workerPid];
+};
 
 export const isWorkerRunning = (kind: WorkerKind): boolean => {
   const workerPid = runningPid(WORKER_FILES[kind].pid);
-  return Option.isSome(workerPid);
+  return workerPid !== null;
 };
 
 // The speech worker drops the reply it is reading on SIGUSR2.
 export const stopSpeech = (): void => {
   const speechPid = runningPid("speech.pid");
-  if (Option.isSome(speechPid)) {
-    sendSignal(speechPid.value, "SIGUSR2");
+  const isSpeechRunning = speechPid !== null;
+  if (isSpeechRunning) {
+    sendSignal(speechPid, "SIGUSR2");
   }
 };
 
-const processGroupOf = (pid: number): number => {
+const readProcessGroupId = (pid: number): number => {
   const group = runPs(["-o", "pgid=", "-p", String(pid)]);
   return Number(group);
 };
 
 // Never signal pid 0 or 1, this process, or this process's own group (the CLI and its shell).
-const isSafeTarget = (pid: number): boolean => pid > 1 && pid !== process.pid && pid !== processGroupOf(process.pid);
+const isSafeTarget = (pid: number): boolean =>
+  pid > 1 && pid !== process.pid && pid !== readProcessGroupId(process.pid);
 
 // Workers lead their process group, so their pill and players stop with them.
 export const signalGroup = (pid: number, signal: NodeJS.Signals): void => {
@@ -159,30 +164,31 @@ export const signalGroup = (pid: number, signal: NodeJS.Signals): void => {
 const removeOwnPidFile = (kind: WorkerKind): void => {
   const pidName = WORKER_FILES[kind].pid;
   const savedPid = readPid(pidName);
-  const isOwnPid = Option.contains(savedPid, process.pid);
+  const isOwnPid = savedPid === process.pid;
   if (isOwnPid) {
     const pidPath = stateFile(pidName);
     removeIfPresent(pidPath);
   }
 };
 
-// False when another worker of this kind holds the lock. The kernel lock ends with its worker, even one killed with
+// Null when another worker of this kind holds the lock. The kernel lock ends with its worker, even one killed with
 // SIGKILL, so racing starters never meet a stale lock to take over, and exactly one of them owns it.
-export const claimWorkerLock = (kind: WorkerKind): Effect.Effect<boolean, FileLockError, Scope.Scope> =>
-  Effect.gen(function* () {
-    const home = agentVoiceHome();
-    makePrivateFolder(home);
-    const lock = workerLockPath(kind);
-    const ownsLock = yield* holdLock(lock);
-    if (!ownsLock) {
-      return false;
-    }
+// The returned release removes the pid file first, then drops the lock, so the next owner's pid file is never removed.
+export const claimWorkerLock = (kind: WorkerKind): ReleaseLock | null => {
+  const home = agentVoiceHome();
+  makePrivateFolder(home);
+  const releaseLock = holdLock(workerLockPath(kind));
+  const isLockHeldByAnother = releaseLock === null;
+  if (isLockHeldByAnother) {
+    return null;
+  }
 
-    writePid(WORKER_FILES[kind].pid, process.pid);
-    // Added after the lock, so it runs before the lock is dropped: the next owner's pid file is never removed.
-    yield* Effect.addFinalizer(() => Effect.sync(() => removeOwnPidFile(kind)));
-    return true;
-  });
+  writePid(WORKER_FILES[kind].pid, process.pid);
+  return () => {
+    removeOwnPidFile(kind);
+    releaseLock();
+  };
+};
 
 // From source there is no built main.js next to this file, so tsx runs main.ts.
 const entryScript = (): string => {
@@ -223,37 +229,35 @@ export const stopRequested = (): boolean => {
 
 const lastLogLines = (kind: WorkerKind): string => {
   const logPath = workerLogPath(kind);
-  const logText = readTextIfReadable(logPath).pipe(Option.getOrElse(() => ""));
+  const logText = readTextIfReadable(logPath) ?? "";
   return logText.trimEnd().split("\n").slice(-6).join("\n");
 };
 
-const waitUntil = (request: { readonly done: () => boolean; readonly timeoutMs: number }) =>
-  Effect.gen(function* () {
-    const deadline = Date.now() + request.timeoutMs;
-    while (!request.done() && Date.now() < deadline) {
-      yield* Effect.sleep("50 millis");
-    }
-    return request.done();
-  });
+const waitUntil = async (request: { readonly done: () => boolean; readonly timeoutMs: number }): Promise<void> => {
+  const pollIntervalMilliseconds = 50;
+  const deadline = Date.now() + request.timeoutMs;
+  while (!request.done() && Date.now() < deadline) {
+    await sleep(pollIntervalMilliseconds);
+  }
+};
 
-const runningWorkerPids = (): ReadonlyArray<number> =>
-  (["dictation.pid", "speech.pid"] as const).flatMap((name) => {
-    const workerPid = runningPid(name);
-    return Option.toArray(workerPid);
-  });
+const runningWorkerPids = (): ReadonlyArray<number> => [
+  ...runningPidList("dictation.pid"),
+  ...runningPidList("speech.pid"),
+];
 
 // Asks both workers to stop, forces any survivor, and clears their pid, lock, and stop files.
-export const stopWorkers: Effect.Effect<void> = Effect.gen(function* () {
+export const stopWorkers = async (): Promise<void> => {
   const stopPath = stateFile("stop");
   touchFile(stopPath);
   const stoppingPids = runningWorkerPids();
   for (const pid of stoppingPids) {
     signalGroup(pid, "SIGTERM");
   }
-  yield* waitUntil({ done: () => !stoppingPids.some(isProcessAlive), timeoutMs: 4_000 });
+  const stopTimeoutMilliseconds = 4_000;
+  await waitUntil({ done: () => !stoppingPids.some(isProcessAlive), timeoutMs: stopTimeoutMilliseconds });
 
-  const pillPid = runningPid("pill.pid");
-  const survivors = [...runningWorkerPids(), ...Option.toArray(pillPid)];
+  const survivors = [...runningWorkerPids(), ...runningPidList("pill.pid")];
   for (const pid of survivors) {
     signalGroup(pid, "SIGKILL");
   }
@@ -267,14 +271,14 @@ export const stopWorkers: Effect.Effect<void> = Effect.gen(function* () {
     removeFreeLock(lock);
   }
   removeInboxFiles([".speaking"]);
-});
+};
 
 // Every agent-voice worker or pill process on this Mac, found by its command line.
 const strayAgentVoiceProcesses = (): ReadonlyArray<number> => {
   const processList = runPs(["-ax", "-o", "pid=,args="]);
   return processList.split("\n").flatMap((line) => {
-    const match = PROCESS_ROW.exec(line);
-    const commandLine = match?.[2] || "";
+    const processRowMatch = PROCESS_ROW.exec(line);
+    const commandLine = processRowMatch?.[2] || "";
     const isWorker = commandLine.includes("agent-voice") && WORKER_COMMAND.test(commandLine);
     const isStray = isWorker || isPillCommand(commandLine);
     if (!isStray) {
@@ -285,16 +289,27 @@ const strayAgentVoiceProcesses = (): ReadonlyArray<number> => {
   });
 };
 
-export const resetWorkers: Effect.Effect<void> = Effect.gen(function* () {
-  yield* stopWorkers;
+export const resetWorkers = async (): Promise<void> => {
+  await stopWorkers();
   for (const pid of strayAgentVoiceProcesses()) {
     signalGroup(pid, "SIGKILL");
   }
-});
+};
 
-// The dictation worker starts the speech worker itself.
-export const startWorkers: Effect.Effect<"started" | "already running", WorkerStartError> = Effect.gen(function* () {
-  if (isWorkerRunning("dictation")) {
+const dictationStartFailureMessage = (lastLines: string): string => {
+  const summary = `The dictation worker did not start. See ${workerLogPath("dictation")}.`;
+  const hasLastLines = lastLines !== "";
+  if (!hasLastLines) {
+    return summary;
+  }
+
+  return `${summary}\n${lastLines}`;
+};
+
+// The dictation worker starts the speech worker itself. Throws an Error with the worker's last log lines when it fails.
+export const startWorkers = async (): Promise<"started" | "already running"> => {
+  const isDictationAlreadyRunning = isWorkerRunning("dictation");
+  if (isDictationAlreadyRunning) {
     return "already running";
   }
 
@@ -312,25 +327,26 @@ export const startWorkers: Effect.Effect<"started" | "already running", WorkerSt
   const spawnedAt = Date.now();
   // Ready once the worker leaves "starting"; failed once it is gone after having had time to start.
   const settled = () => {
-    const hasLeftStarting = readWorkerStatus().pipe(Option.exists((status) => status.stage !== "starting"));
-    const hasDied = Date.now() - spawnedAt > 3_000 && !isWorkerRunning("dictation");
+    const currentStatus = readWorkerStatus();
+    const hasLeftStarting = currentStatus !== null && currentStatus.stage !== "starting";
+    const startupGraceMilliseconds = 3_000;
+    const hasDied = Date.now() - spawnedAt > startupGraceMilliseconds && !isWorkerRunning("dictation");
     return hasLeftStarting || hasDied;
   };
-  yield* waitUntil({ done: settled, timeoutMs: 120_000 });
+  const startTimeoutMilliseconds = 120_000;
+  await waitUntil({ done: settled, timeoutMs: startTimeoutMilliseconds });
 
   const status = readWorkerStatus();
-  const isAvailable = status.pipe(Option.exists((current) => current.stage !== "unavailable"));
-  if (isAvailable && isWorkerRunning("dictation")) {
+  const isAvailable = status !== null && status.stage !== "unavailable";
+  const isDictationStarted = isAvailable && isWorkerRunning("dictation");
+  if (isDictationStarted) {
     return "started";
   }
 
-  const statusDetail = status.pipe(
-    Option.map((current) => current.detail),
-    Option.getOrElse(() => ""),
-  );
+  const statusDetail = status?.detail ?? "";
   const lastLines = statusDetail || lastLogLines("dictation");
-  return yield* new WorkerStartError({ worker: "dictation", logFile: workerLogPath("dictation"), lastLines });
-});
+  throw new Error(dictationStartFailureMessage(lastLines));
+};
 
 export const startSpeechWorker = (): void => {
   if (isWorkerRunning("speech")) {

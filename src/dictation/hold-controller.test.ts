@@ -71,8 +71,8 @@ const doubleTapShift = async () => {
 };
 
 const savedMute = async () => {
-  const config = await Effect.runPromise(readConfig);
-  return config.speechMuted;
+  const savedSettings = readConfig();
+  return savedSettings.speechMuted;
 };
 
 describe("double-tap Shift", () => {

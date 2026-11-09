@@ -2,7 +2,7 @@
 // hold can start while the previous clip decodes. Text is typed once and never erased and retyped, because the
 // caret may have moved by the time a model answers.
 
-import { Effect, Either, Fiber, Option, Queue } from "effect";
+import { Effect, Either, Fiber, Queue } from "effect";
 import { deliverToCmux } from "#src/refine/cmux-delivery.js";
 import { refinePrompt } from "#src/refine/refine-attempts.js";
 import { readConfigOrDefaults } from "#src/settings/config-file.js";
@@ -134,7 +134,7 @@ const processJob = (pipeline: Pipeline, job: DictationJob) =>
     const generation = String(job.generation);
     const seconds = (job.samples.length / SAMPLE_RATE).toFixed(2);
     pipeline.status.write("finishing", `Decoding ${String(job.samples.length)} samples…`);
-    const config = yield* readConfigOrDefaults;
+    const config = yield* Effect.sync(readConfigOrDefaults);
     const started = performance.now();
     const replacements = parseReplacements(config.dictationReplacements);
     const transcription = yield* pipeline.transcriber.transcribe({
@@ -179,7 +179,7 @@ export const startDictationQueue = (pipeline: Pipeline) =>
       // Keep the last detail on screen briefly, and never hide the pill under a new hold.
       yield* Effect.sleep("800 millis");
       const stage = pipeline.status.stage();
-      const showsDetail = Option.exists(stage, (current) => current !== "listening");
+      const showsDetail = stage !== null && stage !== "listening";
       if (isIdle() && showsDetail) {
         pipeline.status.write("inactive", "");
       }

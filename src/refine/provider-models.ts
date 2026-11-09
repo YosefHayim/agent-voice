@@ -45,9 +45,10 @@ const MAX_LISTED_MODELS = 80;
 const EDGE_BRACKETS = /^[()[\],]+|[()[\],]+$/gu;
 
 const listLines = (request: { readonly executable: string; readonly args: ReadonlyArray<string> }) =>
-  runCliLines({ ...request, timeoutMs: LISTING_TIMEOUT_MS });
+  Effect.promise((signal) => runCliLines({ ...request, timeoutMs: LISTING_TIMEOUT_MS, signal }));
 
-const helpLines = (executable: string) => runCliLines({ executable, args: ["--help"], timeoutMs: HELP_TIMEOUT_MS });
+const helpLines = (executable: string) =>
+  Effect.promise((signal) => runCliLines({ executable, args: ["--help"], timeoutMs: HELP_TIMEOUT_MS, signal }));
 
 const matchesOf = (text: string, pattern: RegExp): ReadonlyArray<string> => text.match(pattern) || [];
 
@@ -101,7 +102,7 @@ const isModelSetting = (line: string): boolean =>
 
 const codexConfiguredModel = (): ReadonlyArray<string> => {
   const configFile = codexFile("config.toml");
-  const config = readTextIfReadable(configFile).pipe(Option.getOrElse(() => ""));
+  const config = readTextIfReadable(configFile) ?? "";
   const modelLine = nonBlankLines(config).find(isModelSetting);
   const model = (modelLine || "")
     .split("=")
@@ -195,7 +196,7 @@ const listAgyModels = (cli: { readonly name: string; readonly path: string }): E
 
 // Models of the CLI refine runs (gemini before agy): agy's list also holds Claude and GPT IDs that gemini rejects.
 const listGeminiModels = Effect.gen(function* () {
-  const cli = findFirstCli(["gemini", "agy"]);
+  const cli = Option.fromNullable(findFirstCli(["gemini", "agy"]));
   if (Option.isNone(cli)) {
     return GEMINI_FALLBACK;
   }
@@ -356,7 +357,9 @@ const rankPiModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
 };
 
 const piExecutable = (): string =>
-  findFirstCli(["pi", "pie"]).pipe(Option.match({ onNone: () => "pi", onSome: (found) => found.path }));
+  Option.fromNullable(findFirstCli(["pi", "pie"])).pipe(
+    Option.match({ onNone: () => "pi", onSome: (found) => found.path }),
+  );
 
 // provider/model IDs from the `pi --list-models` table ("openai-codex  gpt-5.4-mini  272K ..."), from pi or pie.
 const listPiModels = Effect.suspend(() => {
@@ -399,7 +402,7 @@ const providerSpec = (provider: ProviderId): Option.Option<ProviderSpec> => {
 
 export const isProviderInstalled = (provider: ProviderId): boolean =>
   providerSpec(provider).pipe(
-    Option.flatMap((spec) => findFirstCli(spec.binaries)),
+    Option.flatMap((spec) => Option.fromNullable(findFirstCli(spec.binaries))),
     Option.isSome,
   );
 
@@ -420,7 +423,7 @@ const withDefaultModel = (models: ReadonlyArray<string>): ReadonlyArray<string> 
 };
 
 const describeProvider = (spec: ProviderSpec): Effect.Effect<Option.Option<DiscoveredProvider>> => {
-  const cli = findFirstCli(spec.binaries);
+  const cli = Option.fromNullable(findFirstCli(spec.binaries));
   if (Option.isNone(cli)) {
     return Effect.succeedNone;
   }

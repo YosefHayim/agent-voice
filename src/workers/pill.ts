@@ -1,6 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
 
-import { Option } from "effect";
 import { agentVoiceHome, stateFile } from "#src/settings/agent-voice-home.js";
 import { removeIfPresent } from "#src/storage/state-files.js";
 import { runningPid, signalGroup, writePid } from "./worker-processes.js";
@@ -212,8 +211,9 @@ export const startPill = (workerPid: number): ChildProcess => {
 
 export const stopPill = (): void => {
   const pillPid = runningPid("pill.pid");
-  if (Option.isSome(pillPid)) {
-    signalGroup(pillPid.value, "SIGKILL");
+  const isPillRunning = pillPid !== null;
+  if (isPillRunning) {
+    signalGroup(pillPid, "SIGKILL");
   }
   const pidPath = stateFile("pill.pid");
   removeIfPresent(pidPath);

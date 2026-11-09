@@ -1,4 +1,4 @@
-import { Effect, Either, Option } from "effect";
+import { Effect, Either } from "effect";
 
 import { readConfigOrDefaults } from "#src/settings/config-file.js";
 import { appendSpeechLog } from "#src/workers/worker-log.js";
@@ -16,7 +16,7 @@ export const speakNextReply = (engine: SupertonicEngine, player: SpeechPlayer) =
   Effect.gen(function* () {
     // Before the claim, which can wait on Cmux: a stop that comes in meanwhile must still silence the reply.
     player.reset();
-    const config = yield* readConfigOrDefaults;
+    const config = yield* Effect.sync(readConfigOrDefaults);
     // Before the dictation wait, so a reply that came in while muted is never kept for after an unmute.
     if (config.speechMuted) {
       removeInboxFiles([".json"]);
@@ -27,12 +27,16 @@ export const speakNextReply = (engine: SupertonicEngine, player: SpeechPlayer) =
       return "wait";
     }
 
-    const next = yield* claimNextReply(config.speechMode);
-    if (Option.isNone(next)) {
+    const next = yield* Effect.tryPromise({
+      try: () => claimNextReply(config.speechMode),
+      catch: (error) => error,
+    });
+    const isThereNoNext = next === null;
+    if (isThereNoNext) {
       return "idle";
     }
 
-    const { file, reply } = next.value;
+    const { file, reply } = next;
     const spoken = yield* speakMarkdown({
       engine,
       player,
@@ -61,7 +65,7 @@ const pauseAfter = (step: string) => {
 const speakUntilStopped = (engine: SupertonicEngine, player: SpeechPlayer) =>
   Effect.gen(function* () {
     while (!stopRequested()) {
-      const config = yield* readConfigOrDefaults;
+      const config = yield* Effect.sync(readConfigOrDefaults);
       if (config.speechMode === "off") {
         removeInboxFiles([".json", ".speaking"]);
         return;
@@ -84,13 +88,16 @@ const loadAndSpeak = (player: SpeechPlayer) =>
   Effect.gen(function* () {
     // A claim left by a crash would otherwise look like speech in progress forever.
     removeInboxFiles([".speaking"]);
-    const config = yield* readConfigOrDefaults;
+    const config = yield* Effect.sync(readConfigOrDefaults);
     if (config.speechMode === "off") {
       removeInboxFiles([".json"]);
       return;
     }
 
-    const folder = yield* ensureSupertonicModels(logDownload);
+    const folder = yield* Effect.tryPromise({
+      try: () => ensureSupertonicModels(logDownload),
+      catch: (error) => error,
+    });
     const engine = yield* loadSupertonic(folder);
     appendSpeechLog(`ready pid=${process.pid}`);
     yield* speakUntilStopped(engine, player);
@@ -100,8 +107,11 @@ export const runSpeechWorker = Effect.gen(function* () {
   // Installed first: the default action of SIGUSR2 would end the process while the models load.
   const player = makeSpeechPlayer();
   process.on(STOP_SPEECH_SIGNAL, player.stop);
-  const hasLock = yield* claimWorkerLock("speech");
-  if (!hasLock) {
+  const claimedLockRelease = yield* Effect.sync(() => claimWorkerLock("speech")).pipe(
+    Effect.acquireRelease((release) => Effect.sync(() => release?.())),
+  );
+  const isLockTaken = claimedLockRelease === null;
+  if (isLockTaken) {
     return;
   }
 

@@ -76,7 +76,7 @@ const postableChunk = (chunk: string): string => {
 };
 
 export const loadKeyboard = Effect.gen(function* () {
-  const config = yield* readConfigOrDefaults;
+  const config = yield* Effect.sync(readConfigOrDefaults);
   const holdKeys = { shift: SHIFT_KEYS, "right-option": [RIGHT_OPTION_KEY] }[config.dictationHoldKey];
   const otherKeys = Array.from({ length: 0x80 }, (_unused, key) => key).filter(
     (key) => !holdKeys.includes(key) && key !== CAPS_LOCK_KEY,

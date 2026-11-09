@@ -34,7 +34,7 @@ const stopTappedSpeech = (status: StatusWriter) => {
 
 const refineCopiedPrompt = (status: StatusWriter) =>
   Effect.gen(function* () {
-    const config = yield* readConfigOrDefaults;
+    const config = yield* Effect.sync(readConfigOrDefaults);
     const model = config.refineModel || "default model";
     status.write("refining", `Refining copied prompt (${config.refineProvider}/${model})…`);
     const draft = yield* readClipboard;
@@ -65,9 +65,9 @@ const refineClipboard = (status: StatusWriter) =>
 
 const toggleSpeechMute = (status: StatusWriter) =>
   Effect.gen(function* () {
-    const config = yield* readConfig;
+    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
     const muted = !config.speechMuted;
-    yield* saveConfig({ ...config, speechMuted: muted });
+    yield* Effect.try({ try: () => saveConfig({ ...config, speechMuted: muted }), catch: (error) => error });
     if (!muted) {
       status.write("inactive", "Speech unmuted");
       return;
@@ -131,7 +131,7 @@ export const makeHoldController = (request: {
   // Keeps listening after release so the last word is not clipped, unless a newer hold already took over.
   const finishClip = (clipGeneration: number) =>
     Effect.gen(function* () {
-      const config = yield* readConfigOrDefaults;
+      const config = yield* Effect.sync(readConfigOrDefaults);
       const keepListeningMs = Math.round(config.dictationKeepListeningSeconds * 1_000);
       yield* Effect.sleep(keepListeningMs);
       if (finishing !== clipGeneration) {
@@ -153,7 +153,7 @@ export const makeHoldController = (request: {
       return;
     }
 
-    const config = yield* readConfigOrDefaults;
+    const config = yield* Effect.sync(readConfigOrDefaults);
     const clipboardRefine = config.refineMode === "clipboard" || config.refineMode === "both";
     const action = doubleTapAction({ isSpeaking: isSpeaking(), clipboardRefine });
     switch (action) {

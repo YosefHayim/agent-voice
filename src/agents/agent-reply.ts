@@ -1,82 +1,107 @@
-import { Option, Schema } from "effect";
+import { z } from "zod";
 
-const textOrEmpty = Schema.optionalWith(Schema.String, { nullable: true, default: () => "" });
+interface StopReply {
+  readonly markdown: string;
+  readonly transcriptPath: string;
+  readonly agentReplyId: string;
+}
+
+// A missing or null field reads as empty text.
+const textOrEmpty = z
+  .string()
+  .nullish()
+  .transform((text) => text ?? "");
 
 // Grok writes its own camelCase envelope: https://docs.x.ai/build/features/hooks.md
 // Its transcriptPath is Grok's updates.jsonl, not a chat transcript, so it is never read.
-const grokStopInput = Schema.Struct({
-  hookEventName: Schema.String,
+const grokStopSchema = z.object({
+  hookEventName: z.string(),
   reason: textOrEmpty,
   lastAssistantMessage: textOrEmpty,
 });
 
+type GrokStop = z.infer<typeof grokStopSchema>;
+
 // Claude Code, Codex, and Devin: https://code.claude.com/docs/en/hooks and https://developers.openai.com/codex/hooks
-const snakeCaseStopInput = Schema.Struct({
+const snakeCaseStopSchema = z.object({
   last_assistant_message: textOrEmpty,
   transcript_path: textOrEmpty,
   turn_id: textOrEmpty,
 });
 
-const decodeGrokStop = Schema.decodeUnknownOption(Schema.parseJson(grokStopInput));
-
-const decodeSnakeCaseStop = Schema.decodeUnknownOption(Schema.parseJson(snakeCaseStopInput));
-
-type StopReply = { readonly markdown: string; readonly transcriptPath: string; readonly agentReplyId: string };
+// Input that is not JSON is simply not a stop reply, so it reads as null.
+const parseJsonOrNull = (stopHookStdin: string): unknown => {
+  try {
+    return JSON.parse(stopHookStdin);
+  } catch {
+    return null;
+  }
+};
 
 // Grok also sends Stop when its session closes (reason "shutdown" or "channel_closed"); only a finished turn is read.
-const grokTurnReply = (input: typeof grokStopInput.Type): Option.Option<StopReply> => {
-  if (input.reason !== "end_turn") {
-    return Option.none();
+const grokTurnReply = (grokStop: GrokStop): StopReply | null => {
+  const isFinishedTurn = grokStop.reason === "end_turn";
+  if (!isFinishedTurn) {
+    return null;
   }
 
-  return Option.some({ markdown: input.lastAssistantMessage, transcriptPath: "", agentReplyId: "" });
+  return { markdown: grokStop.lastAssistantMessage, transcriptPath: "", agentReplyId: "" };
 };
 
-export const stopReplyFromJson = (json: string): Option.Option<StopReply> => {
-  const grokStop = decodeGrokStop(json);
-  if (Option.isSome(grokStop)) {
-    return grokTurnReply(grokStop.value);
+export const readStopReply = (stopHookStdin: string): StopReply | null => {
+  const stopHookValue = parseJsonOrNull(stopHookStdin);
+  const grokStopReply = grokStopSchema.safeParse(stopHookValue);
+  const isGrokStop = grokStopReply.success;
+  if (isGrokStop) {
+    return grokTurnReply(grokStopReply.data);
   }
 
-  const snakeCaseStop = decodeSnakeCaseStop(json);
-  return Option.map(snakeCaseStop, (input) => ({
-    markdown: input.last_assistant_message,
-    transcriptPath: input.transcript_path,
-    agentReplyId: input.turn_id,
-  }));
+  const snakeCaseStopReply = snakeCaseStopSchema.safeParse(stopHookValue);
+  const isSnakeCaseStop = snakeCaseStopReply.success;
+  if (!isSnakeCaseStop) {
+    return null;
+  }
+
+  return {
+    markdown: snakeCaseStopReply.data.last_assistant_message,
+    transcriptPath: snakeCaseStopReply.data.transcript_path,
+    agentReplyId: snakeCaseStopReply.data.turn_id,
+  };
 };
 
-const contentBlock = Schema.Struct({
-  type: Schema.String,
-  text: Schema.optionalWith(Schema.String, { default: () => "" }),
+const contentBlockSchema = z.object({
+  type: z.string(),
+  text: z.string().default(""),
 });
 
-const chatMessage = Schema.Struct({
-  role: Schema.String,
-  content: Schema.Union(Schema.String, Schema.Array(contentBlock)),
+type ContentBlock = z.infer<typeof contentBlockSchema>;
+
+const chatMessageSchema = z.object({
+  role: z.string(),
+  content: z.union([z.string(), z.array(contentBlockSchema)]),
 });
 
-type ChatMessage = typeof chatMessage.Type;
+type ChatMessage = z.infer<typeof chatMessageSchema>;
 
 // Claude Code wraps each message as `{ type, message }`; other transcripts write the message itself.
-const decodeClaudeLine = Schema.decodeUnknownOption(Schema.parseJson(Schema.Struct({ message: chatMessage })));
-
-const decodeChatLine = Schema.decodeUnknownOption(Schema.parseJson(chatMessage));
-
-const isText = Schema.is(Schema.String);
+const claudeLineSchema = z.object({ message: chatMessageSchema });
 
 const transcriptMessage = (line: string): ReadonlyArray<ChatMessage> => {
-  const claudeLine = decodeClaudeLine(line);
-  if (Option.isSome(claudeLine)) {
-    return [claudeLine.value.message];
+  const lineValue = parseJsonOrNull(line);
+  const claudeLine = claudeLineSchema.safeParse(lineValue);
+  const isClaudeLine = claudeLine.success;
+  if (isClaudeLine) {
+    return [claudeLine.data.message];
   }
 
-  const chatLine = decodeChatLine(line);
-  return Option.toArray(chatLine);
+  const chatLine = chatMessageSchema.safeParse(lineValue);
+  const isChatLine = chatLine.success;
+  return isChatLine ? [chatLine.data] : [];
 };
 
-const contentBlocks = (message: ChatMessage): ReadonlyArray<typeof contentBlock.Type> => {
-  if (isText(message.content)) {
+const contentBlocks = (message: ChatMessage): ReadonlyArray<ContentBlock> => {
+  const isPlainText = typeof message.content === "string";
+  if (isPlainText) {
     return [{ type: "text", text: message.content }];
   }
 

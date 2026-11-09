@@ -35,6 +35,9 @@ importers:
       onnxruntime-node:
         specifier: 1.31.1
         version: 1.31.1
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
     devDependencies:
       '@biomejs/biome':
         specifier: 2.6.6
