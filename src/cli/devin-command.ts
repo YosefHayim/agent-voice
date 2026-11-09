@@ -4,10 +4,10 @@ import path from "node:path";
 import { Args, Command } from "@effect/cli";
 import { Effect, Schema } from "effect";
 
-import { watchDevinSession } from "../agents/devin-watcher.js";
-import { makePrivateFolder } from "../files/state-files.js";
-import { stateFolder } from "../settings/agent-voice-home.js";
-import { startWorkers } from "../workers/worker-processes.js";
+import { watchDevinSession } from "#src/agents/devin-watcher.js";
+import { makePrivateFolder } from "#src/files/state-files.js";
+import { stateFolder } from "#src/settings/agent-voice-home.js";
+import { startWorkers } from "#src/workers/worker-processes.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 class DevinFailed extends Schema.TaggedError<DevinFailed>()("DevinFailed", { issue: Schema.String }) {

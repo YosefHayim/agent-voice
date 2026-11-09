@@ -3,8 +3,8 @@ import path from "node:path";
 
 import { Effect, Either, Option, Schema } from "effect";
 
-import { makePrivateFolder, readTextIfReadable, removeIfPresent } from "../files/state-files.js";
-import { stateFolder } from "../settings/agent-voice-home.js";
+import { makePrivateFolder, readTextIfReadable, removeIfPresent } from "#src/files/state-files.js";
+import { stateFolder } from "#src/settings/agent-voice-home.js";
 import { type CliRun, cliFailureText, cliOutputText, findCli, nonBlankLines, runCli } from "./agent-cli.js";
 import { type ProviderId, providerIdSchema } from "./provider-models.js";
 import {

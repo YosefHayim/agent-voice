@@ -5,8 +5,8 @@ import {
   readTextIfReadable,
   writeFileAtomically,
   writeJsonAtomically,
-} from "../files/state-files.js";
-import { stateFile } from "../settings/agent-voice-home.js";
+} from "#src/files/state-files.js";
+import { stateFile } from "#src/settings/agent-voice-home.js";
 import { nonBlankLines } from "./agent-cli.js";
 
 export const DEFAULT_REFINE_MODEL = "gpt-5.3-codex-spark";

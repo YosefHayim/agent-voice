@@ -23,6 +23,7 @@ The folder map is in [README → Project structure](README.md#project-structure)
 
 ## Recipes
 
+- Imports across folders use `#src/...` (package.json `imports`), never `../`. Source runs (`pnpm dev`, `pnpm dev:cli`, `pnpm test:bench`) and Vitest pass the `source` condition, so `#src/*` points at `src/`. The built CLI in `dist/src/` uses the default condition.
 - Agent settings change only through `src/agents/hook-settings.ts`: one owned Stop entry, found by its command, backed up first, every other byte kept.
 - Native modules load lazily (`koffi`, PvRecorder, whisper.node, onnxruntime-node). `agent-voice reply` must stay fast and never fail, so new imports on that path stay lazy.
 - Tests never touch the real `~/.agent-voice` or agent settings. Set `AGENT_VOICE_HOME` and `HOME` to a folder from `makeTestFolder` (`src/scripts/test-folder.ts`, under the gitignored `.test-home/`) and put fake CLIs on `PATH`. Smoke tests only read models from `~/.agent-voice/models`.

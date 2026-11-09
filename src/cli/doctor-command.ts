@@ -1,17 +1,17 @@
 import { existsSync } from "node:fs";
 import { Command, Options } from "@effect/cli";
 import { Effect, Option, Schema } from "effect";
-import { registeredSettingsFiles } from "../agents/hook-registration.js";
-import { hookSettingsFiles } from "../agents/hook-settings-files.js";
-import { type Keyboard, loadKeyboard } from "../dictation/keyboard.js";
-import { WHISPER_PACKAGE } from "../dictation/transcriber.js";
-import { isWhisperModelPresent, selectWhisperModel, whisperModelPath } from "../dictation/whisper-models.js";
-import { findCli, runCli } from "../refine/agent-cli.js";
-import { type DiscoveredProvider, discoverProviders } from "../refine/provider-models.js";
-import { readConfig } from "../settings/config-file.js";
-import type { Config } from "../settings/config-schema.js";
-import { readEnvironment } from "../settings/environment-variables.js";
-import { missingSupertonicFiles, supertonicFolder } from "../speech/supertonic-models.js";
+import { registeredSettingsFiles } from "#src/agents/hook-registration.js";
+import { hookSettingsFiles } from "#src/agents/hook-settings-files.js";
+import { type Keyboard, loadKeyboard } from "#src/dictation/keyboard.js";
+import { WHISPER_PACKAGE } from "#src/dictation/transcriber.js";
+import { isWhisperModelPresent, selectWhisperModel, whisperModelPath } from "#src/dictation/whisper-models.js";
+import { findCli, runCli } from "#src/refine/agent-cli.js";
+import { type DiscoveredProvider, discoverProviders } from "#src/refine/provider-models.js";
+import { readConfig } from "#src/settings/config-file.js";
+import type { Config } from "#src/settings/config-schema.js";
+import { readEnvironment } from "#src/settings/environment-variables.js";
+import { missingSupertonicFiles, supertonicFolder } from "#src/speech/supertonic-models.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 const doctorCheckSchema = Schema.Struct({

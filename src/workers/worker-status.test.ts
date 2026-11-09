@@ -2,7 +2,7 @@ import { rmSync } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeTestFolder } from "../scripts/test-folder.js";
+import { makeTestFolder } from "#src/scripts/test-folder.js";
 import { dictationOwnsAudio, makeStatusWriter } from "./worker-status.js";
 
 let home = "";

@@ -3,11 +3,11 @@ import path from "node:path";
 import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 
-import { readConfig } from "../settings/config-file.js";
-import type { Config } from "../settings/config-schema.js";
-import { makeSpeechPlayer, renderMarkdownToWav, speakMarkdown } from "../speech/speech-player.js";
-import { loadSupertonic } from "../speech/supertonic.js";
-import { ensureSupertonicModels, missingSupertonicFiles } from "../speech/supertonic-models.js";
+import { readConfig } from "#src/settings/config-file.js";
+import type { Config } from "#src/settings/config-schema.js";
+import { makeSpeechPlayer, renderMarkdownToWav, speakMarkdown } from "#src/speech/speech-player.js";
+import { loadSupertonic } from "#src/speech/supertonic.js";
+import { ensureSupertonicModels, missingSupertonicFiles } from "#src/speech/supertonic-models.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 const voiceOf = (config: Config) => ({ voice: config.speechVoice, wordsPerMinute: config.speechWordsPerMinute });

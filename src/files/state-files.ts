@@ -14,7 +14,7 @@ import path from "node:path";
 
 import { Option, Schema } from "effect";
 
-import { agentVoiceHome } from "../settings/agent-voice-home.js";
+import { agentVoiceHome } from "#src/settings/agent-voice-home.js";
 
 // Dictated, refined, and reply text is readable by the user alone: its files are 0600 and its folders 0700.
 const PRIVATE_FILE_MODE = 0o600;

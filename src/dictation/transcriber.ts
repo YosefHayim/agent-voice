@@ -5,7 +5,7 @@ import { availableParallelism } from "node:os";
 import path from "node:path";
 
 import { Effect, Option, Schema } from "effect";
-import type { Config } from "../settings/config-schema.js";
+import type { Config } from "#src/settings/config-schema.js";
 import { pcmFromSamples, prepareForWhisper, rootMeanSquare, syntheticSpeech } from "./clip-audio.js";
 import { tidyWhisperText } from "./transcript-text.js";
 import type { TranscribeOptions, WhisperModule } from "./whisper-node.js";

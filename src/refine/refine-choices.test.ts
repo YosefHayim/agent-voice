@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeTestFolder } from "../scripts/test-folder.js";
+import { makeTestFolder } from "#src/scripts/test-folder.js";
 import { codexFailedModels, markCodexModelFailed, saveRefineChoice } from "./refine-choices.js";
 
 let home = "";

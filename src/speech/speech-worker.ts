@@ -1,9 +1,9 @@
 import { Effect, Either, Option } from "effect";
 
-import { readConfigOrDefaults } from "../settings/config-file.js";
-import { appendSpeechLog } from "../workers/worker-log.js";
-import { claimWorkerLock, stopRequested } from "../workers/worker-processes.js";
-import { dictationOwnsAudio } from "../workers/worker-status.js";
+import { readConfigOrDefaults } from "#src/settings/config-file.js";
+import { appendSpeechLog } from "#src/workers/worker-log.js";
+import { claimWorkerLock, stopRequested } from "#src/workers/worker-processes.js";
+import { dictationOwnsAudio } from "#src/workers/worker-status.js";
 import { claimNextReply, completeReply, failReply, removeInboxFiles } from "./inbox.js";
 import { makeSpeechPlayer, type SpeechPlayer, speakMarkdown } from "./speech-player.js";
 import { loadSupertonic, type SupertonicEngine } from "./supertonic.js";

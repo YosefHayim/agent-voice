@@ -3,12 +3,12 @@
 // caret may have moved by the time a model answers.
 
 import { Effect, Either, Fiber, Option, Queue } from "effect";
-import { deliverToCmux } from "../refine/cmux-delivery.js";
-import { refinePrompt } from "../refine/refine-attempts.js";
-import { readConfigOrDefaults } from "../settings/config-file.js";
-import type { Config } from "../settings/config-schema.js";
-import { appendDictationLog } from "../workers/worker-log.js";
-import type { StatusWriter } from "../workers/worker-status.js";
+import { deliverToCmux } from "#src/refine/cmux-delivery.js";
+import { refinePrompt } from "#src/refine/refine-attempts.js";
+import { readConfigOrDefaults } from "#src/settings/config-file.js";
+import type { Config } from "#src/settings/config-schema.js";
+import { appendDictationLog } from "#src/workers/worker-log.js";
+import type { StatusWriter } from "#src/workers/worker-status.js";
 import { typeAtCaret } from "./caret.js";
 import { SAMPLE_RATE } from "./clip-audio.js";
 import { formatDictation, parseReplacements, promptBoost } from "./dictation-format.js";

@@ -5,9 +5,9 @@ import { parseArgs } from "node:util";
 
 import { Effect, Schema } from "effect";
 
-import { SAMPLE_RATE, syntheticSpeech } from "../dictation/clip-audio.js";
-import { loadTranscriber, whisperBackend } from "../dictation/transcriber.js";
-import { ensureWhisperModel, whisperModels } from "../dictation/whisper-models.js";
+import { SAMPLE_RATE, syntheticSpeech } from "#src/dictation/clip-audio.js";
+import { loadTranscriber, whisperBackend } from "#src/dictation/transcriber.js";
+import { ensureWhisperModel, whisperModels } from "#src/dictation/whisper-models.js";
 
 const { values } = parseArgs({
   options: {

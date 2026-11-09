@@ -4,7 +4,7 @@ import path from "node:path";
 import { Effect, Schema } from "effect";
 import type * as OnnxRuntime from "onnxruntime-node";
 
-import type { Config } from "../settings/config-schema.js";
+import type { Config } from "#src/settings/config-schema.js";
 import { characterIds, supertonicText } from "./speech-chunks.js";
 
 export class SupertonicError extends Schema.TaggedError<SupertonicError>()("SupertonicError", {

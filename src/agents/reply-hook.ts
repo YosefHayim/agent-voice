@@ -3,10 +3,10 @@ import { text } from "node:stream/consumers";
 
 import { Effect, Option, Schema } from "effect";
 
-import { readConfigOrDefaults } from "../settings/config-file.js";
-import type { Config } from "../settings/config-schema.js";
-import { queueReply, type ReplyOrigin } from "../speech/inbox.js";
-import { isWorkerRunning, spawnWorker, startSpeechWorker } from "../workers/worker-processes.js";
+import { readConfigOrDefaults } from "#src/settings/config-file.js";
+import type { Config } from "#src/settings/config-schema.js";
+import { queueReply, type ReplyOrigin } from "#src/speech/inbox.js";
+import { isWorkerRunning, spawnWorker, startSpeechWorker } from "#src/workers/worker-processes.js";
 import { type AgentId, agentIdSchema } from "./agent-catalog.js";
 import { replyFromTranscript, stopReplyFromJson } from "./agent-reply.js";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { type Config, defaultConfig } from "../settings/config-schema.js";
-import { readEnvironment } from "../settings/environment-variables.js";
+import { type Config, defaultConfig } from "#src/settings/config-schema.js";
+import { readEnvironment } from "#src/settings/environment-variables.js";
 import { selectWhisperModel } from "./whisper-models.js";
 
 const selectedKey = (request: { readonly forced: string; readonly config: Partial<Config> }) => {

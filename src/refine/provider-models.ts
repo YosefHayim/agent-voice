@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { Effect, Option, Schema } from "effect";
 
-import { readJsonFile, readTextIfReadable } from "../files/state-files.js";
+import { readJsonFile, readTextIfReadable } from "#src/files/state-files.js";
 import { containsAny, dedupe, findFirstCli, nonBlankLines, runCliLines } from "./agent-cli.js";
 import { codexLastGoodModel } from "./refine-choices.js";
 

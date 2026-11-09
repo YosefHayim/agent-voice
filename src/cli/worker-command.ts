@@ -1,8 +1,8 @@
 import { Args, Command } from "@effect/cli";
 import type { Effect } from "effect";
 
-import { runDictationWorker } from "../dictation/dictation-worker.js";
-import { runSpeechWorker } from "../speech/speech-worker.js";
+import { runDictationWorker } from "#src/dictation/dictation-worker.js";
+import { runSpeechWorker } from "#src/speech/speech-worker.js";
 
 type WorkerFailure = Effect.Effect.Error<typeof runDictationWorker> | Effect.Effect.Error<typeof runSpeechWorker>;
 

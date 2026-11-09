@@ -4,8 +4,8 @@ import path from "node:path";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeTestFolder } from "../scripts/test-folder.js";
-import { makeStatusWriter } from "../workers/worker-status.js";
+import { makeTestFolder } from "#src/scripts/test-folder.js";
+import { makeStatusWriter } from "#src/workers/worker-status.js";
 import { startDictationQueue } from "./dictation-queue.js";
 import type { Keyboard } from "./keyboard.js";
 import type { Transcriber } from "./transcriber.js";

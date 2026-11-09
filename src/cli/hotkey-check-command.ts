@@ -1,8 +1,8 @@
 import { Command, Options } from "@effect/cli";
 import { Effect, Schema } from "effect";
 
-import { holdKeyLabels } from "../dictation/hold-key.js";
-import { loadKeyboard } from "../dictation/keyboard.js";
+import { holdKeyLabels } from "#src/dictation/hold-key.js";
+import { loadKeyboard } from "#src/dictation/keyboard.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 class NoHoldSeen extends Schema.TaggedError<NoHoldSeen>()("NoHoldSeen", {}) {

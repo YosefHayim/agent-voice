@@ -6,8 +6,8 @@ import path from "node:path";
 import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { makeTestFolder } from "../scripts/test-folder.js";
-import { decodeWav } from "../speech/wav-file.js";
+import { makeTestFolder } from "#src/scripts/test-folder.js";
+import { decodeWav } from "#src/speech/wav-file.js";
 import { samplesFromPcm } from "./clip-audio.js";
 import { formatDictation } from "./dictation-format.js";
 import { loadTranscriber } from "./transcriber.js";

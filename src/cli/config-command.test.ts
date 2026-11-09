@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { runAgentVoice } from "../scripts/run-agent-voice.js";
-import { makeTestFolder } from "../scripts/test-folder.js";
+import { runAgentVoice } from "#src/scripts/run-agent-voice.js";
+import { makeTestFolder } from "#src/scripts/test-folder.js";
 
 let home = "";
 let sleeper: ChildProcess | undefined;

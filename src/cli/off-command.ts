@@ -1,8 +1,8 @@
 import { Command } from "@effect/cli";
 import { Effect } from "effect";
 
-import { unregisterReplyHooks } from "../agents/hook-registration.js";
-import { resetWorkers } from "../workers/worker-processes.js";
+import { unregisterReplyHooks } from "#src/agents/hook-registration.js";
+import { resetWorkers } from "#src/workers/worker-processes.js";
 import { showHookChanges } from "./on-command.js";
 import * as TerminalUI from "./terminal-ui.js";
 

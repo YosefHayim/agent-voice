@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from "effect";
 
-import { readEnvironment } from "../settings/environment-variables.js";
+import { readEnvironment } from "#src/settings/environment-variables.js";
 import { dedupe, runCli } from "./agent-cli.js";
 import {
   CODEX_MODEL_FALLBACKS,
