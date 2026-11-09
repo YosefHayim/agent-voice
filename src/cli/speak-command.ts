@@ -1,62 +1,53 @@
 import path from "node:path";
 
-import { Args, Command, Options } from "@effect/cli";
-import { Effect, Option } from "effect";
-
 import { readConfig } from "#src/settings/config-file.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { makeSpeechPlayer, speakMarkdown, writeMarkdownWav } from "#src/speech/speech-player.js";
 import { loadSupertonic } from "#src/speech/supertonic.js";
 import { ensureSupertonicModels, missingSupertonicFiles } from "#src/speech/supertonic-models.js";
+import { type CommandSpec, readRequiredPositional, readStringFlag } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
-const voiceOf = (config: Config) => ({ voice: config.speechVoice, wordsPerMinute: config.speechWordsPerMinute });
+const voiceOf = (settings: Config) => ({ voice: settings.speechVoice, wordsPerMinute: settings.speechWordsPerMinute });
 
-const loadEngine = Effect.gen(function* () {
+const loadEngine = async () => {
   const isDownloadNeeded = missingSupertonicFiles().length > 0;
   if (isDownloadNeeded) {
-    yield* TerminalUI.step("Downloading the Supertonic voices (~400 MB, once)");
+    TerminalUI.printStep("Downloading the Supertonic voices (~400 MB, once)");
   }
 
-  const modelFolder = yield* Effect.tryPromise({
-    try: () => ensureSupertonicModels(() => undefined),
-    catch: (error) => error,
-  });
-  return yield* Effect.tryPromise({ try: () => loadSupertonic(modelFolder), catch: (error) => error });
-});
+  const modelFolder = await ensureSupertonicModels(() => undefined);
+  return loadSupertonic(modelFolder);
+};
 
-export const speakAloud = (markdown: string, config: Config) =>
-  Effect.gen(function* () {
-    const engine = yield* loadEngine;
-    const player = makeSpeechPlayer();
-    const voice = voiceOf(config);
-    yield* Effect.tryPromise({
-      try: () => speakMarkdown({ engine, player, markdown, voice }),
-      catch: (error) => error,
-    });
-  });
+export const speakAloud = async (markdown: string, settings: Config): Promise<void> => {
+  const engine = await loadEngine();
+  const player = makeSpeechPlayer();
+  const voice = voiceOf(settings);
+  await speakMarkdown({ engine, player, markdown, voice });
+};
 
-const markdownArgument = Args.text({ name: "markdown" }).pipe(Args.withDescription("A complete reply, in Markdown"));
-
-const outputOption = Options.file("output").pipe(
-  Options.withDescription("Write the speech to this WAV file instead of playing it"),
-  Options.optional,
-);
-
-export const speakCommand = Command.make("speak", { markdown: markdownArgument, output: outputOption }, (args) =>
-  Effect.gen(function* () {
-    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
-    if (Option.isNone(args.output)) {
-      return yield* speakAloud(args.markdown, config);
+export const speakCommand: CommandSpec = {
+  name: "speak",
+  description: "Read one Markdown reply aloud with the configured voice (or write it to a WAV file)",
+  flags: {
+    output: { kind: "text", description: "Write the speech to this WAV file instead of playing it" },
+  },
+  positionals: [{ name: "markdown", description: "A complete reply, in Markdown", isRequired: true }],
+  run: async (parsedCommand) => {
+    const settings = readConfig();
+    const markdown = readRequiredPositional(parsedCommand, "markdown");
+    const outputFile = readStringFlag(parsedCommand, "output");
+    const isPlaybackOnly = outputFile == null;
+    if (isPlaybackOnly) {
+      await speakAloud(markdown, settings);
+      return 0;
     }
 
-    const engine = yield* loadEngine;
-    const voice = voiceOf(config);
-    const outputFile = path.resolve(args.output.value);
-    const seconds = yield* Effect.tryPromise({
-      try: () => writeMarkdownWav({ engine, markdown: args.markdown, voice, outputFile }),
-      catch: (error) => error,
-    });
-    yield* TerminalUI.success(`Wrote ${seconds.toFixed(1)} s of speech to ${outputFile}`);
-  }),
-).pipe(Command.withDescription("Read one Markdown reply aloud with the configured voice (or write it to a WAV file)"));
+    const engine = await loadEngine();
+    const outputPath = path.resolve(outputFile);
+    const seconds = await writeMarkdownWav({ engine, markdown, voice: voiceOf(settings), outputFile: outputPath });
+    TerminalUI.printSuccess(`Wrote ${seconds.toFixed(1)} s of speech to ${outputPath}`);
+    return 0;
+  },
+};

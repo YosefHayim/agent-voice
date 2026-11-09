@@ -1,11 +1,16 @@
-import { Args, Command } from "@effect/cli";
-
 import { markdownToSpeech } from "#src/speech/markdown-to-speech.js";
+import { type CommandSpec, readRequiredPositional } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
-const markdownArgument = Args.text({ name: "markdown" }).pipe(Args.withDescription("A complete reply, in Markdown"));
-
-export const renderCommand = Command.make("render", { markdown: markdownArgument }, (args) => {
-  const speech = markdownToSpeech(args.markdown);
-  return TerminalUI.text(speech);
-}).pipe(Command.withDescription("Print the sentences agent-voice would read for a Markdown reply"));
+export const renderCommand: CommandSpec = {
+  name: "render",
+  description: "Print the sentences agent-voice would read for a Markdown reply",
+  flags: {},
+  positionals: [{ name: "markdown", description: "A complete reply, in Markdown", isRequired: true }],
+  run: async (parsedCommand) => {
+    const markdown = readRequiredPositional(parsedCommand, "markdown");
+    const speech = markdownToSpeech(markdown);
+    TerminalUI.printLine(speech);
+    return 0;
+  },
+};

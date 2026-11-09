@@ -1,5 +1,3 @@
-import { Command, Options } from "@effect/cli";
-import { Effect } from "effect";
 import { registeredSettingsFiles } from "#src/agents/hook-registration.js";
 import {
   isWhisperModelPresent,
@@ -13,13 +11,59 @@ import type { Config } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { isWorkerRunning, readPid } from "#src/workers/worker-processes.js";
 import { readWorkerStatus } from "#src/workers/worker-status.js";
+import { type CommandSpec, isFlagOn } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 const NOT_STARTED = { stage: "starting", detail: "", model: "", backend: "" };
 
 const BYTES_PER_MEGABYTE = 1_000_000;
 
-const modelEntries = (selectedKey: string) =>
+interface ModelEntry {
+  readonly key: string;
+  readonly label: string;
+  readonly megabytes: number;
+  readonly path: string;
+  readonly present: boolean;
+  readonly selected: boolean;
+}
+
+interface DictationStatus {
+  readonly running: boolean;
+  readonly pid: number | undefined;
+  readonly stage: string;
+  readonly detail: string;
+  readonly model: string;
+  readonly backend: string;
+  readonly language: string;
+  readonly modelKey: string;
+  readonly models: ReadonlyArray<ModelEntry>;
+  readonly hotkey: string;
+}
+
+interface SpeechStatus {
+  readonly running: boolean;
+  readonly mode: string;
+  readonly voice: string;
+  readonly muted: boolean;
+}
+
+interface RefineStatus {
+  readonly mode: string;
+  readonly provider: string;
+  readonly model: string;
+  readonly sendTo: string;
+}
+
+interface AgentVoiceStatus {
+  readonly home: string;
+  readonly configFile: string;
+  readonly dictation: DictationStatus;
+  readonly speech: SpeechStatus;
+  readonly refine: RefineStatus;
+  readonly hooks: ReadonlyArray<string>;
+}
+
+const modelEntries = (selectedKey: string): ReadonlyArray<ModelEntry> =>
   whisperModels.map((model) => ({
     key: model.key,
     label: model.label,
@@ -29,8 +73,8 @@ const modelEntries = (selectedKey: string) =>
     selected: model.key === selectedKey,
   }));
 
-const dictationStatus = (config: Config) => {
-  const selected = selectWhisperModel({ environment: readEnvironment(), config });
+const dictationStatus = (settings: Config): DictationStatus => {
+  const selected = selectWhisperModel({ environment: readEnvironment(), config: settings });
   const isRunning = isWorkerRunning("dictation");
   const pid = readPid("dictation.pid") ?? undefined;
   const saved = readWorkerStatus() ?? NOT_STARTED;
@@ -41,10 +85,10 @@ const dictationStatus = (config: Config) => {
     detail: saved.detail,
     model: saved.model,
     backend: saved.backend,
-    language: config.dictationLanguage,
+    language: settings.dictationLanguage,
     modelKey: selected.key,
     models: modelEntries(selected.key),
-    hotkey: `hold-${config.dictationHoldKey}`,
+    hotkey: `hold-${settings.dictationHoldKey}`,
   };
   if (!isRunning) {
     return { ...dictation, stage: "inactive" };
@@ -55,44 +99,34 @@ const dictationStatus = (config: Config) => {
 
 // Several Claude Code accounts count as one agent.
 const registeredAgents = (): ReadonlyArray<string> => {
-  const agents = registeredSettingsFiles().map((settings) => settings.agent);
+  const agents = registeredSettingsFiles().map((settingsFile) => settingsFile.agent);
   const uniqueAgents = new Set(agents);
   return [...uniqueAgents];
 };
 
-const currentStatus = Effect.gen(function* () {
-  const config = yield* Effect.sync(readConfigOrDefaults);
+const readCurrentStatus = (): AgentVoiceStatus => {
+  const settings = readConfigOrDefaults();
   return {
     home: agentVoiceHome(),
     configFile: configFilePath(),
-    dictation: dictationStatus(config),
+    dictation: dictationStatus(settings),
     speech: {
       running: isWorkerRunning("speech"),
-      mode: config.speechMode,
-      voice: config.speechVoice,
-      muted: config.speechMuted,
+      mode: settings.speechMode,
+      voice: settings.speechVoice,
+      muted: settings.speechMuted,
     },
     refine: {
-      mode: config.refineMode,
-      provider: config.refineProvider,
-      model: config.refineModel || "",
-      sendTo: config.refineSendTo,
+      mode: settings.refineMode,
+      provider: settings.refineProvider,
+      model: settings.refineModel || "",
+      sendTo: settings.refineSendTo,
     },
     hooks: registeredAgents(),
   };
-});
-
-type AgentVoiceStatus = Effect.Effect.Success<typeof currentStatus>;
-
-const speechState = (speech: AgentVoiceStatus["speech"]): string => {
-  if (speech.running) {
-    return "on";
-  }
-
-  return "off";
 };
 
-const dictationLine = (dictation: AgentVoiceStatus["dictation"]): string => {
+const dictationLine = (dictation: DictationStatus): string => {
   if (!dictation.running) {
     return "off";
   }
@@ -105,13 +139,14 @@ const dictationLine = (dictation: AgentVoiceStatus["dictation"]): string => {
   return `${line} · ${dictation.detail}`;
 };
 
-const modelLine = (dictation: AgentVoiceStatus["dictation"]): string => {
+const modelLine = (dictation: DictationStatus): string => {
   const model = dictation.model || "(not loaded)";
   return `${model} ${dictation.backend} · language ${dictation.language} · selected ${dictation.modelKey}`;
 };
 
-const speechLine = (speech: AgentVoiceStatus["speech"]): string => {
-  const line = `${speechState(speech)} · mode ${speech.mode} · voice ${speech.voice}`;
+const speechLine = (speech: SpeechStatus): string => {
+  const isSpeechOn = speech.running;
+  const line = `${isSpeechOn ? "on" : "off"} · mode ${speech.mode} · voice ${speech.voice}`;
   if (speech.muted) {
     return `${line} · muted`;
   }
@@ -119,7 +154,7 @@ const speechLine = (speech: AgentVoiceStatus["speech"]): string => {
   return line;
 };
 
-const refineLine = (refine: AgentVoiceStatus["refine"]): string => {
+const refineLine = (refine: RefineStatus): string => {
   if (refine.mode === "off") {
     return "off";
   }
@@ -136,7 +171,7 @@ const hooksLine = (hooks: ReadonlyArray<string>): string => {
   return hooks.join(", ");
 };
 
-const statusText = (status: AgentVoiceStatus): string =>
+const statusMessage = (status: AgentVoiceStatus): string =>
   [
     `dictation   ${dictationLine(status.dictation)}`,
     `model       ${modelLine(status.dictation)}`,
@@ -146,16 +181,22 @@ const statusText = (status: AgentVoiceStatus): string =>
     `config      ${status.configFile}`,
   ].join("\n");
 
-const jsonOption = Options.boolean("json").pipe(Options.withDescription("Print one JSON document"));
-
-export const statusCommand = Command.make("status", { json: jsonOption }, (args) =>
-  Effect.gen(function* () {
-    const status = yield* currentStatus;
-    if (args.json) {
-      return yield* TerminalUI.json(status);
+export const statusCommand: CommandSpec = {
+  name: "status",
+  description: "Show the workers, the dictation stage, the agent hooks, and the main settings",
+  flags: {
+    json: { kind: "boolean", description: "Print one JSON document" },
+  },
+  positionals: [],
+  run: async (parsedCommand) => {
+    const status = readCurrentStatus();
+    const isDocumentWanted = isFlagOn(parsedCommand, "json");
+    if (isDocumentWanted) {
+      TerminalUI.printDocument(status);
+      return 0;
     }
 
-    const text = statusText(status);
-    yield* TerminalUI.note("agent-voice status", text);
-  }),
-).pipe(Command.withDescription("Show the workers, the dictation stage, the agent hooks, and the main settings"));
+    TerminalUI.printNote("agent-voice status", statusMessage(status));
+    return 0;
+  },
+};

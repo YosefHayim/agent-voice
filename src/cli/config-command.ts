@@ -1,9 +1,7 @@
-import { Args, Command, Options } from "@effect/cli";
-import { Effect, Option } from "effect";
 import { selectWhisperModel } from "#src/dictation/whisper-models.js";
 import { type DiscoveredProvider, discoverProviders, REASONING_EFFORTS } from "#src/refine/provider-models.js";
 import { saveRefineChoice } from "#src/refine/refine-choices.js";
-import { pickerModels, pickRefineTargetWithDialogs, type RefinePick } from "#src/refine/refine-picker.js";
+import { listPickerModels, pickRefineTargetWithDialogs, type RefinePick } from "#src/refine/refine-picker.js";
 import { readConfig, saveConfig } from "#src/settings/config-file.js";
 import {
   type Config,
@@ -15,32 +13,30 @@ import {
 } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { isWorkerRunning, startSpeechWorker, stopSpeech } from "#src/workers/worker-processes.js";
-import { CliUsageError } from "./cli-usage-error.js";
+import { type CommandSpec, isFlagOn, readRequiredPositional } from "./command-spec.js";
 import { describeSpeech, prepareModels, restartWorkers } from "./on-command.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 type ConfigSetting = (typeof configSettings)[number];
 
-const findSetting = (name: string) =>
-  Effect.gen(function* () {
-    const setting = configSettings.find((candidate) => candidate.name === name || candidate.key === name);
-    if (setting === undefined) {
-      return yield* new CliUsageError({ issue: `Unknown setting "${name}". See \`agent-voice config list\`.` });
-    }
+const findSetting = (settingName: string): ConfigSetting | null => {
+  const setting = configSettings.find((candidate) => candidate.name === settingName || candidate.key === settingName);
+  return setting ?? null;
+};
 
-    return setting;
-  });
+const describeUnknownSetting = (settingName: string): string =>
+  `Unknown setting "${settingName}". See \`agent-voice config list\`.`;
 
-const shownValue = (config: Config, setting: ConfigSetting): string => {
-  const value: unknown = config[setting.key];
-  if (value === undefined) {
+const describeSettingValue = (settings: Config, setting: ConfigSetting): string => {
+  const savedValue: unknown = settings[setting.key];
+  if (savedValue === undefined) {
     return "(not set)";
   }
 
-  return JSON.stringify(value);
+  return JSON.stringify(savedValue);
 };
 
-const choicesNote = (setting: ConfigSetting): string => {
+const describeChoices = (setting: ConfigSetting): string => {
   if (setting.choices.length === 0) {
     return "";
   }
@@ -48,210 +44,291 @@ const choicesNote = (setting: ConfigSetting): string => {
   return ` (${setting.choices.join(" | ")})`;
 };
 
-const showSetting = (config: Config, setting: ConfigSetting) => {
-  const message = `${shownValue(config, setting)}${choicesNote(setting)}\n${setting.description}`;
-  return TerminalUI.note(setting.name, message);
+const printSetting = (settings: Config, setting: ConfigSetting): void => {
+  const message = `${describeSettingValue(settings, setting)}${describeChoices(setting)}\n${setting.description}`;
+  TerminalUI.printNote(setting.name, message);
 };
 
-const nameArgument = Args.text({ name: "setting" }).pipe(Args.withDescription("Setting name, e.g. speech-mode"));
-
-const jsonOption = Options.boolean("json").pipe(Options.withDescription("Print one JSON document"));
-
-const listCommand = Command.make("list", { json: jsonOption }, (args) =>
-  Effect.gen(function* () {
-    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
-    if (args.json) {
-      return yield* TerminalUI.json(config);
+const listCommand: CommandSpec = {
+  name: "list",
+  description: "Show every setting with its value and meaning",
+  flags: {
+    json: { kind: "boolean", description: "Print one JSON document" },
+  },
+  positionals: [],
+  run: async (parsedCommand) => {
+    const settings = readConfig();
+    const isDocumentWanted = isFlagOn(parsedCommand, "json");
+    if (isDocumentWanted) {
+      TerminalUI.printDocument(settings);
+      return 0;
     }
 
-    yield* Effect.forEach(configSettings, (setting) => showSetting(config, setting));
-  }),
-).pipe(Command.withDescription("Show every setting with its value and meaning"));
+    for (const setting of configSettings) {
+      printSetting(settings, setting);
+    }
+
+    return 0;
+  },
+};
 
 // An unset optional setting has no value: null, so every entry carries the same fields.
-const describedSetting = (config: Config, setting: ConfigSetting) => {
-  const value: unknown = config[setting.key];
+const describeSettingEntry = (settings: Config, setting: ConfigSetting) => {
+  const savedValue: unknown = settings[setting.key];
   const { key: _key, ...described } = setting;
-  if (value === undefined) {
+  if (savedValue === undefined) {
     return { ...described, value: null };
   }
 
-  return { ...described, value };
+  return { ...described, value: savedValue };
 };
 
-const describeCommand = Command.make("describe", {}, () =>
-  Effect.gen(function* () {
-    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
-    const settings = configSettings.map((setting) => describedSetting(config, setting));
-    yield* TerminalUI.json(settings);
-  }),
-).pipe(Command.withDescription("Print every setting as JSON: name, label, description, kind, choices, and value"));
+const describeCommand: CommandSpec = {
+  name: "describe",
+  description: "Print every setting as JSON: name, label, description, kind, choices, and value",
+  flags: {},
+  positionals: [],
+  run: async () => {
+    const settings = readConfig();
+    const describedSettings = configSettings.map((setting) => describeSettingEntry(settings, setting));
+    TerminalUI.printDocument(describedSettings);
+    return 0;
+  },
+};
 
-const getCommand = Command.make("get", { name: nameArgument }, (args) =>
-  Effect.gen(function* () {
-    const setting = yield* findSetting(args.name);
-    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
-    const value = shownValue(config, setting);
-    yield* TerminalUI.text(value);
-  }),
-).pipe(Command.withDescription("Print one setting's value"));
-
-const applyChange = (previous: Config, next: Config) =>
-  Effect.gen(function* () {
-    const environment = readEnvironment();
-    const previousModel = selectWhisperModel({ environment, config: previous });
-    const nextModel = selectWhisperModel({ environment, config: next });
-    const isDictationRunning = isWorkerRunning("dictation");
-    const isModelChanged = previousModel.key !== nextModel.key;
-    const isHoldKeyChanged = previous.dictationHoldKey !== next.dictationHoldKey;
-    const isSpeechTurnedOn = previous.speechMode === "off" && next.speechMode !== "off";
-    const isSpeechTurnedOff = previous.speechMode !== "off" && next.speechMode === "off";
-    const isNewlyMuted = !previous.speechMuted && next.speechMuted;
-    if ((isModelChanged || isHoldKeyChanged) && isDictationRunning) {
-      yield* prepareModels(next);
-      yield* restartWorkers;
-      return yield* TerminalUI.detail(`Dictation restarted with ${nextModel.label}.`);
+const getCommand: CommandSpec = {
+  name: "get",
+  description: "Print one setting's value",
+  flags: {},
+  positionals: [{ name: "setting", description: "Setting name, e.g. speech-mode", isRequired: true }],
+  run: async (parsedCommand) => {
+    const settingName = readRequiredPositional(parsedCommand, "setting");
+    const setting = findSetting(settingName);
+    const isSettingUnknown = setting == null;
+    if (isSettingUnknown) {
+      TerminalUI.printError(describeUnknownSetting(settingName));
+      return 2;
     }
 
-    if (isSpeechTurnedOn && isDictationRunning) {
-      yield* prepareModels(next);
-      startSpeechWorker();
-      return yield* TerminalUI.detail(`Speech started. ${describeSpeech(next)}`);
+    const settings = readConfig();
+    TerminalUI.printLine(describeSettingValue(settings, setting));
+    return 0;
+  },
+};
+
+const applyChange = async (previous: Config, next: Config): Promise<void> => {
+  const environment = readEnvironment();
+  const previousModel = selectWhisperModel({ environment, config: previous });
+  const nextModel = selectWhisperModel({ environment, config: next });
+  const isDictationRunning = isWorkerRunning("dictation");
+  const isModelChanged = previousModel.key !== nextModel.key;
+  const isHoldKeyChanged = previous.dictationHoldKey !== next.dictationHoldKey;
+  const isSpeechTurnedOn = previous.speechMode === "off" && next.speechMode !== "off";
+  const isSpeechTurnedOff = previous.speechMode !== "off" && next.speechMode === "off";
+  const isNewlyMuted = !previous.speechMuted && next.speechMuted;
+  const isDictationRestartNeeded = (isModelChanged || isHoldKeyChanged) && isDictationRunning;
+  const isSpeechStartNeeded = isSpeechTurnedOn && isDictationRunning;
+  if (isDictationRestartNeeded) {
+    await prepareModels(next);
+    await restartWorkers();
+    TerminalUI.printDetail(`Dictation restarted with ${nextModel.label}.`);
+    return;
+  }
+
+  if (isSpeechStartNeeded) {
+    await prepareModels(next);
+    startSpeechWorker();
+    TerminalUI.printDetail(`Speech started. ${describeSpeech(next)}`);
+    return;
+  }
+
+  // The worker reads the mode only between replies, so a reply being read is stopped now.
+  if (isSpeechTurnedOff) {
+    stopSpeech();
+    TerminalUI.printDetail("Speech stops within a second; dictation keeps running.");
+    return;
+  }
+
+  if (isNewlyMuted) {
+    stopSpeech();
+    TerminalUI.printDetail("Speech muted; the reply being read stops now.");
+    return;
+  }
+
+  TerminalUI.printDetail("Applies from the next dictation or reply.");
+};
+
+const saveSetting = async (request: {
+  readonly setting: ConfigSetting;
+  readonly answer: ConfigValue | null;
+}): Promise<void> => {
+  const previous = readConfig();
+  const next = withSettingValue({ config: previous, key: request.setting.key, value: request.answer });
+  saveConfig(next);
+  TerminalUI.printSuccess(`${request.setting.name} = ${describeSettingValue(next, request.setting)}`);
+  await applyChange(previous, next);
+};
+
+const setCommand: CommandSpec = {
+  name: "set",
+  description: "Change one setting, e.g. `agent-voice config set dictation-language he`",
+  flags: {},
+  positionals: [
+    { name: "setting", description: "Setting name, e.g. speech-mode", isRequired: true },
+    { name: "value", description: "The new value", isRequired: true },
+  ],
+  run: async (parsedCommand) => {
+    const settingName = readRequiredPositional(parsedCommand, "setting");
+    const setting = findSetting(settingName);
+    const isSettingUnknown = setting == null;
+    if (isSettingUnknown) {
+      TerminalUI.printError(describeUnknownSetting(settingName));
+      return 2;
     }
 
-    // The worker reads the mode only between replies, so a reply being read is stopped now.
-    if (isSpeechTurnedOff) {
-      stopSpeech();
-      return yield* TerminalUI.detail("Speech stops within a second; dictation keeps running.");
+    const enteredWords = readRequiredPositional(parsedCommand, "value");
+    const answer = parseSettingValue({ setting, enteredWords });
+    await saveSetting({ setting, answer });
+    return 0;
+  },
+};
+
+const unsetCommand: CommandSpec = {
+  name: "unset",
+  description: "Put one setting back to its default",
+  flags: {},
+  positionals: [{ name: "setting", description: "Setting name, e.g. speech-mode", isRequired: true }],
+  run: async (parsedCommand) => {
+    const settingName = readRequiredPositional(parsedCommand, "setting");
+    const setting = findSetting(settingName);
+    const isSettingUnknown = setting == null;
+    if (isSettingUnknown) {
+      TerminalUI.printError(describeUnknownSetting(settingName));
+      return 2;
     }
 
-    if (isNewlyMuted) {
-      stopSpeech();
-      return yield* TerminalUI.detail("Speech muted; the reply being read stops now.");
-    }
+    const defaultAnswer = defaultConfig[setting.key] ?? null;
+    await saveSetting({ setting, answer: defaultAnswer });
+    return 0;
+  },
+};
 
-    yield* TerminalUI.detail("Applies from the next dictation or reply.");
+// Null when the user cancels; an empty string when the provider has no effort setting.
+const pickEffort = async (provider: DiscoveredProvider, settings: Config): Promise<string | null> => {
+  if (!provider.effort) {
+    return "";
+  }
+
+  return TerminalUI.askChoice({
+    message: "Reasoning effort",
+    choices: REASONING_EFFORTS.map((name) => ({ title: name, pick: name })),
+    initial: settings.refineEffort || "low",
   });
+};
 
-const saveSetting = (request: { readonly setting: ConfigSetting; readonly value: ConfigValue | null }) =>
-  Effect.gen(function* () {
-    const previous = yield* Effect.try({ try: readConfig, catch: (error) => error });
-    const next = yield* withSettingValue({ config: previous, key: request.setting.key, value: request.value });
-    yield* Effect.try({ try: () => saveConfig(next), catch: (error) => error });
-    yield* TerminalUI.success(`${request.setting.name} = ${shownValue(next, request.setting)}`);
-    yield* applyChange(previous, next);
+const pickInTerminal = async (settings: Config): Promise<RefinePick | null> => {
+  const providers = await discoverProviders({ refresh: true });
+  const hasNoProviders = providers.length === 0;
+  if (hasNoProviders) {
+    return null;
+  }
+
+  const provider = await TerminalUI.askChoice({
+    message: "Refine provider (found on this Mac)",
+    choices: providers.map((found) => ({
+      title: found.id,
+      pick: found,
+      description: `${found.binary}, ${String(found.models.length)} models`,
+    })),
+    initial: providers.find((found) => found.id === settings.refineProvider),
   });
+  const isProviderCancelled = provider == null;
+  if (isProviderCancelled) {
+    return null;
+  }
 
-const valueArgument = Args.text({ name: "value" }).pipe(Args.withDescription("The new value"));
-
-const setCommand = Command.make("set", { name: nameArgument, value: valueArgument }, (args) =>
-  Effect.gen(function* () {
-    const setting = yield* findSetting(args.name);
-    const value = yield* Effect.try({
-      try: () => parseSettingValue({ setting, enteredWords: args.value }),
-      catch: (error) => error,
-    });
-    yield* saveSetting({ setting, value });
-  }),
-).pipe(Command.withDescription("Change one setting, e.g. `agent-voice config set dictation-language he`"));
-
-const unsetCommand = Command.make("unset", { name: nameArgument }, (args) =>
-  Effect.gen(function* () {
-    const setting = yield* findSetting(args.name);
-    const value = defaultConfig[setting.key] ?? null;
-    yield* saveSetting({ setting, value });
-  }),
-).pipe(Command.withDescription("Put one setting back to its default"));
-
-const pickEffort = (provider: DiscoveredProvider, config: Config) =>
-  Effect.gen(function* () {
-    if (!provider.effort) {
-      return "";
-    }
-
-    const choices = REASONING_EFFORTS.map((name) => ({ title: name, value: name }));
-    return yield* TerminalUI.selectOne({ message: "Reasoning effort", choices, initial: config.refineEffort || "low" });
+  const models = listPickerModels({
+    provider: provider.id,
+    providers,
+    preferred: { provider: settings.refineProvider, model: settings.refineModel || "" },
   });
-
-const pickInTerminal = (config: Config) =>
-  Effect.gen(function* () {
-    const providers = yield* Effect.promise(() => discoverProviders({ refresh: true }));
-    if (providers.length === 0) {
-      return Option.none<RefinePick>();
-    }
-
-    const provider = yield* TerminalUI.selectOne({
-      message: "Refine provider (found on this Mac)",
-      choices: providers.map((found) => ({
-        title: found.id,
-        value: found,
-        description: `${found.binary}, ${String(found.models.length)} models`,
-      })),
-      initial: providers.find((found) => found.id === config.refineProvider),
-    });
-    const models = pickerModels({
-      provider: provider.id,
-      providers,
-      preferred: { provider: config.refineProvider, model: config.refineModel || "" },
-    });
-    const model = yield* TerminalUI.selectOne({
-      message: `Model for ${provider.id}`,
-      choices: models.map((name) => ({ title: name, value: name })),
-    });
-    const effort = yield* pickEffort(provider, config);
-    return Option.some({ provider: provider.id, model, effort });
+  const model = await TerminalUI.askChoice({
+    message: `Model for ${provider.id}`,
+    choices: models.map((name) => ({ title: name, pick: name })),
   });
+  const isModelCancelled = model == null;
+  if (isModelCancelled) {
+    return null;
+  }
 
-const pickRefineTarget = (request: { readonly config: Config; readonly gui: boolean }) =>
-  Effect.gen(function* () {
-    const isInteractive = yield* TerminalUI.isInteractiveTerminal;
-    const useDialogs = request.gui || !isInteractive;
-    if (!useDialogs) {
-      return yield* pickInTerminal(request.config);
-    }
+  const effort = await pickEffort(provider, settings);
+  const isEffortCancelled = effort == null;
+  if (isEffortCancelled) {
+    return null;
+  }
 
-    return yield* pickRefineTargetWithDialogs({
-      reason: "",
-      preferredProvider: request.config.refineProvider,
-      preferredModel: request.config.refineModel || "",
-      preferredEffort: request.config.refineEffort || "",
-      offerSkip: false,
-    });
+  return { provider: provider.id, model, effort };
+};
+
+const pickRefineTarget = async (request: {
+  readonly settings: Config;
+  readonly isGuiWanted: boolean;
+}): Promise<RefinePick | null> => {
+  const isInteractive = TerminalUI.isInteractiveTerminal();
+  const isDialogWanted = request.isGuiWanted || !isInteractive;
+  if (!isDialogWanted) {
+    return pickInTerminal(request.settings);
+  }
+
+  return pickRefineTargetWithDialogs({
+    reason: "",
+    preferredProvider: request.settings.refineProvider,
+    preferredModel: request.settings.refineModel || "",
+    preferredEffort: request.settings.refineEffort || "",
+    offerSkip: false,
   });
+};
 
-const pickSummary = (pick: RefinePick, effort: string | undefined): string => {
+const describePickedTarget = (pick: RefinePick, effort: string | undefined): string => {
   const target = `refine → ${pick.provider}/${pick.model}`;
-  if (effort === undefined) {
+  const isEffortMissing = effort === undefined;
+  if (isEffortMissing) {
     return target;
   }
 
   return `${target} effort ${effort}`;
 };
 
-const guiOption = Options.boolean("gui").pipe(
-  Options.withDescription("Use macOS dialogs instead of the terminal menu"),
-);
-
-const pickRefineCommand = Command.make("pick-refine", { gui: guiOption }, (args) =>
-  Effect.gen(function* () {
-    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
-    const picked = yield* pickRefineTarget({ config, gui: args.gui });
-    if (Option.isNone(picked)) {
-      return yield* new CliUsageError({ issue: "No refine provider picked (none found, or cancelled)." });
+const pickRefineCommand: CommandSpec = {
+  name: "pick-refine",
+  description: "Pick the refine provider, model, and effort from the agent CLIs on this Mac",
+  flags: {
+    gui: { kind: "boolean", description: "Use macOS dialogs instead of the terminal menu" },
+  },
+  positionals: [],
+  run: async (parsedCommand) => {
+    const settings = readConfig();
+    const picked = await pickRefineTarget({ settings, isGuiWanted: isFlagOn(parsedCommand, "gui") });
+    const isNothingPicked = picked == null;
+    if (isNothingPicked) {
+      TerminalUI.printError("No refine provider picked (none found, or cancelled).");
+      return 2;
     }
 
-    const effort = REASONING_EFFORTS.find((name) => name === picked.value.effort);
-    const pickedConfig = { ...config, refineProvider: picked.value.provider, refineModel: picked.value.model };
-    const effortValue = Option.fromNullable(effort);
-    const next = yield* withSettingValue({ config: pickedConfig, key: "refineEffort", value: effortValue });
-    yield* Effect.try({ try: () => saveConfig(next), catch: (error) => error });
-    saveRefineChoice(picked.value);
-    const summary = pickSummary(picked.value, effort);
-    yield* TerminalUI.success(summary);
-  }),
-).pipe(Command.withDescription("Pick the refine provider, model, and effort from the agent CLIs on this Mac"));
+    const effort = REASONING_EFFORTS.find((name) => name === picked.effort);
+    const pickedSettings = { ...settings, refineProvider: picked.provider, refineModel: picked.model };
+    const next = withSettingValue({ config: pickedSettings, key: "refineEffort", value: effort ?? null });
+    saveConfig(next);
+    saveRefineChoice(picked);
+    TerminalUI.printSuccess(describePickedTarget(picked, effort));
+    return 0;
+  },
+};
 
-export const configCommand = Command.make("config").pipe(
-  Command.withDescription("Show or change agent-voice's settings"),
-  Command.withSubcommands([listCommand, describeCommand, getCommand, setCommand, unsetCommand, pickRefineCommand]),
-);
+export const configCommand: CommandSpec = {
+  name: "config",
+  description: "Show or change agent-voice's settings",
+  flags: {},
+  positionals: [],
+  subcommands: [listCommand, describeCommand, getCommand, setCommand, unsetCommand, pickRefineCommand],
+};
