@@ -69,3 +69,18 @@ _Avoid_: "option", "flag" (those are CLI arguments).
 
 **fail-open**
 Exit 0 and print nothing on any error, so an agent is never blocked.
+
+## Swaps
+
+| Avoid | Use |
+| --- | --- |
+| `tts` | speech |
+| `stt` | dictation |
+| `rewrite` | refine |
+| `response` (for an agent reply) | agent reply |
+| `recording`, `buffer` (for a clip) | clip |
+| `press` (for a hold) | hold |
+| `result` (for a transcript) | transcript |
+| `preview` (in prose) | live caption |
+| `queue` (for agent replies) | inbox |
+| `option`, `flag` (for a config key) | setting |

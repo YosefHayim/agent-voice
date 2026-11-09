@@ -1,43 +1,38 @@
 # AGENTS.md
 
-Entrypoint for coding agents and maintainers (Claude Code, Codex, Cursor, and other AGENTS-aware tools).
+Steps for coding agents working in this repo. The product and runtime are in [README.md](README.md) and [CONTEXT.md](CONTEXT.md); the words are in [LANGUAGE.md](LANGUAGE.md).
 
-## What this is
-
-**agent-voice** is a macOS TypeScript CLI for local voice around coding agents: hold the configured key (Shift or Right Option) to dictate at the caret (Whisper), hear an agent's finished reply read aloud (Supertonic), and optionally refine a dictated or copied prompt with an agent CLI.
-
-## Source-of-truth map
-
-| Doc | Role |
-| --- | --- |
-| [`PROJECT.md`](PROJECT.md) | Scope and direction |
-| [`CONTEXT.md`](CONTEXT.md) | Runtime model: processes, files, permissions |
-| [`LANGUAGE.md`](LANGUAGE.md) | The words used in code and docs |
-| [`README.md`](README.md) | Commands, settings, files, project structure, and the hand checks that need a mic, a keyboard, and macOS permissions |
-| `src/settings/configSchema.ts` | Every setting (the README table is checked against it) |
-| `src/settings/environmentVariables.ts` | Every `AGENT_VOICE_*` variable (README and `.env.example` are checked against it) |
-
-## Layout
-
-The folder table is in [README → Project structure](README.md#project-structure). Each folder owns one capability; a file does one job and is named for it.
-
-## Working contract
-
-- **Check gate**: `pnpm check` = `pnpm lint` (Biome, then knip) + `pnpm typecheck` + `pnpm test` + `pnpm build`. The husky pre-commit runs it; never bypass it. The husky pre-push runs lint, typecheck and the tests on the Mac (CI runs only tests and build, on Linux), and a new worktree needs `pnpm install` before its first push.
-- **Effect / Schema**: outside data (files, hook input, CLI output, environment) is decoded by an Effect Schema; no `typeof` readers. Only `src/cli/main.ts` (and tests) run Effects.
-- **Native modules load lazily** (`koffi`, PvRecorder, whisper.node, onnxruntime-node): `agent-voice reply` must stay fast and must never fail.
-- **Agent settings** are edited only through `src/agents/hookSettings.ts`: one owned Stop entry, found by its command, backed up first, every other byte kept.
-- **Never touch a running agent-voice or another voice tool on the developer's Mac from tests**: tests set `AGENT_VOICE_HOME` and `HOME` to a folder from `makeTestFolder` (`src/scripts/testFolder.ts`, under the gitignored `.test-home/`) and put fake CLIs on `PATH`; smoke tests only read models from `~/.agent-voice/models`.
-- **Branches**: product work lands from a topic branch; never commit to `main` directly.
-
-## Validate changes
+## Commands
 
 ```bash
-pnpm exec vitest run src/<capability>
+pnpm install
+pnpm dev:cli status                # run the CLI from source; loads .env when it exists
+pnpm dev                           # the same, rerun on every change
+pnpm test:watch                    # Vitest in watch mode
+pnpm exec vitest run src/<folder>  # one folder's tests
 pnpm typecheck
-pnpm check
+pnpm check                         # lint, typecheck, test and build through Turborepo
 ```
+
+The folder map is in [README → Project structure](README.md#project-structure).
+
+## Settings
+
+- Every setting is in `src/settings/configSchema.ts`. The README settings table is checked against it.
+- Every `AGENT_VOICE_*` variable is in `src/settings/environmentVariables.ts`. README and `.env.example` are checked against it.
+
+## Recipes
+
+- Agent settings change only through `src/agents/hookSettings.ts`: one owned Stop entry, found by its command, backed up first, every other byte kept.
+- Native modules load lazily (`koffi`, PvRecorder, whisper.node, onnxruntime-node). `agent-voice reply` must stay fast and never fail, so new imports on that path stay lazy.
+- Tests never touch the real `~/.agent-voice` or agent settings. Set `AGENT_VOICE_HOME` and `HOME` to a folder from `makeTestFolder` (`src/scripts/testFolder.ts`, under the gitignored `.test-home/`) and put fake CLIs on `PATH`. Smoke tests only read models from `~/.agent-voice/models`.
+- The file lock tests need macOS `O_EXLOCK`. They skip on Linux (`isMacOS` in `src/scripts/testFolder.ts`), so `pnpm check` on the Mac is where they run.
+
+## Version and install
+
+- The version lives only in `package.json`. `src/cli/agentVoiceVersion.ts` reads it.
+- The package is private and not published to npm. Installs and updates follow README → Install and Update.
 
 ## CI
 
-CI runs on Linux. The file lock tests rely on macOS `O_EXLOCK` and skip on Linux (`isMacOS` in `src/scripts/testFolder.ts`); they run in the pre-push hook and `pnpm check` on this Mac.
+- GitHub CI runs on Linux only on pushes to `main` (`.github/workflows/ci.yml`: `pnpm test`, `pnpm build`).

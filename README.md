@@ -1,6 +1,6 @@
 # agent-voice
 
-Hold Shift to dictate into any text field, and hear your coding agent's replies read aloud — all on your Mac, in TypeScript.
+Hold Shift or Right Option to dictate into any text field, and hear your coding agent's replies read aloud — all on your Mac, in TypeScript.
 
 - **Dictation.** By default, hold Shift on its own for 300 ms, speak, release. Whisper (whisper.cpp large-v3-turbo with Metal) transcribes on your Mac and agent-voice types the text at the caret. Any other key pressed while Shift is down cancels, so capital letters and Shift shortcuts never start dictation. `dictation-hold-key right-option` selects Right Option instead, with no tap actions. A small pill at the bottom of the screen shows "Recording", a live caption, then "Working".
 - **Speech.** When Claude Code, Codex, or Grok finishes a turn, its Stop hook (`agent-voice reply`) queues the reply and agent-voice reads it aloud with a Supertonic voice. Markdown becomes speech: headings and lists as sentences, tables row by row with their column names, code blocks announced and read symbol by symbol.
@@ -17,11 +17,21 @@ git clone https://github.com/YosefHayim/agent-voice.git
 cd agent-voice
 pnpm install
 pnpm build
-pnpm link --global      # puts `agent-voice` on your PATH (or: alias agent-voice="node $PWD/dist/src/cli/main.js")
+pnpm add -g .          # puts `agent-voice` on your PATH; it links this folder's build (or: alias agent-voice="node $PWD/dist/src/cli/main.js")
 agent-voice on
 ```
 
 `agent-voice on` registers the Stop hook for each installed agent, downloads the models it is missing (Whisper turbo q5, about 574 MB; the Supertonic voices, about 400 MB), and starts the workers. macOS asks for **Microphone** access the first time; also allow your terminal in **Accessibility** (to type) and, if Shift is not detected, **Input Monitoring**. `agent-voice doctor` checks all of it.
+
+### Update
+
+```bash
+git pull
+pnpm install
+pnpm build
+pnpm add -g .       # registers the new build on your PATH
+agent-voice on      # restarts the workers on the new build
+```
 
 ### What agent-voice needs
 
@@ -153,7 +163,7 @@ agent-voice config unset speech-voice    # back to the default
 
 ## Environment variables
 
-These change where agent-voice keeps its files and switch a few features off. For the installed `agent-voice`, export them in your shell profile. When you run from source, copy [`.env.example`](.env.example) to `.env` and fill in a value: `pnpm cli` loads `.env`, and an empty value keeps the default.
+These change where agent-voice keeps its files and switch a few features off. For the installed `agent-voice`, export them in your shell profile. When you run from source, copy [`.env.example`](.env.example) to `.env` and fill in a value: `pnpm dev:cli` loads `.env`, and an empty value keeps the default.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -196,15 +206,17 @@ Agent hooks: `~/.claude/settings.json`, `~/.codex/hooks.json`, and `~/.grok/hook
 | `src/refine/` | Agent CLI discovery and calls, reply checks, model rotation, the picker, and cmux delivery |
 | `src/agents/` | The agent catalog, Stop hook edits, `agent-voice reply`, and the Devin watcher |
 | `src/workers/` | Worker processes, `status.json`, worker logs, and the pill |
-| `src/scripts/` | Tooling only: `pnpm bench`, `pnpm cli` (the CLI from source), and the test helpers `makeTestFolder` and `runAgentVoice` |
+| `src/scripts/` | Tooling only: `pnpm test:bench`, `pnpm dev:cli` (the CLI from source), and the test helpers `makeTestFolder` and `runAgentVoice` |
 
 ## Development
 
 ```bash
 pnpm install
 pnpm check           # Biome, knip, typecheck, tests, build
-pnpm cli status      # run the CLI from source; loads .env when it exists
-pnpm bench --models base,turbo-q5 --seconds 1,2,4 --runs 3
+pnpm dev:cli status  # run the CLI from source; loads .env when it exists
+pnpm dev             # the same, rerun on every change
+pnpm prod            # build, then run `agent-voice status` from dist/
+pnpm test:bench --models base,turbo-q5 --seconds 1,2,4 --runs 3
 ```
 
 Tests never touch your real `~/.agent-voice` or agent settings. Each test makes its own home folder under `.test-home/` (gitignored, safe to delete) with `makeTestFolder` from `src/scripts/testFolder.ts`. The Whisper and Supertonic smoke tests read the models already in `~/.agent-voice/models` and skip when they are missing.
