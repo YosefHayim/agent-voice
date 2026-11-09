@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { runAgentVoice } from "#src/scripts/run-agent-voice.js";
-import { isMacOS, makeTestFolder, repositoryRoot } from "#src/scripts/test-folder.js";
+import { runAgentVoice } from "#src/testing/run-agent-voice.js";
+import { isMacOS, makeTestFolder, repositoryRoot } from "#src/testing/test-folder.js";
 
 let home = "";
 let sleepers: ReadonlyArray<ChildProcess> = [];

@@ -1,12 +1,12 @@
 import { Either, Option, Schema } from "effect";
+import { stateFile } from "#src/settings/agent-voice-home.js";
 import {
   readJsonFile,
   readTextIfPresent,
   readTextIfReadable,
   writeFileAtomically,
   writeJsonAtomically,
-} from "#src/files/state-files.js";
-import { stateFile } from "#src/settings/agent-voice-home.js";
+} from "#src/storage/state-files.js";
 import { nonBlankLines } from "./agent-cli.js";
 
 export const DEFAULT_REFINE_MODEL = "gpt-5.3-codex-spark";

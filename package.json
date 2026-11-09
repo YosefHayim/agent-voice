@@ -14,15 +14,15 @@
     }
   },
   "scripts": {
-    "dev": "tsx watch --conditions=source src/scripts/cli-from-source.ts status",
-    "dev:cli": "tsx --conditions=source src/scripts/cli-from-source.ts",
+    "dev": "tsx watch --conditions=source src/dev/cli-from-source.ts status",
+    "dev:cli": "tsx --conditions=source src/dev/cli-from-source.ts",
     "prod": "pnpm build && node dist/src/cli/main.js status",
     "prepare": "husky",
     "prebuild": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc && node -e \"require('node:fs').chmodSync('dist/src/cli/main.js',0o755)\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:bench": "tsx --conditions=source src/scripts/bench-dictation.ts",
+    "test:bench": "tsx --conditions=source src/dev/bench-dictation.ts",
     "lint": "biome check . && knip",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",

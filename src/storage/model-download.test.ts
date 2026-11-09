@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Duration, Effect, Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { isMacOS, makeTestFolder, repositoryRoot } from "#src/scripts/test-folder.js";
+import { isMacOS, makeTestFolder, repositoryRoot } from "#src/testing/test-folder.js";
 import { downloadFile } from "./model-download.js";
 
 const modelDownloadUrl = new URL("./model-download.js", import.meta.url);

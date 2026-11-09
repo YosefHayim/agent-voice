@@ -1,6 +1,6 @@
 import { Effect, Option, ParseResult, Schema } from "effect";
 
-import { readTextIfPresent, writeFileAtomically } from "#src/files/state-files.js";
+import { readTextIfPresent, writeFileAtomically } from "#src/storage/state-files.js";
 import { configFilePath } from "./agent-voice-home.js";
 import { type Config, configSchema, defaultConfig } from "./config-schema.js";
 

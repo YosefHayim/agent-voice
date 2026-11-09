@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:net";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { makeTestFolder, makeTestSocketPath } from "#src/scripts/test-folder.js";
+import { makeTestFolder, makeTestSocketPath } from "#src/testing/test-folder.js";
 import { cmuxFocus } from "./cmux-focus.js";
 
 let folder = "";

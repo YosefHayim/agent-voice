@@ -4,7 +4,7 @@ import path from "node:path";
 import { Effect, Exit } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeTestFolder } from "#src/scripts/test-folder.js";
+import { makeTestFolder } from "#src/testing/test-folder.js";
 import { readConfig, readConfigOrDefaults, saveConfig } from "./config-file.js";
 import { defaultConfig } from "./config-schema.js";
 

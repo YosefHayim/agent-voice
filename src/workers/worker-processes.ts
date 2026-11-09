@@ -3,16 +3,16 @@ import { closeSync, existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { Effect, Option, Schema, type Scope } from "effect";
-import { type FileLockError, holdLock, removeFreeLock } from "#src/files/file-lock.js";
+import { agentVoiceHome, stateFile } from "#src/settings/agent-voice-home.js";
+import { removeInboxFiles } from "#src/speech/inbox.js";
+import { type FileLockError, holdLock, removeFreeLock } from "#src/storage/file-lock.js";
 import {
   makePrivateFolder,
   openPrivateFile,
   readTextIfReadable,
   removeIfPresent,
   touchFile,
-} from "#src/files/state-files.js";
-import { agentVoiceHome, stateFile } from "#src/settings/agent-voice-home.js";
-import { removeInboxFiles } from "#src/speech/inbox.js";
+} from "#src/storage/state-files.js";
 import { readWorkerStatus, writeWorkerStatus } from "./worker-status.js";
 
 export type WorkerKind = "dictation" | "speech";

@@ -200,13 +200,14 @@ Agent hooks: `~/.claude/settings.json`, `~/.codex/hooks.json`, and `~/.grok/hook
 | --- | --- |
 | `src/cli/` | One file per command (`<name>-command.ts`), `main.ts` (the only place an Effect runs), and `terminal-ui.ts` (all terminal output) |
 | `src/settings/` | The settings Schema, the config file, the `AGENT_VOICE_*` variables, and the `~/.agent-voice` paths |
-| `src/files/` | Atomic state files, file locks, and model downloads |
+| `src/storage/` | Atomic state files, file locks, and model downloads |
 | `src/dictation/` | Hold Shift: keyboard, microphone, clip audio, Whisper, transcript text, live caption, typing at the caret, and the dictation worker |
 | `src/speech/` | Replies read aloud: inbox, Markdown to speech, Supertonic, playback, Cmux focus, and the speech worker |
 | `src/refine/` | Agent CLI discovery and calls, reply checks, model rotation, the picker, and cmux delivery |
 | `src/agents/` | The agent catalog, Stop hook edits, `agent-voice reply`, and the Devin watcher |
 | `src/workers/` | Worker processes, `status.json`, worker logs, and the pill |
-| `src/scripts/` | Tooling only: `pnpm test:bench`, `pnpm dev:cli` (the CLI from source), and the test helpers `makeTestFolder` and `runAgentVoice` |
+| `src/dev/` | Runs from source, not shipped: `pnpm dev:cli` (the CLI from source) and `pnpm test:bench` |
+| `src/testing/` | Test helpers, not shipped: `makeTestFolder` and `runAgentVoice` |
 
 ## Development
 
@@ -219,7 +220,7 @@ pnpm prod            # build, then run `agent-voice status` from dist/
 pnpm test:bench --models base,turbo-q5 --seconds 1,2,4 --runs 3
 ```
 
-Tests never touch your real `~/.agent-voice` or agent settings. Each test makes its own home folder under `.test-home/` (gitignored, safe to delete) with `makeTestFolder` from `src/scripts/test-folder.ts`. The Whisper and Supertonic smoke tests read the models already in `~/.agent-voice/models` and skip when they are missing.
+Tests never touch your real `~/.agent-voice` or agent settings. Each test makes its own home folder under `.test-home/` (gitignored, safe to delete) with `makeTestFolder` from `src/testing/test-folder.ts`. The Whisper and Supertonic smoke tests read the models already in `~/.agent-voice/models` and skip when they are missing.
 
 Hand checks need a mic, a keyboard, and macOS permissions. After `agent-voice on`:
 

@@ -5,8 +5,8 @@ import { Args, Command } from "@effect/cli";
 import { Effect, Schema } from "effect";
 
 import { watchDevinSession } from "#src/agents/devin-watcher.js";
-import { makePrivateFolder } from "#src/files/state-files.js";
 import { stateFolder } from "#src/settings/agent-voice-home.js";
+import { makePrivateFolder } from "#src/storage/state-files.js";
 import { startWorkers } from "#src/workers/worker-processes.js";
 import * as TerminalUI from "./terminal-ui.js";
 
