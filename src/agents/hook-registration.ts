@@ -194,7 +194,7 @@ export const registerReplyHooks = (): ReadonlyArray<HookChange> => {
 
 export const unregisterReplyHooks = (): ReadonlyArray<HookChange> => hookSettingsFiles().map(unregisterOne);
 
-// A file that cannot be read or parsed has no agent-voice entry to list; registering reports it as failed.
+// A file that cannot be read or parsed is shown on stderr and left off the list; registering reports it as failed.
 const hasReplyHook = (settings: HookSettingsFile): boolean => {
   try {
     const current = readSettings(settings);
@@ -204,7 +204,8 @@ const hasReplyHook = (settings: HookSettingsFile): boolean => {
     }
 
     return removeReplyHook({ source: current, agent: settings.agent }).changed;
-  } catch {
+  } catch (error) {
+    console.error({ settingsFile: settings.file, error });
     return false;
   }
 };

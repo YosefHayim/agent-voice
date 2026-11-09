@@ -1,7 +1,5 @@
 import { existsSync, statSync } from "node:fs";
 
-import { Command, Options } from "@effect/cli";
-import { Effect, Schedule } from "effect";
 import { type HookChange, registerReplyHooks } from "#src/agents/hook-registration.js";
 import { holdKeyLabels } from "#src/dictation/hold-key.js";
 import {
@@ -10,11 +8,14 @@ import {
   selectWhisperModel,
   whisperModelPath,
 } from "#src/dictation/whisper-models.js";
+import { describeError } from "#src/error-message.js";
 import { readConfig } from "#src/settings/config-file.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
+import { sleep } from "#src/sleep.js";
 import { ensureSupertonicModels, missingSupertonicFiles } from "#src/speech/supertonic-models.js";
 import { startWorkers, stopWorkers } from "#src/workers/worker-processes.js";
+import { type CommandSpec, type ExitCode, isFlagOn } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 const backupNote = (change: HookChange): string => {
@@ -25,166 +26,200 @@ const backupNote = (change: HookChange): string => {
   return `; backup ${change.backup}`;
 };
 
-export const showHookChanges = (changes: ReadonlyArray<HookChange>) =>
-  Effect.forEach(changes, (change) => {
-    const where = `${change.displayName}: ${change.file}`;
-    switch (change.change) {
-      case "added":
-      case "removed":
-        return TerminalUI.success(`${where} (${change.change}${backupNote(change)})`);
-      case "unchanged":
-        return TerminalUI.detail(`${where} (already registered)`);
-      case "absent":
-        return TerminalUI.detail(`${where} (nothing to remove)`);
-      case "not installed":
-        return TerminalUI.detail(`${change.displayName}: not installed, skipped`);
-      case "failed":
-        return TerminalUI.warn(`${where}: ${change.issue || "could not edit"}; left unchanged`);
-    }
-  });
+const printHookChange = (change: HookChange): void => {
+  const where = `${change.displayName}: ${change.file}`;
+  switch (change.change) {
+    case "added":
+    case "removed":
+      TerminalUI.printSuccess(`${where} (${change.change}${backupNote(change)})`);
+      return;
+    case "unchanged":
+      TerminalUI.printDetail(`${where} (already registered)`);
+      return;
+    case "absent":
+      TerminalUI.printDetail(`${where} (nothing to remove)`);
+      return;
+    case "not installed":
+      TerminalUI.printDetail(`${change.displayName}: not installed, skipped`);
+      return;
+    case "failed":
+      TerminalUI.printWarning(`${where}: ${change.issue || "could not edit"}; left unchanged`);
+      return;
+  }
+};
+
+export const printHookChanges = (changes: ReadonlyArray<HookChange>): void => {
+  for (const change of changes) {
+    printHookChange(change);
+  }
+};
 
 const megabytes = (bytes: number): string => {
   const rounded = Math.round(bytes / 1e6);
   return `${String(rounded)} MB`;
 };
 
-type Download = {
+interface ModelDownload {
   readonly label: string;
-  readonly partialFile: () => string;
-  readonly download: Effect.Effect<unknown, unknown>;
-};
+  readonly partialFile: string;
+  readonly finished: Promise<unknown>;
+}
 
-const progressLine = (request: Download) =>
-  Effect.gen(function* () {
-    const partial = request.partialFile();
-    if (!existsSync(partial)) {
-      return;
-    }
-
-    const arrived = statSync(partial).size;
-    yield* TerminalUI.detail(`${request.label}: ${megabytes(arrived)} so far`);
-  });
-
-const downloadWithProgress = (request: Download) => {
-  const showProgress = progressLine(request);
-  const progress = Effect.sleep("3 seconds").pipe(Effect.zipRight(showProgress), Effect.forever);
-  return Effect.raceFirst(request.download, progress);
-};
-
-export const prepareModels = (config: Config) =>
-  Effect.gen(function* () {
-    const environment = readEnvironment();
-    const model = selectWhisperModel({ environment, config });
-    if (!isWhisperModelPresent(model)) {
-      yield* TerminalUI.step(`Downloading ${model.label} (~${megabytes(model.approximateBytes)})`);
-      yield* downloadWithProgress({
-        label: model.label,
-        partialFile: () => `${whisperModelPath(model)}.partial`,
-        download: Effect.tryPromise({
-          try: () => ensureWhisperModel({ model, onProgress: () => undefined }),
-          catch: (error) => error,
-        }),
-      });
-    }
-
-    const isVoiceDownloadNeeded = config.speechMode !== "off" && missingSupertonicFiles().length > 0;
-    if (isVoiceDownloadNeeded) {
-      yield* TerminalUI.step("Downloading the Supertonic voices (~400 MB)");
-      yield* Effect.tryPromise({
-        try: () => ensureSupertonicModels(() => undefined),
-        catch: (error) => error,
-      });
-    }
-  });
-
-const refineTarget = (config: Config): string => {
-  const model = config.refineModel || "default model";
-  if (config.refineEffort === undefined) {
-    return `${config.refineProvider}/${model}`;
+const showDownloadProgress = (download: ModelDownload): void => {
+  const isPartialFilePresent = existsSync(download.partialFile);
+  if (!isPartialFilePresent) {
+    return;
   }
 
-  return `${config.refineProvider}/${model} effort ${config.refineEffort}`;
+  const arrivedBytes = statSync(download.partialFile).size;
+  TerminalUI.printDetail(`${download.label}: ${megabytes(arrivedBytes)} so far`);
 };
 
-const describeRefine = (config: Config): string => {
-  const target = refineTarget(config);
-  if (config.refinePressEnter) {
-    return `${target} → ${config.refineSendTo} + Enter`;
+// Prints the bytes so far every few seconds until the download settles; a failed download rethrows here.
+const waitForDownload = async (download: ModelDownload): Promise<void> => {
+  const progressIntervalMilliseconds = 3_000;
+  let isDownloadRunning = true;
+  const settledDownload = download.finished.finally(() => {
+    isDownloadRunning = false;
+  });
+  while (isDownloadRunning) {
+    await Promise.race([settledDownload, sleep(progressIntervalMilliseconds)]);
+    if (isDownloadRunning) {
+      showDownloadProgress(download);
+    }
   }
 
-  return `${target} → ${config.refineSendTo}`;
+  await settledDownload;
 };
 
-export const describeSpeech = (config: Config): string => {
-  if (config.speechMode === "off") {
+export const prepareModels = async (settings: Config): Promise<void> => {
+  const environment = readEnvironment();
+  const model = selectWhisperModel({ environment, config: settings });
+  const isModelMissing = !isWhisperModelPresent(model);
+  if (isModelMissing) {
+    TerminalUI.printStep(`Downloading ${model.label} (~${megabytes(model.approximateBytes)})`);
+    const modelDownloading = ensureWhisperModel({ model, onProgress: () => undefined });
+    await waitForDownload({
+      label: model.label,
+      partialFile: `${whisperModelPath(model)}.partial`,
+      finished: modelDownloading,
+    });
+  }
+
+  const isVoiceDownloadNeeded = settings.speechMode !== "off" && missingSupertonicFiles().length > 0;
+  if (isVoiceDownloadNeeded) {
+    TerminalUI.printStep("Downloading the Supertonic voices (~400 MB)");
+    await ensureSupertonicModels(() => undefined);
+  }
+};
+
+const refineTarget = (settings: Config): string => {
+  const model = settings.refineModel || "default model";
+  if (settings.refineEffort === undefined) {
+    return `${settings.refineProvider}/${model}`;
+  }
+
+  return `${settings.refineProvider}/${model} effort ${settings.refineEffort}`;
+};
+
+const describeRefine = (settings: Config): string => {
+  const target = refineTarget(settings);
+  if (settings.refinePressEnter) {
+    return `${target} → ${settings.refineSendTo} + Enter`;
+  }
+
+  return `${target} → ${settings.refineSendTo}`;
+};
+
+export const describeSpeech = (settings: Config): string => {
+  if (settings.speechMode === "off") {
     return "Speech: off (turn on with `agent-voice config set speech-mode auto`).";
   }
 
-  const speech = `Speech: ${config.speechMode}, voice ${config.speechVoice}`;
-  if (config.speechMuted) {
+  const speech = `Speech: ${settings.speechMode}, voice ${settings.speechVoice}`;
+  if (settings.speechMuted) {
     return `${speech}, muted (unmute with \`agent-voice config set speech-muted false\`).`;
   }
 
   return `${speech}.`;
 };
 
-const showOnSummary = (config: Config) =>
-  Effect.gen(function* () {
-    const speech = describeSpeech(config);
-    const isClipboardRefineOn = config.refineMode === "clipboard" || config.refineMode === "both";
-    const isDictationRefineOn = config.refineMode === "dictation" || config.refineMode === "both";
-    const holdLabel = holdKeyLabels[config.dictationHoldKey];
-    yield* TerminalUI.detail(`Hold ${holdLabel} alone to dictate; release to finish.`);
-    if (config.dictationHoldKey === "shift") {
-      yield* TerminalUI.detail("Tap Shift to stop speech.");
-    }
-    yield* TerminalUI.detail(speech);
-    if (isClipboardRefineOn && config.dictationHoldKey === "shift") {
-      yield* TerminalUI.detail("Double-tap Shift to refine the copied prompt, then press ⌘V.");
-    }
-
-    if (isDictationRefineOn) {
-      yield* TerminalUI.detail(`Dictation refine: ${describeRefine(config)}.`);
-    }
-  });
-
-// Stop whatever runs first, so the fresh workers load the current config and models.
-export const restartWorkers = Effect.gen(function* () {
-  yield* TerminalUI.step("Starting the dictation and speech workers");
-  yield* Effect.promise(stopWorkers);
-  yield* Effect.tryPromise({ try: startWorkers, catch: (error) => error });
-});
-
-const hooksOnlyOption = Options.boolean("hooks-only").pipe(
-  Options.withDescription("Only register the agent Stop hooks: download nothing and start no worker"),
-);
-
-const showHooksOnlyOutro = (changes: ReadonlyArray<HookChange>) => {
-  const isRegistered = changes.some((change) => change.change === "added" || change.change === "unchanged");
-  if (!isRegistered) {
-    return TerminalUI.outro("No agent hook was confirmed as registered (see above).");
+const printOnSummary = (settings: Config): void => {
+  const isClipboardRefineOn = settings.refineMode === "clipboard" || settings.refineMode === "both";
+  const isDictationRefineOn = settings.refineMode === "dictation" || settings.refineMode === "both";
+  const holdLabel = holdKeyLabels[settings.dictationHoldKey];
+  TerminalUI.printDetail(`Hold ${holdLabel} alone to dictate; release to finish.`);
+  if (settings.dictationHoldKey === "shift") {
+    TerminalUI.printDetail("Tap Shift to stop speech.");
   }
 
-  return TerminalUI.outro("Hooks registered. Run `agent-voice on` without --hooks-only to start dictation.");
+  TerminalUI.printDetail(describeSpeech(settings));
+  if (isClipboardRefineOn && settings.dictationHoldKey === "shift") {
+    TerminalUI.printDetail("Double-tap Shift to refine the copied prompt, then press ⌘V.");
+  }
+
+  if (isDictationRefineOn) {
+    TerminalUI.printDetail(`Dictation refine: ${describeRefine(settings)}.`);
+  }
 };
 
-export const onCommand = Command.make("on", { hooksOnly: hooksOnlyOption }, (args) =>
-  Effect.gen(function* () {
-    yield* TerminalUI.intro("on");
-    yield* TerminalUI.step("Registering `agent-voice reply` as the Stop hook of each installed agent");
-    const changes = yield* Effect.sync(registerReplyHooks);
-    yield* showHookChanges(changes);
-    if (args.hooksOnly) {
-      return yield* showHooksOnlyOutro(changes);
+// Stop whatever runs first, so the fresh workers load the current config and models.
+export const restartWorkers = async (): Promise<void> => {
+  TerminalUI.printStep("Starting the dictation and speech workers");
+  await stopWorkers();
+  await startWorkers();
+};
+
+// A restart that fails once is tried again after a short pause; the first failure is shown, not dropped.
+const restartWorkersWithRetry = async (): Promise<void> => {
+  try {
+    await restartWorkers();
+  } catch (firstError) {
+    TerminalUI.printDetail(`Restart failed, trying once more: ${describeError(firstError)}`);
+    const retryDelayMilliseconds = 1_000;
+    await sleep(retryDelayMilliseconds);
+    await restartWorkers();
+  }
+};
+
+const printHooksOnlyOutro = (changes: ReadonlyArray<HookChange>): void => {
+  const isRegistered = changes.some((change) => change.change === "added" || change.change === "unchanged");
+  if (!isRegistered) {
+    TerminalUI.printOutro("No agent hook was confirmed as registered (see above).");
+    return;
+  }
+
+  TerminalUI.printOutro("Hooks registered. Run `agent-voice on` without --hooks-only to start dictation.");
+};
+
+export const onCommand: CommandSpec = {
+  name: "on",
+  description: "Register the agent Stop hooks, download missing models, and start dictation and speech",
+  flags: {
+    "hooks-only": {
+      kind: "boolean",
+      description: "Only register the agent Stop hooks: download nothing and start no worker",
+    },
+  },
+  positionals: [],
+  run: async (parsedCommand): Promise<ExitCode> => {
+    TerminalUI.printIntro("on");
+    TerminalUI.printStep("Registering `agent-voice reply` as the Stop hook of each installed agent");
+    const changes = registerReplyHooks();
+    printHookChanges(changes);
+
+    const isHooksOnly = isFlagOn(parsedCommand, "hooks-only");
+    if (isHooksOnly) {
+      printHooksOnlyOutro(changes);
+      return 0;
     }
 
-    const config = yield* Effect.try({ try: readConfig, catch: (error) => error });
-    yield* prepareModels(config);
-    yield* restartWorkers.pipe(Effect.retry({ times: 1, schedule: Schedule.spaced("1 second") }));
-    yield* TerminalUI.success("agent-voice is on.");
-    yield* showOnSummary(config);
-    yield* TerminalUI.outro("Check permissions any time with `agent-voice doctor`.");
-  }),
-).pipe(
-  Command.withDescription("Register the agent Stop hooks, download missing models, and start dictation and speech"),
-);
+    const settings = readConfig();
+    await prepareModels(settings);
+    await restartWorkersWithRetry();
+    TerminalUI.printSuccess("agent-voice is on.");
+    printOnSummary(settings);
+    TerminalUI.printOutro("Check permissions any time with `agent-voice doctor`.");
+    return 0;
+  },
+};

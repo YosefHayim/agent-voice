@@ -1,6 +1,4 @@
 import { existsSync } from "node:fs";
-import { Command, Options } from "@effect/cli";
-import { Effect, Option, Schema } from "effect";
 import { registeredSettingsFiles } from "#src/agents/hook-registration.js";
 import { hookSettingsFiles } from "#src/agents/hook-settings-files.js";
 import { type Keyboard, loadKeyboard } from "#src/dictation/keyboard.js";
@@ -13,25 +11,29 @@ import { readConfig } from "#src/settings/config-file.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { missingSupertonicFiles, supertonicFolder } from "#src/speech/supertonic-models.js";
+import { type CommandSpec, type ExitCode, isFlagOn } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
-const doctorCheckSchema = Schema.Struct({
-  name: Schema.String,
-  status: Schema.Literal("ok", "warn", "fail"),
-  detail: Schema.String,
-  fix: Schema.optional(Schema.String),
-});
+type DoctorStatus = "ok" | "warn" | "fail";
 
-type DoctorCheck = Schema.Schema.Type<typeof doctorCheckSchema>;
-
-const ok = (name: string, detail: string): DoctorCheck => ({ name, status: "ok", detail });
-
-const problem = (request: {
+interface DoctorCheck {
   readonly name: string;
-  readonly status: "warn" | "fail";
+  readonly status: DoctorStatus;
   readonly detail: string;
-  readonly fix: string;
-}): DoctorCheck => request;
+  readonly fix?: string;
+}
+
+interface NativeModule {
+  readonly name: string;
+  readonly load: () => Promise<unknown>;
+}
+
+interface SystemTool {
+  readonly tool: string;
+  readonly purpose: string;
+}
+
+const createOkCheck = (name: string, detail: string): DoctorCheck => ({ name, status: "ok", detail });
 
 const REINSTALL = "Reinstall agent-voice: pnpm install";
 const PRIVACY_PANE = "System Settings → Privacy & Security →";
@@ -43,271 +45,330 @@ const MICROPHONE_STATUS_SCRIPT =
   '$.NSBundle.bundleWithPath("/System/Library/Frameworks/AVFoundation.framework").load; $.NSClassFromString("AVCaptureDevice").authorizationStatusForMediaType("soun")';
 
 // Each native module ships a prebuilt darwin-arm64 binary; loading it proves the install is complete.
-const NATIVE_MODULES = [
+const NATIVE_MODULES: ReadonlyArray<NativeModule> = [
   { name: "koffi (keyboard)", load: () => import("koffi") },
   { name: "PvRecorder (microphone)", load: () => import("@picovoice/pvrecorder-node") },
   { name: "whisper.node (dictation)", load: () => import(WHISPER_PACKAGE) },
   { name: "onnxruntime-node (speech)", load: () => import("onnxruntime-node") },
 ];
 
-const SYSTEM_TOOLS = [
+const SYSTEM_TOOLS: ReadonlyArray<SystemTool> = [
   { tool: "osascript", purpose: "the pill, ⌘V paste, and the refine picker" },
   { tool: "afplay", purpose: "speech playback" },
   { tool: "pbcopy", purpose: "clipboard refine and long pastes" },
   { tool: "pbpaste", purpose: "clipboard refine and long pastes" },
 ];
 
-const platformCheck = (): DoctorCheck => {
+const checkPlatform = (): DoctorCheck => {
   const isMac = process.platform === "darwin";
-  if (!isMac) {
-    return problem({ name: "macOS", status: "fail", detail: process.platform, fix: "agent-voice runs only on macOS." });
+  const isNotMac = !isMac;
+  if (isNotMac) {
+    return {
+      name: "macOS",
+      status: "fail",
+      detail: process.platform,
+      fix: "agent-voice runs only on macOS.",
+    };
   }
 
-  return ok("macOS", `${process.platform} ${process.arch}`);
+  return createOkCheck("macOS", `${process.platform} ${process.arch}`);
 };
 
-const nodeCheck = (): DoctorCheck => {
+const minimumNodeMajor = 22;
+
+const checkNode = (): DoctorCheck => {
   const [major] = process.versions.node.split(".");
-  const isSupported = Number(major) >= 22;
-  if (!isSupported) {
+  const isSupported = Number(major) >= minimumNodeMajor;
+  const isTooOld = !isSupported;
+  if (isTooOld) {
     const fix = "Install Node 22 or newer: brew install node";
-    return problem({ name: "Node.js", status: "fail", detail: process.versions.node, fix });
+    return { name: "Node.js", status: "fail", detail: process.versions.node, fix };
   }
 
-  return ok("Node.js", process.versions.node);
+  return createOkCheck("Node.js", process.versions.node);
 };
 
-const nativeModuleCheck = (module: (typeof NATIVE_MODULES)[number]) =>
-  Effect.tryPromise({ try: module.load, catch: String }).pipe(
-    Effect.match({
-      onSuccess: () => ok(module.name, "loads"),
-      onFailure: (issue) => problem({ name: module.name, status: "fail", detail: issue, fix: REINSTALL }),
-    }),
-  );
+const checkNativeModule = async (nativeModule: NativeModule): Promise<DoctorCheck> => {
+  try {
+    await nativeModule.load();
+    return createOkCheck(nativeModule.name, "loads");
+  } catch (error) {
+    return { name: nativeModule.name, status: "fail", detail: String(error), fix: REINSTALL };
+  }
+};
 
-const toolCheck = (systemTool: (typeof SYSTEM_TOOLS)[number]): DoctorCheck => {
-  const toolPath = Option.fromNullable(findCli(systemTool.tool));
-  if (Option.isNone(toolPath)) {
+const checkSystemTool = (systemTool: SystemTool): DoctorCheck => {
+  const toolPath = findCli(systemTool.tool);
+  const isToolMissing = toolPath == null;
+  if (isToolMissing) {
     const detail = `missing (${systemTool.purpose})`;
-    return problem({ name: systemTool.tool, status: "fail", detail, fix: "It ships with macOS; check PATH." });
+    return {
+      name: systemTool.tool,
+      status: "fail",
+      detail,
+      fix: "It ships with macOS; check PATH.",
+    };
   }
 
-  return ok(systemTool.tool, systemTool.purpose);
+  return createOkCheck(systemTool.tool, systemTool.purpose);
 };
 
-const accessibilityCheck = (keyboard: Keyboard): DoctorCheck => {
+const checkAccessibility = (keyboard: Keyboard): DoctorCheck => {
   const canType = keyboard.accessibilityAllowed() && keyboard.postingAllowed();
-  if (!canType) {
+  const isTypingBlocked = !canType;
+  if (isTypingBlocked) {
     const fix = `${PRIVACY_PANE} Accessibility: ${ALLOW_TERMINAL}`;
-    return problem({ name: "Accessibility", status: "fail", detail: "not allowed", fix });
+    return { name: "Accessibility", status: "fail", detail: "not allowed", fix };
   }
 
-  return ok("Accessibility", "agent-voice can type at the caret");
+  return createOkCheck("Accessibility", "agent-voice can type at the caret");
 };
 
-const inputMonitoringCheck = (keyboard: Keyboard): DoctorCheck => {
+const checkInputMonitoring = (keyboard: Keyboard): DoctorCheck => {
   const canReadKeys = keyboard.inputMonitoringAllowed();
-  if (!canReadKeys) {
+  const isReadingBlocked = !canReadKeys;
+  if (isReadingBlocked) {
     const fix = `${PRIVACY_PANE} Input Monitoring: ${ALLOW_TERMINAL}`;
-    return problem({ name: "Input Monitoring", status: "warn", detail: "not allowed", fix });
+    return { name: "Input Monitoring", status: "warn", detail: "not allowed", fix };
   }
 
-  return ok("Input Monitoring", "agent-voice can read keyboard state");
+  return createOkCheck("Input Monitoring", "agent-voice can read keyboard state");
 };
 
-const keyboardChecks = Effect.tryPromise({ try: loadKeyboard, catch: (error) => error }).pipe(
-  Effect.match({
-    onSuccess: (keyboard) => [accessibilityCheck(keyboard), inputMonitoringCheck(keyboard)],
-    onFailure: (error) => [
-      problem({ name: "Keyboard access", status: "fail", detail: describeError(error), fix: REINSTALL }),
-    ],
-  }),
-);
+const checkKeyboard = async (): Promise<ReadonlyArray<DoctorCheck>> => {
+  try {
+    const keyboard = await loadKeyboard();
+    return [checkAccessibility(keyboard), checkInputMonitoring(keyboard)];
+  } catch (error) {
+    return [{ name: "Keyboard access", status: "fail", detail: describeError(error), fix: REINSTALL }];
+  }
+};
 
-const microphoneCheckFor = (authorization: string): DoctorCheck => {
-  if (authorization === "3") {
-    return ok("Microphone", "allowed");
+const checkMicrophoneAuthorization = (authorization: string): DoctorCheck => {
+  const isAllowed = authorization === "3";
+  if (isAllowed) {
+    return createOkCheck("Microphone", "allowed");
   }
 
-  if (authorization === "0") {
+  const isNotAskedYet = authorization === "0";
+  if (isNotAskedYet) {
     const fix = "Run agent-voice on and accept the prompt.";
-    return problem({ name: "Microphone", status: "warn", detail: "not asked yet", fix });
+    return { name: "Microphone", status: "warn", detail: "not asked yet", fix };
   }
 
-  return problem({ name: "Microphone", status: "fail", detail: "denied", fix: MICROPHONE_FIX });
+  return { name: "Microphone", status: "fail", detail: "denied", fix: MICROPHONE_FIX };
 };
 
-const microphoneCheck = Effect.tryPromise({
-  try: (signal) =>
-    runCli({
+const checkMicrophone = async (): Promise<DoctorCheck> => {
+  try {
+    const authorizationRun = await runCli({
       executable: "osascript",
       args: ["-l", "JavaScript", "-e", MICROPHONE_STATUS_SCRIPT],
       timeoutMs: 10_000,
-      signal,
-    }),
-  catch: (error) => error,
-}).pipe(
-  Effect.match({
-    onSuccess: (cliRun) => {
-      const authorization = cliRun.stdout.trim();
-      return microphoneCheckFor(authorization);
-    },
-    onFailure: () =>
-      problem({ name: "Microphone", status: "warn", detail: "could not ask macOS", fix: MICROPHONE_FIX }),
-  }),
-);
+      signal: new AbortController().signal,
+    });
+    const authorization = authorizationRun.stdout.trim();
+    return checkMicrophoneAuthorization(authorization);
+  } catch (error) {
+    const detail = `could not ask macOS: ${describeError(error)}`;
+    return { name: "Microphone", status: "warn", detail, fix: MICROPHONE_FIX };
+  }
+};
 
-const hookChecks = (): ReadonlyArray<DoctorCheck> => {
-  const registered = registeredSettingsFiles().map((settings) => settings.file);
+const checkHooks = (): ReadonlyArray<DoctorCheck> => {
+  const registeredFiles = registeredSettingsFiles().map((settings) => settings.file);
   return hookSettingsFiles().map((settings) => {
     const name = `${settings.displayName} hook`;
-    if (registered.includes(settings.file)) {
-      return ok(name, settings.file);
+    const isRegistered = registeredFiles.includes(settings.file);
+    if (isRegistered) {
+      return createOkCheck(name, settings.file);
     }
 
-    if (!existsSync(settings.folder)) {
-      return ok(name, "agent not installed");
+    const isAgentInstalled = existsSync(settings.folder);
+    if (!isAgentInstalled) {
+      return createOkCheck(name, "agent not installed");
     }
 
-    return problem({ name, status: "warn", detail: `not registered in ${settings.file}`, fix: "agent-voice on" });
+    return {
+      name,
+      status: "warn",
+      detail: `not registered in ${settings.file}`,
+      fix: "agent-voice on",
+    };
   });
 };
 
-const whisperCheck = (config: Config): DoctorCheck => {
+const checkWhisperModel = (settings: Config): DoctorCheck => {
   const environment = readEnvironment();
-  const model = selectWhisperModel({ environment, config });
-  if (!isWhisperModelPresent(model)) {
-    return problem({
+  const model = selectWhisperModel({ environment, config: settings });
+  const isModelMissing = !isWhisperModelPresent(model);
+  if (isModelMissing) {
+    return {
       name: "Whisper model",
       status: "warn",
       detail: `${model.label} not downloaded`,
       fix: "agent-voice on",
-    });
+    };
   }
 
   const modelPath = whisperModelPath(model);
-  return ok("Whisper model", modelPath);
+  return createOkCheck("Whisper model", modelPath);
 };
 
-const supertonicCheck = (config: Config): DoctorCheck => {
-  const missing = missingSupertonicFiles();
-  if (missing.length === 0) {
+const checkSupertonicVoices = (settings: Config): DoctorCheck => {
+  const missingFiles = missingSupertonicFiles();
+  const isEverythingPresent = missingFiles.length === 0;
+  if (isEverythingPresent) {
     const folder = supertonicFolder();
-    return ok("Supertonic voices", folder);
+    return createOkCheck("Supertonic voices", folder);
   }
 
-  if (config.speechMode === "off") {
-    return ok("Supertonic voices", "not needed (speech is off)");
+  const isSpeechOff = settings.speechMode === "off";
+  if (isSpeechOff) {
+    return createOkCheck("Supertonic voices", "not needed (speech is off)");
   }
 
-  const detail = `${String(missing.length)} files missing`;
-  return problem({ name: "Supertonic voices", status: "warn", detail, fix: "agent-voice on" });
+  const detail = `${String(missingFiles.length)} files missing`;
+  return { name: "Supertonic voices", status: "warn", detail, fix: "agent-voice on" };
 };
 
-const providersCheck = (providers: ReadonlyArray<DiscoveredProvider>): DoctorCheck => {
-  if (providers.length === 0) {
+const checkRefineProviders = (providers: ReadonlyArray<DiscoveredProvider>): DoctorCheck => {
+  const isNoProviderFound = providers.length === 0;
+  if (isNoProviderFound) {
     const fix = "Install one of codex, claude, gemini, grok, ollama, opencode, pi.";
-    return problem({ name: "Refine providers", status: "fail", detail: "no agent CLI on PATH", fix });
+    return { name: "Refine providers", status: "fail", detail: "no agent CLI on PATH", fix };
   }
 
   const names = providers.map((provider) => provider.id).join(", ");
-  return ok("Refine providers", names);
+  return createOkCheck("Refine providers", names);
 };
 
-const cmuxCheck = (config: Config): DoctorCheck => {
-  if (config.refineSendTo === "caret") {
-    return ok("cmux", "not needed (refine sends to the caret)");
+const checkCmux = (settings: Config): DoctorCheck => {
+  const isSentToCaret = settings.refineSendTo === "caret";
+  if (isSentToCaret) {
+    return createOkCheck("cmux", "not needed (refine sends to the caret)");
   }
 
-  const cmuxPath = Option.fromNullable(findCli("cmux"));
-  if (Option.isNone(cmuxPath)) {
-    return problem({
+  const cmuxPath = findCli("cmux");
+  const isCmuxMissing = cmuxPath == null;
+  if (isCmuxMissing) {
+    return {
       name: "cmux",
       status: "fail",
       detail: "not on PATH",
       fix: "Install cmux or set refine-send-to caret.",
-    });
+    };
   }
 
-  return ok("cmux", cmuxPath.value);
+  return createOkCheck("cmux", cmuxPath);
 };
 
-const refineChecks = (config: Config): Effect.Effect<ReadonlyArray<DoctorCheck>> => {
-  if (config.refineMode === "off") {
-    return Effect.succeed([ok("Refine", "off")]);
+const checkRefine = async (settings: Config): Promise<ReadonlyArray<DoctorCheck>> => {
+  const isRefineOff = settings.refineMode === "off";
+  if (isRefineOff) {
+    return [createOkCheck("Refine", "off")];
   }
 
-  return Effect.promise(() => discoverProviders({ refresh: true })).pipe(
-    Effect.map((providers) => [providersCheck(providers), cmuxCheck(config)]),
-  );
+  const providers = await discoverProviders({ refresh: true });
+  return [checkRefineProviders(providers), checkCmux(settings)];
 };
 
-const settingChecks = (config: Config) =>
-  Effect.gen(function* () {
-    const refine = yield* refineChecks(config);
-    return [ok("Config", "valid"), whisperCheck(config), supertonicCheck(config), ...refine];
-  });
-
-const configFailedChecks = (error: unknown) => {
-  const fix = "Fix the file, or reset a setting: agent-voice config unset <name>";
-  const isErrorObject = error instanceof Error;
-  const detail = isErrorObject ? error.message : String(error);
-  return Effect.succeed([problem({ name: "Config", status: "fail", detail, fix })]);
+const checkSettings = async (settings: Config): Promise<ReadonlyArray<DoctorCheck>> => {
+  const refineChecks = await checkRefine(settings);
+  return [
+    createOkCheck("Config", "valid"),
+    checkWhisperModel(settings),
+    checkSupertonicVoices(settings),
+    ...refineChecks,
+  ];
 };
 
-const runDoctorChecks = Effect.gen(function* () {
-  const natives = yield* Effect.forEach(NATIVE_MODULES, nativeModuleCheck);
-  const keyboard = yield* keyboardChecks;
-  const microphone = yield* microphoneCheck;
-  const settings = yield* Effect.try({ try: readConfig, catch: (error) => error }).pipe(
-    Effect.matchEffect({ onSuccess: settingChecks, onFailure: configFailedChecks }),
-  );
-  const tools = SYSTEM_TOOLS.map(toolCheck);
-  const hooks = hookChecks();
-  return [platformCheck(), nodeCheck(), ...natives, ...tools, ...keyboard, microphone, ...hooks, ...settings];
+const createConfigFailedCheck = (error: unknown): DoctorCheck => ({
+  name: "Config",
+  status: "fail",
+  detail: describeError(error),
+  fix: "Fix the file, or reset a setting: agent-voice config unset <name>",
 });
 
-const showCheck = (check: DoctorCheck) => {
-  const line = `${check.name}: ${check.detail}`;
-  const lineWithFix = `${line} — ${check.fix || ""}`;
+// Only reading the file can fail here, so only that call is guarded.
+const runSettingChecks = async (): Promise<ReadonlyArray<DoctorCheck>> => {
+  let settings: Config;
+  try {
+    settings = readConfig();
+  } catch (error) {
+    return [createConfigFailedCheck(error)];
+  }
+
+  return checkSettings(settings);
+};
+
+const runDoctorChecks = async (): Promise<ReadonlyArray<DoctorCheck>> => {
+  const [nativeChecks, keyboardChecks, microphoneCheck, settingChecks] = await Promise.all([
+    Promise.all(NATIVE_MODULES.map(checkNativeModule)),
+    checkKeyboard(),
+    checkMicrophone(),
+    runSettingChecks(),
+  ]);
+  const toolChecks = SYSTEM_TOOLS.map(checkSystemTool);
+  const hookChecks = checkHooks();
+  return [
+    checkPlatform(),
+    checkNode(),
+    ...nativeChecks,
+    ...toolChecks,
+    ...keyboardChecks,
+    microphoneCheck,
+    ...hookChecks,
+    ...settingChecks,
+  ];
+};
+
+const printCheck = (check: DoctorCheck): void => {
+  const checkLine = `${check.name}: ${check.detail}`;
+  const checkLineWithFix = `${checkLine} — ${check.fix ?? ""}`;
   switch (check.status) {
     case "ok":
-      return TerminalUI.success(line);
+      TerminalUI.printSuccess(checkLine);
+      return;
     case "warn":
-      return TerminalUI.warn(lineWithFix);
+      TerminalUI.printWarning(checkLineWithFix);
+      return;
     case "fail":
-      return TerminalUI.fail(lineWithFix);
+      TerminalUI.printFailure(checkLineWithFix);
+      return;
   }
 };
 
-const showChecks = (checks: ReadonlyArray<DoctorCheck>) =>
-  Effect.gen(function* () {
-    yield* TerminalUI.intro("doctor");
-    yield* Effect.forEach(checks, showCheck);
-  });
-
-class DoctorChecksFailed extends Schema.TaggedError<DoctorChecksFailed>()("DoctorChecksFailed", {
-  failed: Schema.Number,
-}) {
-  get message(): string {
-    return `${String(this.failed)} check(s) failed.`;
+const printChecks = (checks: ReadonlyArray<DoctorCheck>): void => {
+  TerminalUI.printIntro("doctor");
+  for (const check of checks) {
+    printCheck(check);
   }
-}
+};
 
-const jsonOption = Options.boolean("json").pipe(Options.withDescription("Print one JSON document"));
-
-export const doctorCommand = Command.make("doctor", { json: jsonOption }, (args) =>
-  Effect.gen(function* () {
-    const checks = yield* runDoctorChecks;
-    if (args.json) {
-      yield* TerminalUI.json(checks);
+export const doctorCommand: CommandSpec = {
+  name: "doctor",
+  description: "Check macOS, native modules, system tools, models, permissions, and agent hooks",
+  flags: {
+    json: { kind: "boolean", description: "Print one JSON document" },
+  },
+  positionals: [],
+  run: async (parsedCommand): Promise<ExitCode> => {
+    const checks = await runDoctorChecks();
+    const isJsonWanted = isFlagOn(parsedCommand, "json");
+    if (isJsonWanted) {
+      TerminalUI.printDocument(checks);
     } else {
-      yield* showChecks(checks);
+      printChecks(checks);
     }
 
-    const failed = checks.filter((check) => check.status === "fail").length;
-    if (failed > 0) {
-      return yield* new DoctorChecksFailed({ failed });
+    const failedCount = checks.filter((check) => check.status === "fail").length;
+    const isAnyCheckFailed = failedCount > 0;
+    if (!isAnyCheckFailed) {
+      return 0;
     }
-  }),
-).pipe(Command.withDescription("Check macOS, native modules, system tools, models, permissions, and agent hooks"));
+
+    TerminalUI.printError(`${String(failedCount)} check(s) failed.`);
+    return 1;
+  },
+};

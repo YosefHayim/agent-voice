@@ -1,92 +1,41 @@
 #!/usr/bin/env node
-import { CliConfig, Command, ValidationError } from "@effect/cli";
-import { NodeContext, NodeRuntime } from "@effect/platform-node";
-import { Effect, ParseResult } from "effect";
-
 import { runReplyHookFromArguments } from "#src/agents/reply-hook.js";
 import { agentVoiceVersion } from "./agent-voice-version.js";
-import { CliUsageError } from "./cli-usage-error.js";
-import { configCommand } from "./config-command.js";
-import { devinCommand } from "./devin-command.js";
-import { doctorCommand } from "./doctor-command.js";
-import { hotkeyCheckCommand } from "./hotkey-check-command.js";
-import { offCommand } from "./off-command.js";
-import { onCommand } from "./on-command.js";
-import { refineCommand } from "./refine-command.js";
-import { renderCommand } from "./render-command.js";
-import { replyCommand } from "./reply-command.js";
-import { resetCommand } from "./reset-command.js";
-import { speakCommand } from "./speak-command.js";
-import { statusCommand } from "./status-command.js";
+import type { ExitCode } from "./command-spec.js";
+import { type CommandRoute, parseCommandLine } from "./parse-command-line.js";
 import * as TerminalUI from "./terminal-ui.js";
-import { workerCommand } from "./worker-command.js";
 
-const agentVoice = Command.make("agent-voice").pipe(
-  Command.withDescription("Hold Shift to dictate into any text field and hear coding-agent replies read aloud."),
-  Command.withSubcommands([
-    onCommand,
-    offCommand,
-    statusCommand,
-    doctorCommand,
-    configCommand,
-    speakCommand,
-    renderCommand,
-    refineCommand,
-    devinCommand,
-    hotkeyCheckCommand,
-    resetCommand,
-    replyCommand,
-    workerCommand,
-  ]),
-);
+const runRoute = async (route: CommandRoute): Promise<ExitCode> => {
+  const isHelpRoute = route.kind === "help";
+  if (isHelpRoute) {
+    TerminalUI.printLine(route.helpMessage);
+    return 0;
+  }
 
-const runAgentVoice = Command.run(agentVoice, { name: "agent-voice", version: agentVoiceVersion });
+  const isVersionRoute = route.kind === "version";
+  if (isVersionRoute) {
+    TerminalUI.printLine(`agent-voice ${agentVoiceVersion}`);
+    return 0;
+  }
 
-const cliConfig = CliConfig.layer({ showBuiltIns: false });
+  const isHookRoute = route.kind === "hook";
+  if (isHookRoute) {
+    await runReplyHookFromArguments(route.hookArguments);
+    return 0;
+  }
 
-const exitCodeFor = (error: unknown): number => {
-  const isUsageError =
-    ValidationError.isValidationError(error) || ParseResult.isParseError(error) || error instanceof CliUsageError;
-  if (isUsageError) {
+  const isUsageRoute = route.kind === "usage";
+  if (isUsageRoute) {
+    TerminalUI.printError(route.message);
     return 2;
   }
 
-  return 1;
+  try {
+    return await route.run(route.parsedCommand);
+  } catch (error) {
+    TerminalUI.printError(error);
+    return 1;
+  }
 };
 
-// @effect/cli already printed its own validation message; everything else is shown once here.
-const reportFailure = (error: unknown) =>
-  Effect.gen(function* () {
-    const isPrinted = ValidationError.isValidationError(error);
-    if (!isPrinted) {
-      yield* TerminalUI.showError(error);
-    }
-
-    process.exitCode = exitCodeFor(error);
-  });
-
-const runCommandLine = (commandLine: ReadonlyArray<string>) =>
-  runAgentVoice(commandLine).pipe(
-    Effect.catchAll(reportFailure),
-    Effect.provide(NodeContext.layer),
-    Effect.provide(cliConfig),
-  );
-
-// The Stop hook skips the CLI parser: a parser error exits 2, and exit 2 from a Claude Code Stop hook blocks the agent.
-const programFor = (commandLine: ReadonlyArray<string>): Effect.Effect<void> => {
-  const commandName = commandLine[2];
-  if (commandName === "reply") {
-    const hookArguments = commandLine.slice(3);
-    return Effect.promise(() => runReplyHookFromArguments(hookArguments));
-  }
-
-  if (commandName === undefined) {
-    return runCommandLine(["node", "agent-voice", "--help"]);
-  }
-
-  return runCommandLine(commandLine);
-};
-
-const program = programFor(process.argv);
-
-NodeRuntime.runMain(program);
+process.exitCode = await runRoute(parseCommandLine(process.argv.slice(2)));

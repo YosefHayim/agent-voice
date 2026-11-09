@@ -1,27 +1,28 @@
-import { Command, Options } from "@effect/cli";
-import { Effect, Schema } from "effect";
-
 import { holdKeyLabels } from "#src/dictation/hold-key.js";
 import { loadKeyboard } from "#src/dictation/keyboard.js";
+import { sleep } from "#src/sleep.js";
+import { type CommandSpec, readStringFlag } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
-class NoHoldSeen extends Schema.TaggedError<NoHoldSeen>()("NoHoldSeen", {}) {
-  get message(): string {
-    return "No hold-key press seen. Allow Input Monitoring for your terminal in System Settings → Privacy & Security.";
-  }
-}
+const pollMilliseconds = 20;
+const millisecondsPerSecond = 1_000;
 
-const secondsOption = Options.integer("seconds").pipe(
-  Options.withDefault(8),
-  Options.withDescription("How long to watch the configured hold key"),
-);
-
-export const hotkeyCheckCommand = Command.make("hotkey-check", { seconds: secondsOption }, (args) =>
-  Effect.gen(function* () {
-    const keyboard = yield* Effect.tryPromise({ try: loadKeyboard, catch: (error) => error });
+export const hotkeyCheckCommand: CommandSpec = {
+  name: "hotkey-check",
+  description: "Print configured hold-key presses for a few seconds, to check that agent-voice can see the keyboard",
+  flags: {
+    seconds: { kind: "integer", description: "How long to watch the configured hold key (default 8)" },
+  },
+  positionals: [],
+  run: async (parsedCommand) => {
+    const defaultWatchSeconds = 8;
+    const secondsWord = readStringFlag(parsedCommand, "seconds");
+    const watchSeconds = secondsWord == null ? defaultWatchSeconds : Number(secondsWord);
+    const keyboard = await loadKeyboard();
     const label = holdKeyLabels[keyboard.holdKey];
-    yield* TerminalUI.step(`Hold ${label}… (watching for ${String(args.seconds)} s)`);
-    const deadline = Date.now() + args.seconds * 1_000;
+    TerminalUI.printStep(`Hold ${label}… (watching for ${String(watchSeconds)} s)`);
+
+    const deadline = Date.now() + watchSeconds * millisecondsPerSecond;
     let wasDown = false;
     let sawDown = false;
     while (Date.now() < deadline) {
@@ -29,26 +30,25 @@ export const hotkeyCheckCommand = Command.make("hotkey-check", { seconds: second
       const isPressed = isDown && !wasDown;
       const isReleased = !isDown && wasDown;
       if (isPressed) {
-        yield* TerminalUI.text(`${label} DOWN`);
+        TerminalUI.printLine(`${label} DOWN`);
       }
 
       if (isReleased) {
-        yield* TerminalUI.text(`${label} UP`);
+        TerminalUI.printLine(`${label} UP`);
       }
 
       sawDown = sawDown || isDown;
       wasDown = isDown;
-      yield* Effect.sleep("20 millis");
+      await sleep(pollMilliseconds);
     }
 
     if (!sawDown) {
-      return yield* new NoHoldSeen();
+      throw new Error(
+        "No hold-key press seen. Allow Input Monitoring for your terminal in System Settings → Privacy & Security.",
+      );
     }
 
-    yield* TerminalUI.success(`${label} detection works.`);
-  }),
-).pipe(
-  Command.withDescription(
-    "Print configured hold-key presses for a few seconds, to check that agent-voice can see the keyboard",
-  ),
-);
+    TerminalUI.printSuccess(`${label} detection works.`);
+    return 0;
+  },
+};
