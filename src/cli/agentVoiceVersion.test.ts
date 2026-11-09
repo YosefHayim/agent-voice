@@ -6,8 +6,9 @@ import { agentVoiceVersion } from "./agentVoiceVersion.js";
 
 describe("agentVoiceVersion", () => {
   it("matches the version in package.json", () => {
-    const packageText = readFileSync(new URL("../../package.json", import.meta.url), "utf8");
+    const packageJsonText = readFileSync(new URL("../../package.json", import.meta.url), "utf8");
+    const packageJson: { version: string } = JSON.parse(packageJsonText);
 
-    expect(packageText).toContain(`"version": "${agentVoiceVersion}"`);
+    expect(agentVoiceVersion).toBe(packageJson.version);
   });
 });
