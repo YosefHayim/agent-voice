@@ -18,7 +18,7 @@ const secondsOption = Options.integer("seconds").pipe(
 
 export const hotkeyCheckCommand = Command.make("hotkey-check", { seconds: secondsOption }, (args) =>
   Effect.gen(function* () {
-    const keyboard = yield* loadKeyboard;
+    const keyboard = yield* Effect.tryPromise({ try: loadKeyboard, catch: (error) => error });
     const label = holdKeyLabels[keyboard.holdKey];
     yield* TerminalUI.step(`Hold ${label}… (watching for ${String(args.seconds)} s)`);
     const deadline = Date.now() + args.seconds * 1_000;

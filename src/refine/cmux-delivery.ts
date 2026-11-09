@@ -3,20 +3,12 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { Effect, Option, Schema } from "effect";
+import { z } from "zod";
 import { stateFolder } from "#src/settings/agent-voice-home.js";
 import type { Config } from "#src/settings/config-schema.js";
+import { sleep } from "#src/sleep.js";
 import { writePrivateFile } from "#src/storage/state-files.js";
-import { cliFailureText, findCli, nonBlankLines, runCli } from "./agent-cli.js";
-
-export class CmuxDeliveryFailed extends Schema.TaggedError<CmuxDeliveryFailed>()("CmuxDeliveryFailed", {
-  step: Schema.String,
-  detail: Schema.String,
-}) {
-  get message(): string {
-    return `cmux ${this.step}: ${this.detail}`;
-  }
-}
+import { type CliRun, cliFailureText, findCli, nonBlankLines, parseJsonOrNull, runCli } from "./agent-cli.js";
 
 const CMUX_TIMEOUT_MS = 15_000;
 
@@ -26,63 +18,103 @@ const KNOWN_CMUX_PATHS = [
   "/opt/homebrew/bin/cmux",
 ];
 
-const knownCmuxPath = (): string => KNOWN_CMUX_PATHS.find((candidate) => existsSync(candidate)) || "cmux";
+const pickKnownCmuxPath = (): string => KNOWN_CMUX_PATHS.find((candidate) => existsSync(candidate)) || "cmux";
 
-const cmuxExecutable = (): string => findCli("cmux") ?? knownCmuxPath();
+const pickCmuxExecutable = (): string => findCli("cmux") ?? pickKnownCmuxPath();
 
-const recordOf = Schema.decodeUnknownOption(Schema.Record({ key: Schema.String, value: Schema.Unknown }));
+// Every failure is an Error that names the cmux step, so the log says which call failed.
+const createCmuxError = (step: string, detail: string): Error => new Error(`cmux ${step}: ${detail}`);
 
-const parseJson = Schema.decodeUnknownOption(Schema.parseJson());
+const cmuxRecordSchema = z.record(z.string(), z.unknown());
 
-const decodeString = Schema.decodeUnknownOption(Schema.String);
+const readRecord = (value: unknown): Readonly<Record<string, unknown>> | null => {
+  const checked = cmuxRecordSchema.safeParse(value);
+  if (!checked.success) {
+    return null;
+  }
 
-const nonEmptyString = (value: unknown): Option.Option<string> =>
-  decodeString(value).pipe(Option.filter((text) => text !== ""));
-
-const firstString = (value: unknown, keys: ReadonlyArray<string>): Option.Option<string> =>
-  recordOf(value).pipe(
-    Option.flatMap((record) => {
-      const candidates = keys.map((key) => nonEmptyString(record[key]));
-      return Option.firstSomeOf(candidates);
-    }),
-  );
-
-// cmux may print notices before its JSON line.
-const cmuxReply = (stdout: string): unknown => {
-  const jsonLines = nonBlankLines(stdout).filter((line) => line.startsWith("{"));
-  const lastJsonLine = jsonLines.at(-1) || "";
-  const wholeText = stdout.trim();
-  return parseJson(wholeText).pipe(
-    Option.orElse(() => parseJson(lastJsonLine)),
-    Option.getOrNull,
-  );
+  return checked.data;
 };
 
-const cmuxJson = (request: { readonly args: ReadonlyArray<string>; readonly step: string }) =>
-  Effect.gen(function* () {
-    const executable = cmuxExecutable();
-    const cliRun = yield* Effect.tryPromise({
-      try: (signal) =>
-        runCli({
-          executable,
-          args: request.args,
-          timeoutMs: CMUX_TIMEOUT_MS,
-          environment: { CMUX_QUIET: "1" },
-          signal,
-        }),
-      catch: (error) => (error instanceof Error ? error.message : String(error)),
-    }).pipe(Effect.mapError((issue) => new CmuxDeliveryFailed({ step: request.step, detail: issue })));
-    if (cliRun.exitCode !== 0) {
-      const detail = cliFailureText(cliRun) || "failed";
-      return yield* new CmuxDeliveryFailed({ step: request.step, detail });
-    }
+const readNonEmptyString = (value: unknown): string | null => {
+  const isNonEmptyText = typeof value === "string" && value !== "";
+  if (!isNonEmptyText) {
+    return null;
+  }
 
-    return cmuxReply(cliRun.stdout);
-  });
+  return value;
+};
+
+// The first key whose value is a non-empty string.
+const readFirstString = (value: unknown, keys: ReadonlyArray<string>): string | null => {
+  const record = readRecord(value);
+  const isNotRecord = record === null;
+  if (isNotRecord) {
+    return null;
+  }
+
+  for (const key of keys) {
+    const found = readNonEmptyString(record[key]);
+    const isFound = found !== null;
+    if (isFound) {
+      return found;
+    }
+  }
+
+  return null;
+};
+
+// cmux may print notices before its JSON line.
+const readCmuxReply = (stdout: string): unknown => {
+  const jsonLines = nonBlankLines(stdout).filter((line) => line.startsWith("{"));
+  const lastJsonLine = jsonLines.at(-1) ?? "";
+  const wholeReply = parseJsonOrNull(stdout.trim());
+  const isWholeReplyJson = wholeReply !== null;
+  if (isWholeReplyJson) {
+    return wholeReply;
+  }
+
+  return parseJsonOrNull(lastJsonLine);
+};
+
+const runCmuxCli = async (request: {
+  readonly executable: string;
+  readonly args: ReadonlyArray<string>;
+  readonly step: string;
+}): Promise<CliRun> => {
+  try {
+    return await runCli({
+      executable: request.executable,
+      args: request.args,
+      timeoutMs: CMUX_TIMEOUT_MS,
+      environment: { CMUX_QUIET: "1" },
+      signal: AbortSignal.timeout(CMUX_TIMEOUT_MS),
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`cmux ${request.step}: ${detail}`, { cause: error });
+  }
+};
+
+const runCmuxJson = async (request: {
+  readonly args: ReadonlyArray<string>;
+  readonly step: string;
+}): Promise<unknown> => {
+  const executable = pickCmuxExecutable();
+  const cliRun = await runCmuxCli({ executable, args: request.args, step: request.step });
+  const isFailedExit = cliRun.exitCode !== 0;
+  if (isFailedExit) {
+    const detail = cliFailureText(cliRun) || "failed";
+    throw createCmuxError(request.step, detail);
+  }
+
+  return readCmuxReply(cliRun.stdout);
+};
 
 // cmux addresses a surface by `surface_ref` (`surface:N`) or by `surface_id` (UUID).
 const surfaceKey = (surface: string): string => {
-  if (surface.startsWith("surface:")) {
+  const isSurfaceRef = surface.startsWith("surface:");
+  if (isSurfaceRef) {
     return "surface_ref";
   }
 
@@ -97,101 +129,135 @@ export const surfaceParams = (
   return { [key]: surface, ...fields };
 };
 
-const rpc = (method: string, params: Readonly<Record<string, string>>) => {
+const callRpc = (method: string, params: Readonly<Record<string, string>>): Promise<unknown> => {
   const paramsJson = JSON.stringify(params);
-  return cmuxJson({ args: ["rpc", method, paramsJson], step: `rpc ${method}` });
+  return runCmuxJson({ args: ["rpc", method, paramsJson], step: `rpc ${method}` });
 };
 
-// Some cmux builds name the key "return" instead of "enter".
-const pressEnterKey = (surface: string): Effect.Effect<void> => {
+// Some cmux builds name the key "return" instead of "enter". A key that fails to send is logged, not thrown.
+const pressEnterKey = async (surface: string): Promise<void> => {
   const enterParams = surfaceParams(surface, { key: "enter" });
   const returnParams = surfaceParams(surface, { key: "return" });
-  return rpc("surface.send_key", enterParams).pipe(
-    Effect.orElse(() => rpc("surface.send_key", returnParams)),
-    Effect.ignore,
-  );
+  try {
+    await callRpc("surface.send_key", enterParams);
+  } catch (enterError) {
+    console.error({ surface, enterError });
+    try {
+      await callRpc("surface.send_key", returnParams);
+    } catch (returnError) {
+      console.error({ surface, returnError });
+    }
+  }
 };
 
-const sendTextToSurface = (request: {
+const sendTextToSurface = async (request: {
   readonly surface: string;
   readonly text: string;
   readonly pressEnter: boolean;
-}) =>
-  Effect.gen(function* () {
-    const textParams = surfaceParams(request.surface, { text: request.text });
-    yield* rpc("surface.send_text", textParams);
-    if (request.pressEnter) {
-      yield* pressEnterKey(request.surface);
-    }
-  });
+}): Promise<void> => {
+  const textParams = surfaceParams(request.surface, { text: request.text });
+  await callRpc("surface.send_text", textParams);
+  if (request.pressEnter) {
+    await pressEnterKey(request.surface);
+  }
+};
 
-const focusedOrCaller = (identity: unknown): unknown =>
-  recordOf(identity).pipe(
-    Option.flatMap((record) => {
-      const focused = Option.fromNullable(record.focused);
-      return focused.pipe(Option.orElse(() => Option.fromNullable(record.caller)));
-    }),
-    Option.getOrElse(() => identity),
-  );
+const readFocusedOrCaller = (identity: unknown): unknown => {
+  const record = readRecord(identity);
+  const isNotRecord = record === null;
+  if (isNotRecord) {
+    return identity;
+  }
 
-const identifyFocus = cmuxJson({ args: ["identify", "--json", "--id-format", "both"], step: "identify" }).pipe(
-  Effect.map(focusedOrCaller),
-);
+  return record.focused ?? record.caller ?? identity;
+};
 
-const workspaceListSchema = Schema.Struct({
-  workspaces: Schema.Array(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
+const identifyFocus = async (): Promise<unknown> => {
+  const identity = await runCmuxJson({ args: ["identify", "--json", "--id-format", "both"], step: "identify" });
+  return readFocusedOrCaller(identity);
+};
+
+const workspaceListSchema = z.object({
+  workspaces: z.array(z.record(z.string(), z.unknown())),
 });
 
-const decodeWorkspaceList = Schema.decodeUnknownOption(workspaceListSchema);
+const readWorkspaces = (listing: unknown): ReadonlyArray<unknown> => {
+  const checked = workspaceListSchema.safeParse(listing);
+  if (!checked.success) {
+    return [];
+  }
 
-const workspacesIn = (listing: unknown): ReadonlyArray<unknown> =>
-  decodeWorkspaceList(listing).pipe(
-    Option.map((decoded) => decoded.workspaces),
-    Option.getOrElse(() => []),
-  );
+  return checked.data.workspaces;
+};
 
-const listWorkspaces = cmuxJson({ args: ["workspace", "list", "--json"], step: "workspace list" }).pipe(
-  Effect.map(workspacesIn),
-  Effect.orElseSucceed(() => []),
-);
+const listWorkspaces = async (): Promise<ReadonlyArray<unknown>> => {
+  try {
+    const listing = await runCmuxJson({ args: ["workspace", "list", "--json"], step: "workspace list" });
+    return readWorkspaces(listing);
+  } catch (error) {
+    console.error({ step: "workspace list", error });
+    return [];
+  }
+};
 
-const focusedWorkspaceId = (focus: unknown): string =>
-  firstString(focus, ["workspace_id", "workspace_ref"]).pipe(Option.getOrElse(() => ""));
+const readFocusedWorkspaceId = async (): Promise<string> => {
+  try {
+    const focus = await identifyFocus();
+    return readFirstString(focus, ["workspace_id", "workspace_ref"]) ?? "";
+  } catch (error) {
+    console.error({ step: "identify", error });
+    return "";
+  }
+};
 
-const workspaceDirectory = (workspace: unknown) => firstString(workspace, ["current_directory"]);
+const readWorkspaceDirectory = (workspace: unknown): string | null => readFirstString(workspace, ["current_directory"]);
 
 const isFocusedWorkspace = (workspace: unknown, focusId: string): boolean => {
-  const id = firstString(workspace, ["id", "workspace_id", "ref"]).pipe(Option.getOrElse(() => ""));
-  if (id === "" || focusId === "") {
+  const id = readFirstString(workspace, ["id", "workspace_id", "ref"]) ?? "";
+  const isUnknownWorkspace = id === "" || focusId === "";
+  if (isUnknownWorkspace) {
     return false;
   }
 
   return id === focusId || id.endsWith(focusId) || focusId.endsWith(id);
 };
 
-const firstWorkspaceDirectory = (workspaces: ReadonlyArray<unknown>): Option.Option<string> => {
-  const directories = workspaces.map(workspaceDirectory);
-  return Option.firstSomeOf(directories);
+const readFirstWorkspaceDirectory = (workspaces: ReadonlyArray<unknown>): string | null => {
+  for (const workspace of workspaces) {
+    const directory = readWorkspaceDirectory(workspace);
+    const isFound = directory !== null;
+    if (isFound) {
+      return directory;
+    }
+  }
+
+  return null;
 };
 
-const deliveryFolder = Effect.gen(function* () {
-  const workspaces = yield* listWorkspaces;
-  const focusId = yield* identifyFocus.pipe(
-    Effect.map(focusedWorkspaceId),
-    Effect.orElseSucceed(() => ""),
-  );
+// The focused workspace's folder, else the first workspace's folder, else the home folder.
+const readDeliveryFolder = async (): Promise<string> => {
+  const workspaces = await listWorkspaces();
+  const focusId = await readFocusedWorkspaceId();
   const focused = workspaces.find((workspace) => isFocusedWorkspace(workspace, focusId));
-  return Option.fromNullable(focused).pipe(
-    Option.flatMap(workspaceDirectory),
-    Option.orElse(() => firstWorkspaceDirectory(workspaces)),
-    Option.getOrElse(homedir),
-  );
-});
+  const focusedDirectory = focused === undefined ? null : readWorkspaceDirectory(focused);
+  const isFocusedFolderFound = focusedDirectory !== null;
+  if (isFocusedFolderFound) {
+    return focusedDirectory;
+  }
+
+  const firstDirectory = readFirstWorkspaceDirectory(workspaces);
+  const isFirstFolderFound = firstDirectory !== null;
+  if (isFirstFolderFound) {
+    return firstDirectory;
+  }
+
+  return homedir();
+};
 
 // Safe inside a single-quoted shell string: ' becomes '\''.
-export const shellSingleQuote = (text: string): string => `'${text.replaceAll("'", "'\\''")}'`;
+export const shellSingleQuote = (plainText: string): string => `'${plainText.replaceAll("'", "'\\''")}'`;
 
-// One pass, so a folder with spaces or `$(...)` stays one literal word and a placeholder inside the prompt is never expanded.
+// One pass, so a folder with spaces or `$(...)` stays one literal word, and text inserted by one placeholder is never expanded again.
 export const expandCommandTemplate = (request: {
   readonly template: string;
   readonly prompt: string;
@@ -208,109 +274,124 @@ export const expandCommandTemplate = (request: {
   );
 };
 
-export const workspaceTitle = (text: string): string => {
-  const firstLine = text.split("\n")[0] || "";
+export const workspaceTitle = (plainText: string): string => {
+  const firstLine = plainText.split("\n")[0] || "";
   const characters = [...firstLine.trim()];
   const shortLine = characters.slice(0, 40).join("");
-  if (shortLine === "") {
+  const isLineEmpty = shortLine === "";
+  if (isLineEmpty) {
     return "refine";
   }
 
   return `refine: ${shortLine}`;
 };
 
-const writePromptFile = (text: string): string => {
+const writePromptFile = (promptText: string): string => {
   const promptsFolder = stateFolder("prompts");
   const promptFile = path.join(promptsFolder, `prompt-${randomUUID()}.txt`);
-  writePrivateFile({ path: promptFile, flags: "w", contents: `${text}\n` });
+  writePrivateFile({ path: promptFile, flags: "w", contents: `${promptText}\n` });
   return promptFile;
 };
 
-const createWorkspaceArgs = (text: string, folder: string): ReadonlyArray<string> => {
-  const title = workspaceTitle(text);
-  return ["workspace", "create", "--name", title, "--cwd", folder, "--focus", "true"];
+const createWorkspaceArgs = (request: {
+  readonly promptText: string;
+  readonly folder: string;
+}): ReadonlyArray<string> => {
+  const title = workspaceTitle(request.promptText);
+  return ["workspace", "create", "--name", title, "--cwd", request.folder, "--focus", "true"];
 };
 
-const runInNewWorkspace = (request: { readonly text: string; readonly template: string; readonly folder: string }) =>
-  Effect.gen(function* () {
-    const promptFile = writePromptFile(request.text);
-    const command = expandCommandTemplate({
-      template: request.template,
-      prompt: request.text,
-      promptFile,
-      folder: request.folder,
-    });
-    const createArgs = createWorkspaceArgs(request.text, request.folder);
-    const created = yield* cmuxJson({
-      args: [...createArgs, "--command", command, "--json"],
-      step: "workspace create",
-    });
-    const workspace = firstString(created, ["workspace_ref", "workspace_id"]).pipe(Option.getOrElse(() => "?"));
-    return `cmux-new ran a command in workspace ${workspace}`;
+const runInNewWorkspace = async (request: {
+  readonly promptText: string;
+  readonly template: string;
+  readonly folder: string;
+}): Promise<string> => {
+  const promptFile = writePromptFile(request.promptText);
+  const command = expandCommandTemplate({
+    template: request.template,
+    prompt: request.promptText,
+    promptFile,
+    folder: request.folder,
   });
+  const createArgs = createWorkspaceArgs({ promptText: request.promptText, folder: request.folder });
+  const created = await runCmuxJson({
+    args: [...createArgs, "--command", command, "--json"],
+    step: "workspace create",
+  });
+  const workspace = readFirstString(created, ["workspace_ref", "workspace_id"]) ?? "?";
+  return `cmux-new ran a command in workspace ${workspace}`;
+};
 
-const pasteInNewWorkspace = (request: {
-  readonly text: string;
+// Gives the new terminal a moment to accept input.
+const surfaceReadyDelayMilliseconds = 350;
+
+const pasteInNewWorkspace = async (request: {
+  readonly promptText: string;
   readonly folder: string;
   readonly pressEnter: boolean;
-}) =>
-  Effect.gen(function* () {
-    const createArgs = createWorkspaceArgs(request.text, request.folder);
-    const created = yield* cmuxJson({ args: [...createArgs, "--json"], step: "workspace create" });
-    const surface = firstString(created, ["surface_id", "surface_ref"]);
-    if (Option.isNone(surface)) {
-      return yield* new CmuxDeliveryFailed({ step: "workspace create", detail: "no surface id in the reply" });
-    }
+}): Promise<string> => {
+  const createArgs = createWorkspaceArgs({ promptText: request.promptText, folder: request.folder });
+  const created = await runCmuxJson({ args: [...createArgs, "--json"], step: "workspace create" });
+  const surface = readFirstString(created, ["surface_id", "surface_ref"]);
+  const hasNoSurface = surface === null;
+  if (hasNoSurface) {
+    throw createCmuxError("workspace create", "no surface id in the reply");
+  }
 
-    // Give the new terminal a moment to accept input.
-    yield* Effect.sleep("350 millis");
-    yield* sendTextToSurface({ surface: surface.value, text: request.text, pressEnter: request.pressEnter });
-    return `cmux-new pasted into surface ${surface.value}`;
-  });
+  await sleep(surfaceReadyDelayMilliseconds);
+  await sendTextToSurface({ surface, text: request.promptText, pressEnter: request.pressEnter });
+  return `cmux-new pasted into surface ${surface}`;
+};
 
-const deliverToNewWorkspace = (request: { readonly text: string; readonly config: Config }) =>
-  Effect.gen(function* () {
-    const folder = yield* deliveryFolder;
-    const template = request.config.refineCmuxCommand;
-    if (template !== "") {
-      return yield* runInNewWorkspace({ text: request.text, template, folder });
-    }
-
-    return yield* pasteInNewWorkspace({
-      text: request.text,
-      folder,
-      pressEnter: request.config.refineCmuxPressEnter,
-    });
-  });
-
-const deliverToFocusedSurface = (request: { readonly text: string; readonly config: Config }) =>
-  Effect.gen(function* () {
-    const focus = yield* identifyFocus;
-    const surface = firstString(focus, ["surface_id", "surface_ref"]);
-    if (Option.isNone(surface)) {
-      return yield* new CmuxDeliveryFailed({ step: "identify", detail: "no focused surface" });
-    }
-
-    yield* sendTextToSurface({
-      surface: surface.value,
-      text: request.text,
-      pressEnter: request.config.refineCmuxPressEnter,
-    });
-    return `cmux-resume sent to surface ${surface.value}`;
-  });
-
-// Returns a one-line summary for the dictation log.
-export const deliverToCmux = (request: {
-  readonly text: string;
+const deliverToNewWorkspace = async (request: {
+  readonly promptText: string;
   readonly config: Config;
-}): Effect.Effect<string, CmuxDeliveryFailed> => {
-  const text = request.text.trim();
+}): Promise<string> => {
+  const folder = await readDeliveryFolder();
+  const template = request.config.refineCmuxCommand;
+  const isCommandTemplate = template !== "";
+  if (isCommandTemplate) {
+    return runInNewWorkspace({ promptText: request.promptText, template, folder });
+  }
+
+  return pasteInNewWorkspace({
+    promptText: request.promptText,
+    folder,
+    pressEnter: request.config.refineCmuxPressEnter,
+  });
+};
+
+const deliverToFocusedSurface = async (request: {
+  readonly promptText: string;
+  readonly config: Config;
+}): Promise<string> => {
+  const focus = await identifyFocus();
+  const surface = readFirstString(focus, ["surface_id", "surface_ref"]);
+  const hasNoSurface = surface === null;
+  if (hasNoSurface) {
+    throw createCmuxError("identify", "no focused surface");
+  }
+
+  await sendTextToSurface({
+    surface,
+    text: request.promptText,
+    pressEnter: request.config.refineCmuxPressEnter,
+  });
+  return `cmux-resume sent to surface ${surface}`;
+};
+
+// Returns a one-line summary for the dictation log. Throws an Error that names the cmux step when delivery fails.
+export const deliverToCmux = async (request: {
+  readonly promptText: string;
+  readonly config: Config;
+}): Promise<string> => {
+  const promptText = request.promptText.trim();
   switch (request.config.refineSendTo) {
     case "cmux-new":
-      return deliverToNewWorkspace({ text, config: request.config });
+      return deliverToNewWorkspace({ promptText, config: request.config });
     case "cmux-resume":
-      return deliverToFocusedSurface({ text, config: request.config });
+      return deliverToFocusedSurface({ promptText, config: request.config });
     case "caret":
-      return Effect.fail(new CmuxDeliveryFailed({ step: "deliver", detail: "caret delivery types at the caret" }));
+      throw createCmuxError("deliver", "caret delivery types at the caret");
   }
 };

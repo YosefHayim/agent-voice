@@ -2,42 +2,30 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { Effect, Fiber, Schema } from "effect";
 import { stateFolder } from "#src/settings/agent-voice-home.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { writePrivateFile } from "#src/storage/state-files.js";
 import { markdownToSpeech } from "./markdown-to-speech.js";
 import { chunkSpeech, SPEECH_CHUNK_CHARACTERS, speedForWordsPerMinute } from "./speech-chunks.js";
-import type { SupertonicEngine, SupertonicError } from "./supertonic.js";
+import type { SupertonicEngine } from "./supertonic.js";
 import { encodeWav } from "./wav-file.js";
-
-export class PlaybackError extends Schema.TaggedError<PlaybackError>()("PlaybackError", {
-  issue: Schema.String,
-}) {
-  get message(): string {
-    return `afplay: ${this.issue}`;
-  }
-}
 
 // One afplay at a time; `stop` kills it at once and makes the current reply end early.
 export const makeSpeechPlayer = () => {
   let playing: ChildProcess | undefined;
   let stopped = false;
 
-  const play = (wavFile: string) =>
-    Effect.async<void, PlaybackError>((resume) => {
+  const play = (wavFile: string): Promise<void> =>
+    new Promise<void>((finish, fail) => {
       const child = spawn("afplay", [wavFile], { stdio: "ignore" });
       playing = child;
       child.on("error", (error) => {
-        const playbackError = new PlaybackError({ issue: error.message });
-        const failure = Effect.fail(playbackError);
-        resume(failure);
+        fail(new Error(`afplay: ${error.message}`, { cause: error }));
       });
       child.on("exit", () => {
         playing = undefined;
-        resume(Effect.void);
+        finish();
       });
-      return Effect.sync(() => child.kill("SIGKILL"));
     });
 
   const stop = () => {
@@ -61,7 +49,7 @@ const speechPieces = (markdown: string): ReadonlyArray<string> => {
   return chunkSpeech(speech, SPEECH_CHUNK_CHARACTERS);
 };
 
-const pieceRenderer = (engine: SupertonicEngine, voice: Voice) => {
+const pieceSynthesizer = (engine: SupertonicEngine, voice: Voice) => {
   const speed = speedForWordsPerMinute(voice.wordsPerMinute);
   return (text: string) => engine.synthesize({ text, voice: voice.voice, speed });
 };
@@ -72,62 +60,75 @@ const chunkFile = (index: number): string => {
 };
 
 // The next piece renders while the current one plays, so the first words start quickly.
-export const speakMarkdown = (request: {
+export const speakMarkdown = async (request: {
   readonly engine: SupertonicEngine;
   readonly player: SpeechPlayer;
   readonly markdown: string;
   readonly voice: Voice;
-}): Effect.Effect<"completed" | "stopped", SupertonicError | PlaybackError> =>
-  Effect.gen(function* () {
-    const pieces = speechPieces(request.markdown);
-    const render = pieceRenderer(request.engine, request.voice);
-    const renderInBackground = (index: number) => {
-      const rendering = render(pieces[index] || "");
-      return Effect.fork(rendering);
-    };
-    let next = yield* renderInBackground(0);
+}): Promise<"completed" | "stopped"> => {
+  const pieces = speechPieces(request.markdown);
+  const synthesize = pieceSynthesizer(request.engine, request.voice);
+  const synthesizePiece = (index: number) => synthesize(pieces[index] || "");
+
+  // Always awaited before this function returns, so no render is left running after a stop or an error.
+  let pendingRender = synthesizePiece(0);
+  try {
     for (const index of pieces.keys()) {
-      const samples = yield* Fiber.join(next);
-      if (request.player.isStopped()) {
+      const samples = await pendingRender;
+      const isStoppedBeforePlay = request.player.isStopped();
+      if (isStoppedBeforePlay) {
         return "stopped";
       }
 
-      next = yield* renderInBackground(index + 1);
+      const hasNextPiece = index + 1 < pieces.length;
+      if (hasNextPiece) {
+        pendingRender = synthesizePiece(index + 1);
+      }
+
       const file = chunkFile(index);
       const wav = encodeWav({ samples, sampleRate: request.engine.sampleRate });
       // A chunk is the reply spoken aloud, so it is as private as the reply's text.
       writePrivateFile({ path: file, flags: "w", contents: wav });
-      yield* request.player.play(file);
+      await request.player.play(file);
     }
-    yield* Fiber.interrupt(next);
-    if (request.player.isStopped()) {
-      return "stopped";
-    }
+  } finally {
+    await pendingRender;
+  }
 
-    return "completed";
-  });
+  const isStoppedAtEnd = request.player.isStopped();
+  if (isStoppedAtEnd) {
+    return "stopped";
+  }
+
+  return "completed";
+};
 
 // Returns the length of the WAV file in seconds.
-export const renderMarkdownToWav = (request: {
+export const writeMarkdownWav = async (request: {
   readonly engine: SupertonicEngine;
   readonly markdown: string;
   readonly voice: Voice;
   readonly outputFile: string;
-}): Effect.Effect<number, SupertonicError> =>
-  Effect.gen(function* () {
-    const pieces = speechPieces(request.markdown);
-    const render = pieceRenderer(request.engine, request.voice);
-    const chunks = yield* Effect.forEach(pieces, render);
-    const sampleCount = chunks.reduce((total, chunk) => total + chunk.length, 0);
-    const samples = new Float32Array(sampleCount);
-    let offset = 0;
-    for (const chunk of chunks) {
-      samples.set(chunk, offset);
-      offset += chunk.length;
-    }
-    const wav = encodeWav({ samples, sampleRate: request.engine.sampleRate });
-    const outputFolder = path.dirname(request.outputFile);
-    mkdirSync(outputFolder, { recursive: true });
-    writeFileSync(request.outputFile, wav);
-    return samples.length / request.engine.sampleRate;
-  });
+}): Promise<number> => {
+  const pieces = speechPieces(request.markdown);
+  const synthesize = pieceSynthesizer(request.engine, request.voice);
+  const chunks: Float32Array[] = [];
+  for (const piece of pieces) {
+    const chunk = await synthesize(piece);
+    chunks.push(chunk);
+  }
+
+  const sampleCount = chunks.reduce((total, chunk) => total + chunk.length, 0);
+  const samples = new Float32Array(sampleCount);
+  let offset = 0;
+  for (const chunk of chunks) {
+    samples.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  const wav = encodeWav({ samples, sampleRate: request.engine.sampleRate });
+  const outputFolder = path.dirname(request.outputFile);
+  mkdirSync(outputFolder, { recursive: true });
+  writeFileSync(request.outputFile, wav);
+  return samples.length / request.engine.sampleRate;
+};

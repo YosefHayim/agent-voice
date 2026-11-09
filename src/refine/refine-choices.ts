@@ -1,4 +1,4 @@
-import { Either, type Option, Schema } from "effect";
+import { z } from "zod";
 import { stateFile } from "#src/settings/agent-voice-home.js";
 import {
   readJsonFile,
@@ -14,20 +14,20 @@ export const DEFAULT_REFINE_MODEL = "gpt-5.3-codex-spark";
 // Low effort keeps dictation refine fast; Codex reasoning models otherwise default to xhigh.
 export const DEFAULT_REFINE_EFFORT = "low";
 
-const savedChoiceSchema = Schema.Struct({
-  provider: Schema.String,
-  model: Schema.String,
-  effort: Schema.String,
-  updatedAt: Schema.Number,
+const savedChoiceSchema = z.object({
+  provider: z.string(),
+  model: z.string(),
+  effort: z.string(),
+  updatedAt: z.number(),
 });
 
-export type SavedChoice = Schema.Schema.Type<typeof savedChoiceSchema>;
+export type SavedChoice = z.infer<typeof savedChoiceSchema>;
 
 const CHOICE_FILE = "refine-choice.json";
 const CODEX_LAST_GOOD_FILE = "refine-codex-last-good.txt";
 const CODEX_FAILED_FILE = "refine-codex-failed.txt";
 
-export const readSavedChoice = (): Option.Option<SavedChoice> =>
+export const readSavedChoice = (): SavedChoice | null =>
   readJsonFile({ path: stateFile(CHOICE_FILE), schema: savedChoiceSchema });
 
 export const codexLastGoodModel = (): string => {
@@ -40,14 +40,17 @@ const modelSet = (fileText: string | null): ReadonlySet<string> => {
   return new Set(models);
 };
 
-// A left when the file exists but cannot be read, so an update never replaces it unseen.
-const readCodexFailedModels = (): Either.Either<ReadonlySet<string>, unknown> => {
+// Null when the file exists but cannot be read, so an update never replaces it unseen.
+const readCodexFailedModels = (): ReadonlySet<string> | null => {
   const failedFile = stateFile(CODEX_FAILED_FILE);
-  return Either.try(() => readTextIfPresent(failedFile)).pipe(Either.map(modelSet));
+  try {
+    return modelSet(readTextIfPresent(failedFile));
+  } catch {
+    return null;
+  }
 };
 
-export const codexFailedModels = (): ReadonlySet<string> =>
-  readCodexFailedModels().pipe(Either.getOrElse(() => new Set<string>()));
+export const codexFailedModels = (): ReadonlySet<string> => readCodexFailedModels() ?? new Set<string>();
 
 const writeCodexFailedModels = (failed: ReadonlySet<string>): void => {
   const lines = [...failed].sort().map((model) => `${model}\n`);
@@ -57,11 +60,12 @@ const writeCodexFailedModels = (failed: ReadonlySet<string>): void => {
 export const markCodexModelFailed = (model: string): void => {
   const trimmed = model.trim();
   const failed = readCodexFailedModels();
-  if (Either.isLeft(failed) || trimmed === "" || failed.right.has(trimmed)) {
+  const isUnreadable = failed === null;
+  if (isUnreadable || trimmed === "" || failed.has(trimmed)) {
     return;
   }
 
-  const updated = new Set([...failed.right, trimmed]);
+  const updated = new Set([...failed, trimmed]);
   writeCodexFailedModels(updated);
 };
 
@@ -85,17 +89,19 @@ export const saveRefineChoice = (request: {
       updatedAt: Date.now() / 1_000,
     },
   });
-  if (request.provider !== "codex") {
+  const isNotCodex = request.provider !== "codex";
+  if (isNotCodex) {
     return;
   }
 
   writeFileAtomically({ path: stateFile(CODEX_LAST_GOOD_FILE), contents: `${model}\n` });
   const failed = readCodexFailedModels();
-  if (Either.isLeft(failed) || !failed.right.has(model)) {
+  const isModelNotMarkedFailed = failed === null || !failed.has(model);
+  if (isModelNotMarkedFailed) {
     return;
   }
 
-  const remaining = [...failed.right].filter((name) => name !== model);
+  const remaining = [...failed].filter((name) => name !== model);
   const updated = new Set(remaining);
   writeCodexFailedModels(updated);
 };

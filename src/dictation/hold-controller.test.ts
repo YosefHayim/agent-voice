@@ -1,7 +1,6 @@
 import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readConfig } from "#src/settings/config-file.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
@@ -39,6 +38,17 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
+const makeShutdownSignal = (): AbortSignal => new AbortController().signal;
+
+// Each tap is 4 polls, which is enough samples to pass the debounce.
+const pollsPerTap = 4;
+
+const pollTap = (poll: () => void): void => {
+  for (let pollCount = 0; pollCount < pollsPerTap; pollCount += 1) {
+    poll();
+  }
+};
+
 const shiftKeyboard = (shift: { down: boolean }): Keyboard => ({
   holdKey: "shift",
   otherModifiersDown: () => false,
@@ -53,45 +63,44 @@ const shiftKeyboard = (shift: { down: boolean }): Keyboard => ({
   postingAllowed: () => true,
 });
 
-const doubleTapShift = async () => {
+const doubleTapShift = () => {
   const shift = { down: false };
   const controller = makeHoldController({
     keyboard: shiftKeyboard(shift),
     clip: makeClipBuffer(),
     caption: makeLiveCaption(),
     status: makeStatusWriter({ model: "fake", backend: "none", recording: () => false }),
-    queue: { offer: () => Effect.void, isIdle: () => true },
+    queue: { offer: () => undefined, isIdle: () => true },
+    shutdown: makeShutdownSignal(),
   });
-  // Enough samples to pass the debounce: 2 down, 4 up.
   for (const down of [true, false, true, false]) {
     shift.down = down;
-    const samples = Effect.repeatN(controller.poll, 4);
-    await Effect.runPromise(samples);
+    pollTap(controller.poll);
   }
 };
 
-const savedMute = async () => {
+const savedMute = (): boolean => {
   const savedSettings = readConfig();
   return savedSettings.speechMuted;
 };
 
 describe("double-tap Shift", () => {
-  it("mutes speech and stops speech that is about to start", async () => {
+  it("mutes speech and stops speech that is about to start", () => {
     writeConfig({ speechMuted: false });
 
-    await doubleTapShift();
+    doubleTapShift();
 
-    expect(await savedMute()).toBe(true);
+    expect(savedMute()).toBe(true);
     // The first tap always stops speech; muting stops it again for a reply claimed between the taps.
     expect(stopSpeech).toHaveBeenCalledTimes(2);
   });
 
-  it("unmutes speech without a second stop", async () => {
+  it("unmutes speech without a second stop", () => {
     writeConfig({ speechMuted: true });
 
-    await doubleTapShift();
+    doubleTapShift();
 
-    expect(await savedMute()).toBe(false);
+    expect(savedMute()).toBe(false);
     expect(stopSpeech).toHaveBeenCalledTimes(1);
   });
 });
@@ -99,7 +108,7 @@ describe("double-tap Shift", () => {
 const rightOptionController = () => {
   const pressed = { down: false, modifiers: false, keys: 0n };
   const clip = makeClipBuffer();
-  const offer = vi.fn(() => Effect.void);
+  const offer = vi.fn(() => undefined);
   const keyboard: Keyboard = {
     ...shiftKeyboard(pressed),
     holdKey: "right-option",
@@ -112,45 +121,42 @@ const rightOptionController = () => {
     caption: makeLiveCaption(),
     status: makeStatusWriter({ model: "fake", backend: "none", recording: clip.isConfirmedHold }),
     queue: { offer, isIdle: () => true },
+    shutdown: makeShutdownSignal(),
   });
-  const poll = Effect.repeatN(controller.poll, 4);
-  return { pressed, clip, offer, poll };
+  return { pressed, clip, offer, poll: controller.poll };
 };
 
 describe("Right Option hold-only dictation", () => {
-  it("ignores taps and double taps without changing speech mute", async () => {
+  it("ignores taps and double taps without changing speech mute", () => {
     writeConfig({ speechMuted: true });
     const hold = rightOptionController();
     for (const down of [true, false, true, false]) {
       hold.pressed.down = down;
-      await Effect.runPromise(hold.poll);
+      pollTap(hold.poll);
     }
 
     expect(hold.clip.isRecording()).toBe(false);
     expect(hold.offer).not.toHaveBeenCalled();
     expect(stopSpeech).not.toHaveBeenCalled();
-    expect(await savedMute()).toBe(true);
+    expect(savedMute()).toBe(true);
   });
 
-  it("records only after the threshold and queues one clip after release", async () => {
+  it("records only after the threshold and queues one clip after release", () => {
     const hold = rightOptionController();
     const now = Date.now();
     const clock = vi.spyOn(Date, "now").mockReturnValue(now);
     try {
-      const recording = Effect.gen(function* () {
-        hold.pressed.down = true;
-        yield* hold.poll;
-        expect(hold.clip.isConfirmedHold()).toBe(false);
-        hold.clip.append(new Int16Array([1000, 2000]));
-        clock.mockReturnValue(now + HOLD_THRESHOLD_MS + 1);
-        yield* hold.poll;
-        expect(hold.clip.isConfirmedHold()).toBe(true);
-        expect(hold.offer).not.toHaveBeenCalled();
-        hold.pressed.down = false;
-        hold.pressed.modifiers = true;
-        yield* hold.poll;
-      }).pipe(Effect.awaitAllChildren);
-      await Effect.runPromise(recording);
+      hold.pressed.down = true;
+      pollTap(hold.poll);
+      expect(hold.clip.isConfirmedHold()).toBe(false);
+      hold.clip.append(new Int16Array([1000, 2000]));
+      clock.mockReturnValue(now + HOLD_THRESHOLD_MS + 1);
+      pollTap(hold.poll);
+      expect(hold.clip.isConfirmedHold()).toBe(true);
+      expect(hold.offer).not.toHaveBeenCalled();
+      hold.pressed.down = false;
+      hold.pressed.modifiers = true;
+      pollTap(hold.poll);
 
       expect(hold.offer).toHaveBeenCalledOnce();
       expect(hold.clip.isRecording()).toBe(false);
@@ -159,26 +165,28 @@ describe("Right Option hold-only dictation", () => {
     }
   });
 
-  it.each(["before", "during"])("cancels modifiers held %s Right Option", async (when) => {
+  it.each(["before", "during"])("cancels modifiers held %s Right Option", (when) => {
     const hold = rightOptionController();
     hold.pressed.modifiers = when === "before";
     hold.pressed.down = true;
-    await Effect.runPromise(hold.poll);
+    pollTap(hold.poll);
     hold.pressed.modifiers = true;
-    await Effect.runPromise(hold.poll);
+    pollTap(hold.poll);
     expect(hold.clip.isRecording()).toBe(false);
     hold.pressed.down = false;
-    await Effect.runPromise(hold.poll);
+    pollTap(hold.poll);
+
     expect(hold.offer).not.toHaveBeenCalled();
     expect(stopSpeech).not.toHaveBeenCalled();
   });
 
-  it("cancels when another key is typed while Right Option is held", async () => {
+  it("cancels when another key is typed while Right Option is held", () => {
     const hold = rightOptionController();
     hold.pressed.down = true;
-    await Effect.runPromise(hold.poll);
+    pollTap(hold.poll);
     hold.pressed.keys = 1n << 0x01n;
-    await Effect.runPromise(hold.poll);
+    pollTap(hold.poll);
+
     expect(hold.clip.isRecording()).toBe(false);
     expect(hold.offer).not.toHaveBeenCalled();
   });

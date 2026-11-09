@@ -1,14 +1,12 @@
-import { Effect, Option, Schema } from "effect";
-
 import { readEnvironment } from "#src/settings/environment-variables.js";
-import { dedupe, runCli } from "./agent-cli.js";
+import { type CliRun, dedupe, runCli } from "./agent-cli.js";
 import {
   CODEX_MODEL_FALLBACKS,
   CODEX_PICKER_MODELS,
   codexCachedModels,
   type DiscoveredProvider,
   discoverProviders,
-  providerIdSchema,
+  type ProviderId,
   REASONING_EFFORTS,
 } from "./provider-models.js";
 import { codexLastGoodModel, DEFAULT_REFINE_EFFORT, readSavedChoice } from "./refine-choices.js";
@@ -19,65 +17,74 @@ export const SKIP_REFINE_LABEL = "-- Skip refine (keep the dictated text) --";
 const NO_PROVIDERS_MESSAGE =
   "No agent CLI found on PATH (codex, claude, gemini, grok, ollama, opencode, pi). Install one, then try again.";
 
-const refinePickSchema = Schema.Struct({
-  provider: providerIdSchema,
-  model: Schema.String,
-  effort: Schema.String,
-});
-
-export type RefinePick = Schema.Schema.Type<typeof refinePickSchema>;
+export interface RefinePick {
+  readonly provider: ProviderId;
+  readonly model: string;
+  readonly effort: string;
+}
 
 const PICKER_TITLE = "agent-voice refine";
 const DIALOG_TIMEOUT_MS = 300_000;
 const ALERT_TIMEOUT_MS = 60_000;
 
 // The picker runs only on a Mac, outside CI, and unless AGENT_VOICE_REFINE_PICKER is off.
-export const pickerEnabled = (): boolean => {
+export const isPickerEnabled = (): boolean => {
   const environment = readEnvironment();
   return environment.AGENT_VOICE_REFINE_PICKER && environment.CI === "" && process.platform === "darwin";
 };
 
-const appleScriptText = (text: string): string => text.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"');
+const escapeAppleScriptText = (plainText: string): string => plainText.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"');
 
-const appleScriptList = (items: ReadonlyArray<string>): string => {
-  const quotedItems = items.map((item) => `"${appleScriptText(item)}"`);
-  return `{${quotedItems.join(", ")}}`;
+const createAppleScriptList = (labels: ReadonlyArray<string>): string => {
+  const quotedLabels = labels.map((label) => `"${escapeAppleScriptText(label)}"`);
+  return `{${quotedLabels.join(", ")}}`;
 };
 
-// AppleScript preselects the first item, so the default goes first.
-const defaultFirst = (items: ReadonlyArray<string>, defaultItem: string): ReadonlyArray<string> => {
-  if (!items.includes(defaultItem)) {
-    return items;
+// AppleScript preselects the first label, so the default goes first.
+const moveDefaultFirst = (labels: ReadonlyArray<string>, defaultLabel: string): ReadonlyArray<string> => {
+  const isDefaultMissing = !labels.includes(defaultLabel);
+  if (isDefaultMissing) {
+    return labels;
   }
 
-  const otherItems = items.filter((item) => item !== defaultItem);
-  return [defaultItem, ...otherItems];
+  const otherLabels = labels.filter((label) => label !== defaultLabel);
+  return [defaultLabel, ...otherLabels];
 };
 
-const chosenItem = (stdout: string): Option.Option<string> => {
+// Null when the user dismisses the dialog or the dialog reports an error.
+const readChosenLabel = (stdout: string): string | null => {
   const chosen = stdout.trim();
   const isDismissed = chosen === "" || chosen === "CANCEL" || chosen.startsWith("ERROR:");
   if (isDismissed) {
-    return Option.none();
+    return null;
   }
 
-  return Option.some(chosen);
+  return chosen;
 };
 
-const chooseFromList = (request: {
+const runOsascript = (script: string, timeoutMilliseconds: number): Promise<CliRun> =>
+  runCli({
+    executable: "osascript",
+    args: ["-e", script],
+    timeoutMs: timeoutMilliseconds,
+    signal: AbortSignal.timeout(timeoutMilliseconds),
+  });
+
+const chooseFromList = async (request: {
   readonly prompt: string;
-  readonly items: ReadonlyArray<string>;
-  readonly defaultItem: string;
-}): Effect.Effect<Option.Option<string>> => {
-  const ordered = defaultFirst(request.items, request.defaultItem);
-  if (ordered.length === 0) {
-    return Effect.succeedNone;
+  readonly labels: ReadonlyArray<string>;
+  readonly defaultLabel: string;
+}): Promise<string | null> => {
+  const orderedLabels = moveDefaultFirst(request.labels, request.defaultLabel);
+  const hasNoLabels = orderedLabels.length === 0;
+  if (hasNoLabels) {
+    return null;
   }
 
-  const itemList = appleScriptList(ordered);
-  const prompt = appleScriptText(request.prompt);
+  const labelList = createAppleScriptList(orderedLabels);
+  const prompt = escapeAppleScriptText(request.prompt);
   const script = `try
-  set theList to ${itemList}
+  set theList to ${labelList}
   set theChoice to choose from list theList with title "${PICKER_TITLE}" with prompt "${prompt}" default items {item 1 of theList} OK button name "Use" cancel button name "Cancel"
   if theChoice is false then
     return "CANCEL"
@@ -86,27 +93,28 @@ const chooseFromList = (request: {
 on error errMsg
   return "ERROR:" & errMsg
 end try`;
-  return Effect.tryPromise({
-    try: (signal) => runCli({ executable: "osascript", args: ["-e", script], timeoutMs: DIALOG_TIMEOUT_MS, signal }),
-    catch: (error) => error,
-  }).pipe(
-    Effect.map((cliRun) => chosenItem(cliRun.stdout)),
-    Effect.orElseSucceed(() => Option.none<string>()),
-  );
+  try {
+    const pickerRun = await runOsascript(script, DIALOG_TIMEOUT_MS);
+    return readChosenLabel(pickerRun.stdout);
+  } catch (error) {
+    console.error({ prompt: request.prompt, error });
+    return null;
+  }
 };
 
-const showAlert = (request: { readonly title: string; readonly message: string }): Effect.Effect<void> => {
-  const title = appleScriptText(request.title);
+const showAlert = async (request: { readonly title: string; readonly message: string }): Promise<void> => {
+  const title = escapeAppleScriptText(request.title);
   const shortMessage = request.message.slice(0, 900);
-  const message = appleScriptText(shortMessage);
+  const message = escapeAppleScriptText(shortMessage);
   const script = `try\n  display alert "${title}" message "${message}" as warning buttons {"OK"} default button "OK"\nend try`;
-  return Effect.tryPromise({
-    try: (signal) => runCli({ executable: "osascript", args: ["-e", script], timeoutMs: ALERT_TIMEOUT_MS, signal }),
-    catch: (error) => error,
-  }).pipe(Effect.ignore);
+  try {
+    await runOsascript(script, ALERT_TIMEOUT_MS);
+  } catch (error) {
+    console.error({ title: request.title, error });
+  }
 };
 
-const listedModels = (providers: ReadonlyArray<DiscoveredProvider>, id: DiscoveredProvider["id"]) => {
+const readListedModels = (providers: ReadonlyArray<DiscoveredProvider>, id: ProviderId): ReadonlyArray<string> => {
   const listed = providers.find((provider) => provider.id === id);
   if (listed === undefined) {
     return [];
@@ -116,63 +124,69 @@ const listedModels = (providers: ReadonlyArray<DiscoveredProvider>, id: Discover
 };
 
 // Another provider's model is never offered (or saved) after switching provider.
-const preferredModelFor = (
+const pickPreferredModel = (
   preferred: { readonly provider: string; readonly model: string },
-  provider: DiscoveredProvider["id"],
+  provider: ProviderId,
 ): string => {
-  if (preferred.provider !== provider) {
+  const isOtherProvider = preferred.provider !== provider;
+  if (isOtherProvider) {
     return "";
   }
 
   return preferred.model;
 };
 
-const savedCodexModel = (): string =>
-  readSavedChoice().pipe(
-    Option.filter((choice) => choice.provider === "codex"),
-    Option.map((choice) => choice.model),
-    Option.getOrElse(() => ""),
-  );
+const readSavedCodexModel = (): string => {
+  const saved = readSavedChoice();
+  if (saved === null) {
+    return "";
+  }
+
+  const isSavedCodex = saved.provider === "codex";
+  if (!isSavedCodex) {
+    return "";
+  }
+
+  return saved.model;
+};
 
 // Codex adds its last-good, saved, cached and curated models.
-export const pickerModels = (request: {
-  readonly provider: DiscoveredProvider["id"];
+export const listPickerModels = (request: {
+  readonly provider: ProviderId;
   readonly providers: ReadonlyArray<DiscoveredProvider>;
   readonly preferred: { readonly provider: string; readonly model: string };
 }): ReadonlyArray<string> => {
-  const listed = listedModels(request.providers, request.provider);
-  const preferred = preferredModelFor(request.preferred, request.provider);
-  if (request.provider !== "codex") {
+  const listed = readListedModels(request.providers, request.provider);
+  const preferred = pickPreferredModel(request.preferred, request.provider);
+  const isNotCodex = request.provider !== "codex";
+  if (isNotCodex) {
     return dedupe([preferred, ...listed]);
   }
 
   const lastGood = codexLastGoodModel();
-  const saved = savedCodexModel();
+  const saved = readSavedCodexModel();
   const cached = codexCachedModels();
   return dedupe([preferred, lastGood, saved, ...listed, ...cached, ...CODEX_PICKER_MODELS, ...CODEX_MODEL_FALLBACKS]);
 };
 
-const providerLabel = (provider: DiscoveredProvider): string =>
+const createProviderLabel = (provider: DiscoveredProvider): string =>
   `${provider.id}  (${provider.binary}, ${String(provider.models.length)} models)`;
 
-const defaultProviderLabel = (providers: ReadonlyArray<DiscoveredProvider>, preferredProvider: string): string => {
-  const preferred = providers.find((provider) => provider.id === preferredProvider) || providers[0];
+const pickDefaultProviderLabel = (providers: ReadonlyArray<DiscoveredProvider>, preferredProvider: string): string => {
+  const preferred = providers.find((provider) => provider.id === preferredProvider) ?? providers[0];
   if (preferred === undefined) {
     return "";
   }
 
-  return providerLabel(preferred);
+  return createProviderLabel(preferred);
 };
 
-const providerWithLabel = (
+const findProviderWithLabel = (
   providers: ReadonlyArray<DiscoveredProvider>,
   label: string,
-): Option.Option<DiscoveredProvider> => {
-  const labeled = providers.find((provider) => providerLabel(provider) === label);
-  return Option.fromNullable(labeled);
-};
+): DiscoveredProvider | null => providers.find((provider) => createProviderLabel(provider) === label) ?? null;
 
-const modelItems = (request: {
+const listModelLabels = (request: {
   readonly models: ReadonlyArray<string>;
   readonly offerSkip: boolean;
 }): ReadonlyArray<string> => {
@@ -183,61 +197,74 @@ const modelItems = (request: {
   return [...request.models, SKIP_REFINE_LABEL];
 };
 
-// None when cancelled or no provider is installed; the model is SKIP_REFINE_LABEL when the user skips.
-export const pickRefineTargetWithDialogs = (request: {
+// Null when cancelled or no provider is installed; the model is SKIP_REFINE_LABEL when the user skips.
+export const pickRefineTargetWithDialogs = async (request: {
   readonly reason: string;
   readonly preferredProvider: string;
   readonly preferredModel: string;
   readonly preferredEffort: string;
   readonly offerSkip: boolean;
-}): Effect.Effect<Option.Option<RefinePick>> =>
-  Effect.gen(function* () {
-    const providers = yield* discoverProviders({ refresh: false });
-    if (providers.length === 0) {
-      yield* showAlert({ title: "No refine providers", message: NO_PROVIDERS_MESSAGE });
-      return Option.none();
-    }
+}): Promise<RefinePick | null> => {
+  const providers = await discoverProviders({ refresh: false });
+  const hasNoProviders = providers.length === 0;
+  if (hasNoProviders) {
+    await showAlert({ title: "No refine providers", message: NO_PROVIDERS_MESSAGE });
+    return null;
+  }
 
-    if (request.reason !== "") {
-      yield* showAlert({ title: "Prompt refine — pick provider / model", message: request.reason });
-    }
+  const hasReason = request.reason !== "";
+  if (hasReason) {
+    await showAlert({ title: "Prompt refine — pick provider / model", message: request.reason });
+  }
 
-    const chosenLabel = yield* chooseFromList({
-      prompt: "Provider (found on this Mac):",
-      items: providers.map(providerLabel),
-      defaultItem: defaultProviderLabel(providers, request.preferredProvider),
-    });
-    const provider = chosenLabel.pipe(Option.flatMap((label) => providerWithLabel(providers, label)));
-    if (Option.isNone(provider)) {
-      return Option.none();
-    }
-
-    const providerId = provider.value.id;
-    const models = pickerModels({
-      provider: providerId,
-      providers,
-      preferred: { provider: request.preferredProvider, model: request.preferredModel },
-    });
-    const model = yield* chooseFromList({
-      prompt: `Model for ${providerId}:`,
-      items: modelItems({ models, offerSkip: request.offerSkip }),
-      defaultItem: models[0] || "",
-    });
-    if (Option.isNone(model)) {
-      return Option.none();
-    }
-
-    const isSkipped = model.value === SKIP_REFINE_LABEL;
-    if (isSkipped || !provider.value.effort) {
-      return Option.some({ provider: providerId, model: model.value, effort: "" });
-    }
-
-    const effortDefault =
-      REASONING_EFFORTS.find((effort) => effort === request.preferredEffort) || DEFAULT_REFINE_EFFORT;
-    const effort = yield* chooseFromList({
-      prompt: `Reasoning effort for ${model.value}:`,
-      items: REASONING_EFFORTS,
-      defaultItem: effortDefault,
-    });
-    return effort.pipe(Option.map((chosen) => ({ provider: providerId, model: model.value, effort: chosen })));
+  const chosenLabel = await chooseFromList({
+    prompt: "Provider (found on this Mac):",
+    labels: providers.map(createProviderLabel),
+    defaultLabel: pickDefaultProviderLabel(providers, request.preferredProvider),
   });
+  const isProviderDismissed = chosenLabel === null;
+  if (isProviderDismissed) {
+    return null;
+  }
+
+  const provider = findProviderWithLabel(providers, chosenLabel);
+  const isProviderUnknown = provider === null;
+  if (isProviderUnknown) {
+    return null;
+  }
+
+  const providerId = provider.id;
+  const models = listPickerModels({
+    provider: providerId,
+    providers,
+    preferred: { provider: request.preferredProvider, model: request.preferredModel },
+  });
+  const chosenModel = await chooseFromList({
+    prompt: `Model for ${providerId}:`,
+    labels: listModelLabels({ models, offerSkip: request.offerSkip }),
+    defaultLabel: models[0] || "",
+  });
+  const isModelDismissed = chosenModel === null;
+  if (isModelDismissed) {
+    return null;
+  }
+
+  const isSkipped = chosenModel === SKIP_REFINE_LABEL;
+  const hasNoEffort = !provider.effort;
+  if (isSkipped || hasNoEffort) {
+    return { provider: providerId, model: chosenModel, effort: "" };
+  }
+
+  const effortDefault = REASONING_EFFORTS.find((effort) => effort === request.preferredEffort) ?? DEFAULT_REFINE_EFFORT;
+  const chosenEffort = await chooseFromList({
+    prompt: `Reasoning effort for ${chosenModel}:`,
+    labels: REASONING_EFFORTS,
+    defaultLabel: effortDefault,
+  });
+  const isEffortDismissed = chosenEffort === null;
+  if (isEffortDismissed) {
+    return null;
+  }
+
+  return { provider: providerId, model: chosenModel, effort: chosenEffort };
+};

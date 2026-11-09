@@ -142,6 +142,15 @@ export const runCliLines = async (request: {
   }
 };
 
+// Not JSON gives null, the same as JSON null.
+export const parseJsonOrNull = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+
 export const dedupe = (names: ReadonlyArray<string>): ReadonlyArray<string> => {
   const trimmedNames = names.map((name) => name.trim());
   const uniqueNames = new Set(trimmedNames);

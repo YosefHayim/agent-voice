@@ -1,7 +1,6 @@
 import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeTestFolder } from "#src/testing/test-folder.js";
@@ -54,7 +53,7 @@ describe("configured native hold key", () => {
   const rightOptionKeyboard = () => {
     const configPath = path.join(keyboardHome, "config.json");
     writeFileSync(configPath, '{"dictationHoldKey":"right-option"}');
-    return Effect.runPromise(loadKeyboard);
+    return loadKeyboard();
   };
 
   it.each([0x38, 0x3c, 0x37, 0x3b])("does not start a Right Option hold for key %i", async (key) => {
@@ -113,7 +112,7 @@ describe("configured native hold key", () => {
   });
 
   it.each([0x38, 0x3c])("keeps Shift key %i working for an existing config", async (key) => {
-    const keyboard = await Effect.runPromise(loadKeyboard);
+    const keyboard = await loadKeyboard();
     nativeKeyboard.pressed.add(key);
     expect(keyboard.holdKey).toBe("shift");
     expect(keyboard.holdDown()).toBe(true);

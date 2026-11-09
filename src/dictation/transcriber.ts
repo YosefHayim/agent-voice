@@ -4,36 +4,29 @@
 import { availableParallelism } from "node:os";
 import path from "node:path";
 
-import { Effect, Option, Schema } from "effect";
 import type { Config } from "#src/settings/config-schema.js";
+import { appendDictationLog } from "#src/workers/worker-log.js";
 import { pcmFromSamples, prepareForWhisper, rootMeanSquare, syntheticSpeech } from "./clip-audio.js";
 import { tidyWhisperText } from "./transcript-text.js";
 import type { TranscribeOptions, WhisperModule } from "./whisper-node.js";
 
-export class TranscriberError extends Schema.TaggedError<TranscriberError>()("TranscriberError", {
-  issue: Schema.String,
-}) {
-  get message(): string {
-    return `Whisper: ${this.issue}`;
-  }
+export interface Transcription {
+  readonly text: string;
+  readonly decodeMs: number;
+  // RMS of the capture before normalizing, for the log.
+  readonly inputLevel: number;
+  // False when the clip was silence and Whisper was skipped.
+  readonly ranWhisper: boolean;
 }
 
-const transcriberError = (error: unknown): TranscriberError => {
-  if (error instanceof Error) {
-    return new TranscriberError({ issue: error.message });
-  }
-
-  return new TranscriberError({ issue: String(error) });
-};
-
-const transcriptionSchema = Schema.Struct({
-  text: Schema.String,
-  decodeMs: Schema.Number,
-  inputLevel: Schema.Number.annotations({ description: "RMS of the capture before normalizing, for the log." }),
-  ranWhisper: Schema.Boolean.annotations({ description: "False when the clip was silence and Whisper was skipped." }),
-});
-
-export type Transcription = Schema.Schema.Type<typeof transcriptionSchema>;
+export interface Transcriber {
+  readonly modelName: string;
+  readonly transcribe: (request: TranscribeRequest) => Promise<Transcription>;
+  // Null when a final decode holds the model, so the caption pass is skipped.
+  readonly caption: (request: CaptionRequest) => Promise<string | null>;
+  readonly warmUp: () => Promise<void>;
+  readonly release: () => Promise<void>;
+}
 
 type CaptionRequest = { readonly samples: Float32Array; readonly language: Config["dictationLanguage"] };
 
@@ -81,61 +74,133 @@ const threadCount = (): number => {
 const THREADS = threadCount();
 const CAPTION_THREADS = Math.min(THREADS, 4);
 
-export const loadTranscriber = (modelPath: string) =>
-  Effect.gen(function* () {
-    const whisper = yield* Effect.tryPromise({ try: importWhisper, catch: transcriberError });
-    yield* Effect.tryPromise({ try: () => whisper.toggleNativeLog(false), catch: transcriberError });
-    const context = yield* Effect.tryPromise({
-      try: () => whisper.initWhisper({ filePath: modelPath, useGpu: true, useFlashAttn: true }),
-      catch: transcriberError,
+// Failures keep the Whisper prefix, so a log line says which engine failed.
+const withWhisperErrors = async <Result>(task: () => Promise<Result>): Promise<Result> => {
+  try {
+    return await task();
+  } catch (error) {
+    const issue = error instanceof Error ? error.message : String(error);
+    throw new Error(`Whisper: ${issue}`, { cause: error });
+  }
+};
+
+interface DecodeLane {
+  readonly run: <Result>(task: () => Promise<Result>) => Promise<Result>;
+  readonly runIfFree: <Result>(task: () => Promise<Result>) => Promise<Result | null>;
+}
+
+// One decode at a time: a final decode waits its turn, a caption pass starts only when the model is free.
+const createDecodeLane = (): DecodeLane => {
+  const waitingTurns: Array<() => void> = [];
+  let isBusy = false;
+
+  const takeTurn = async (): Promise<void> => {
+    if (!isBusy) {
+      isBusy = true;
+      return;
+    }
+
+    await new Promise<void>((wake) => {
+      waitingTurns.push(wake);
     });
-    const lane = yield* Effect.makeSemaphore(1);
+  };
 
-    const decode = (request: DecodeRequest) =>
-      Effect.gen(function* () {
-        const started = performance.now();
-        const inputLevel = rootMeanSquare(request.samples);
-        const region = prepareForWhisper(request.samples);
-        if (region === undefined) {
-          return { text: "", decodeMs: performance.now() - started, inputLevel, ranWhisper: false };
-        }
+  const passTurn = (): void => {
+    const nextTurn = waitingTurns.shift();
+    const isNobodyWaiting = nextTurn === undefined;
+    if (isNobodyWaiting) {
+      isBusy = false;
+      return;
+    }
 
-        const pcm = pcmFromSamples(region);
-        const audio = pcmBuffer(pcm);
-        const options = whisperOptions(request);
-        const decoded = yield* Effect.tryPromise({
-          try: () => context.transcribeData(audio, options).promise,
-          catch: transcriberError,
-        });
-        return {
-          text: tidyWhisperText(decoded.result, region.length),
-          decodeMs: performance.now() - started,
-          inputLevel,
-          ranWhisper: true,
-        };
-      });
+    // The model stays busy: the turn goes straight to the next waiting decode.
+    nextTurn();
+  };
 
-    // The final decode waits for a caption pass that is already running.
-    const transcribe = (request: TranscribeRequest): Effect.Effect<Transcription, TranscriberError> =>
-      decode({ ...request, threads: THREADS }).pipe(lane.withPermits(1));
+  const run = async <Result>(task: () => Promise<Result>): Promise<Result> => {
+    await takeTurn();
+    try {
+      return await task();
+    } finally {
+      passTurn();
+    }
+  };
 
-    // A caption pass is skipped while a final decode holds the model.
-    const caption = (request: CaptionRequest): Effect.Effect<Option.Option<string>, TranscriberError> =>
-      decode({ ...request, prompt: "", threads: CAPTION_THREADS }).pipe(
-        lane.withPermitsIfAvailable(1),
-        Effect.map((heard) => Option.map(heard, (transcription) => transcription.text)),
-      );
+  const runIfFree = async <Result>(task: () => Promise<Result>): Promise<Result | null> => {
+    if (isBusy) {
+      return null;
+    }
 
-    // Compiles the Metal kernels now, so the first real dictation is not a cold start; speech-like audio passes the VAD.
+    isBusy = true;
+    try {
+      return await task();
+    } finally {
+      passTurn();
+    }
+  };
+
+  return { run, runIfFree };
+};
+
+export const loadTranscriber = async (modelPath: string): Promise<Transcriber> => {
+  const whisper = await withWhisperErrors(importWhisper);
+  await withWhisperErrors(() => whisper.toggleNativeLog(false));
+  const context = await withWhisperErrors(() =>
+    whisper.initWhisper({ filePath: modelPath, useGpu: true, useFlashAttn: true }),
+  );
+  const lane = createDecodeLane();
+
+  const decode = async (request: DecodeRequest): Promise<Transcription> => {
+    const started = performance.now();
+    const inputLevel = rootMeanSquare(request.samples);
+    const region = prepareForWhisper(request.samples);
+    const isSilence = region === undefined;
+    if (isSilence) {
+      return { text: "", decodeMs: performance.now() - started, inputLevel, ranWhisper: false };
+    }
+
+    const pcm = pcmFromSamples(region);
+    const audio = pcmBuffer(pcm);
+    const options = whisperOptions(request);
+    const decoded = await withWhisperErrors(() => context.transcribeData(audio, options).promise);
+
+    return {
+      text: tidyWhisperText(decoded.result, region.length),
+      decodeMs: performance.now() - started,
+      inputLevel,
+      ranWhisper: true,
+    };
+  };
+
+  // The final decode waits for a caption pass that is already running.
+  const transcribe = (request: TranscribeRequest): Promise<Transcription> =>
+    lane.run(() => decode({ ...request, threads: THREADS }));
+
+  // A caption pass is skipped while a final decode holds the model.
+  const caption = async (request: CaptionRequest): Promise<string | null> => {
+    const heard = await lane.runIfFree(() => decode({ ...request, prompt: "", threads: CAPTION_THREADS }));
+    const isModelBusy = heard === null;
+    if (isModelBusy) {
+      return null;
+    }
+
+    return heard.text;
+  };
+
+  // Compiles the Metal kernels now, so the first real dictation is not a cold start; speech-like audio passes the VAD.
+  const warmUp = async (): Promise<void> => {
     const warmSamples = syntheticSpeech(1);
-    const warm = transcribe({ samples: warmSamples, language: "en", prompt: "" }).pipe(Effect.ignore);
+    try {
+      await transcribe({ samples: warmSamples, language: "en", prompt: "" });
+    } catch (error) {
+      appendDictationLog(`whisper warm-up failed: ${String(error)}`);
+    }
+  };
 
-    const release = Effect.promise(() => context.release());
+  const release = (): Promise<void> => context.release();
 
-    return { modelName: path.basename(modelPath), transcribe, caption, warm, release };
-  });
-
-export type Transcriber = Effect.Effect.Success<ReturnType<typeof loadTranscriber>>;
+  return { modelName: path.basename(modelPath), transcribe, caption, warmUp, release };
+};
 
 export const whisperBackend = (): string => {
   const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";

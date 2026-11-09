@@ -3,13 +3,12 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { samplesFromPcm } from "#src/dictation/clip-audio.js";
 import { loadTranscriber } from "#src/dictation/transcriber.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
-import { renderMarkdownToWav } from "./speech-player.js";
+import { writeMarkdownWav } from "./speech-player.js";
 import { loadSupertonic } from "./supertonic.js";
 import { decodeWav } from "./wav-file.js";
 
@@ -48,16 +47,13 @@ describe.skipIf(!hasSupertonic)("Supertonic speech (smoke)", () => {
 
   it("renders a Markdown reply to a 44.1 kHz WAV file, and Whisper hears the same words", async () => {
     const outputFile = path.join(folder, "reply.wav");
-    const rendering = Effect.gen(function* () {
-      const engine = yield* loadSupertonic(supertonicModelFolder);
-      return yield* renderMarkdownToWav({
-        engine,
-        markdown: "# Release\n\nThe voice worker is **ready**.",
-        voice: { voice: "F4", wordsPerMinute: 230 },
-        outputFile,
-      });
+    const engine = await loadSupertonic(supertonicModelFolder);
+    const seconds = await writeMarkdownWav({
+      engine,
+      markdown: "# Release\n\nThe voice worker is **ready**.",
+      voice: { voice: "F4", wordsPerMinute: 230 },
+      outputFile,
     });
-    const seconds = await Effect.runPromise(rendering);
     const renderedBytes = readFileSync(outputFile);
     const rendered = decodeWav(renderedBytes);
 
@@ -72,13 +68,10 @@ describe.skipIf(!hasSupertonic)("Supertonic speech (smoke)", () => {
     const resampledBytes = readFileSync(resampledFile);
     const resampled = decodeWav(resampledBytes);
     const samples = samplesFromPcm(resampled?.pcm || new Int16Array());
-    const hearing = Effect.gen(function* () {
-      const transcriber = yield* loadTranscriber(whisperModel);
-      const transcription = yield* transcriber.transcribe({ samples, language: "en", prompt: "" });
-      yield* transcriber.release;
-      return transcription.text.toLowerCase();
-    });
-    const heard = await Effect.runPromise(hearing);
+    const transcriber = await loadTranscriber(whisperModel);
+    const transcription = await transcriber.transcribe({ samples, language: "en", prompt: "" });
+    await transcriber.release();
+    const heard = transcription.text.toLowerCase();
 
     expect(heard).toContain("release");
     expect(heard).toContain("ready");

@@ -6,6 +6,7 @@ import { hookSettingsFiles } from "#src/agents/hook-settings-files.js";
 import { type Keyboard, loadKeyboard } from "#src/dictation/keyboard.js";
 import { WHISPER_PACKAGE } from "#src/dictation/transcriber.js";
 import { isWhisperModelPresent, selectWhisperModel, whisperModelPath } from "#src/dictation/whisper-models.js";
+import { describeError } from "#src/error-message.js";
 import { findCli, runCli } from "#src/refine/agent-cli.js";
 import { type DiscoveredProvider, discoverProviders } from "#src/refine/provider-models.js";
 import { readConfig } from "#src/settings/config-file.js";
@@ -114,10 +115,12 @@ const inputMonitoringCheck = (keyboard: Keyboard): DoctorCheck => {
   return ok("Input Monitoring", "agent-voice can read keyboard state");
 };
 
-const keyboardChecks = loadKeyboard.pipe(
+const keyboardChecks = Effect.tryPromise({ try: loadKeyboard, catch: (error) => error }).pipe(
   Effect.match({
     onSuccess: (keyboard) => [accessibilityCheck(keyboard), inputMonitoringCheck(keyboard)],
-    onFailure: (error) => [problem({ name: "Keyboard access", status: "fail", detail: error.message, fix: REINSTALL })],
+    onFailure: (error) => [
+      problem({ name: "Keyboard access", status: "fail", detail: describeError(error), fix: REINSTALL }),
+    ],
   }),
 );
 
@@ -234,7 +237,7 @@ const refineChecks = (config: Config): Effect.Effect<ReadonlyArray<DoctorCheck>>
     return Effect.succeed([ok("Refine", "off")]);
   }
 
-  return discoverProviders({ refresh: true }).pipe(
+  return Effect.promise(() => discoverProviders({ refresh: true })).pipe(
     Effect.map((providers) => [providersCheck(providers), cmuxCheck(config)]),
   );
 };

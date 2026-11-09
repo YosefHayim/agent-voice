@@ -41,7 +41,7 @@ const refineOptions = {
 export const refineCommand = Command.make("refine", refineOptions, (args) =>
   Effect.gen(function* () {
     if (args.listProviders) {
-      const providers = yield* discoverProviders({ refresh: true });
+      const providers = yield* Effect.promise(() => discoverProviders({ refresh: true }));
       return yield* TerminalUI.json({ providers });
     }
 
@@ -58,13 +58,18 @@ export const refineCommand = Command.make("refine", refineOptions, (args) =>
       refineCmuxCommand: Option.getOrElse(args.cmuxCommand, () => saved.refineCmuxCommand),
       refineCmuxPressEnter: args.pressEnter || saved.refineCmuxPressEnter,
     };
-    const refined = yield* refinePrompt({
-      draft,
-      provider: config.refineProvider,
-      model: Option.getOrElse(args.model, () => config.refineModel || ""),
-      effort: Option.getOrElse(args.effort, () => config.refineEffort || ""),
-      allowPicker: true,
-      log: () => undefined,
+    const refined = yield* Effect.tryPromise({
+      try: () =>
+        refinePrompt({
+          draft,
+          provider: config.refineProvider,
+          model: Option.getOrElse(args.model, () => config.refineModel || ""),
+          effort: Option.getOrElse(args.effort, () => config.refineEffort || ""),
+          allowPicker: true,
+          signal: new AbortController().signal,
+          log: () => undefined,
+        }),
+      catch: (error) => error,
     });
     yield* TerminalUI.text(refined);
     if (args.speak) {
@@ -75,7 +80,10 @@ export const refineCommand = Command.make("refine", refineOptions, (args) =>
       return;
     }
 
-    const delivery = yield* deliverToCmux({ text: refined, config });
+    const delivery = yield* Effect.tryPromise({
+      try: () => deliverToCmux({ promptText: refined, config }),
+      catch: (error) => error,
+    });
     yield* TerminalUI.detail(delivery);
   }),
 ).pipe(Command.withDescription("Refine one prompt with an agent CLI (codex, claude, grok, …) and print the result"));

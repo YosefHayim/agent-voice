@@ -1,14 +1,13 @@
 import { chmodSync, mkdirSync, type PathLike, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { Effect, Exit } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeTestFolder } from "#src/testing/test-folder.js";
 import { type DiscoveredProvider, discoverProviders } from "./provider-models.js";
-import { attemptQueue, codexModelCandidates, refinePrompt, shouldRotate } from "./refine-attempts.js";
+import { canRotate, createAttemptQueue, listCodexModelCandidates, refinePrompt } from "./refine-attempts.js";
 import { codexFailedModels } from "./refine-choices.js";
-import { pickerModels } from "./refine-picker.js";
+import { listPickerModels } from "./refine-picker.js";
 import { refineWithProvider } from "./refine-providers.js";
 
 // findCli also searches /usr/local/bin and /opt/homebrew/bin, outside the fake PATH. A CLI installed there on this
@@ -58,6 +57,8 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
+const makeSignal = (): AbortSignal => new AbortController().signal;
+
 // A fake codex that writes its reply to the `-o` file, or fails for the models listed in BAD_MODELS.
 const fakeCodex = (request: { readonly reply: string; readonly badModels: ReadonlyArray<string> }) => {
   const script = [
@@ -73,26 +74,25 @@ const fakeCodex = (request: { readonly reply: string; readonly badModels: Readon
   writeFakeCli("codex", script);
 };
 
-const refine = (draft: string) => {
-  const refining = refinePrompt({
+const refine = (draft: string): Promise<string> =>
+  refinePrompt({
     draft,
     provider: "codex",
     model: "",
     effort: "",
     allowPicker: false,
+    signal: makeSignal(),
     log: () => undefined,
   });
-  return Effect.runPromiseExit(refining);
-};
 
-describe("codexModelCandidates", () => {
+describe("listCodexModelCandidates", () => {
   it("tries the preferred model first, then the last good one, then the fallbacks", () => {
-    const candidates = codexModelCandidates({ preferred: "my-model", lastGood: "gpt-5.4-mini", failed: new Set() });
+    const candidates = listCodexModelCandidates({ preferred: "my-model", lastGood: "gpt-5.4-mini", failed: new Set() });
     expect(candidates.slice(0, 3)).toEqual(["my-model", "gpt-5.4-mini", "gpt-5.3-codex-spark"]);
   });
 
   it("starts with the last good model when the preferred one already failed, and defers failed models", () => {
-    const candidates = codexModelCandidates({
+    const candidates = listCodexModelCandidates({
       preferred: "gpt-5.3-codex-spark",
       lastGood: "gpt-5.4-mini",
       failed: new Set(["gpt-5.3-codex-spark", "o4-mini"]),
@@ -104,16 +104,15 @@ describe("codexModelCandidates", () => {
 
 describe("refine rotation", () => {
   it("rotates on errors and model-unavailable replies but not on a dropped literal", () => {
-    expect(shouldRotate("connection refused")).toBe(true);
-    expect(shouldRotate("The model is not supported")).toBe(true);
-    expect(shouldRotate("The model changed a protected literal: `x`")).toBe(false);
+    expect(canRotate("connection refused")).toBe(true);
+    expect(canRotate("The model is not supported")).toBe(true);
+    expect(canRotate("The model changed a protected literal: `x`")).toBe(false);
   });
 
   it("puts the preferred provider's models first, then one model from each other installed provider", async () => {
     writeFakeCli("pi", 'echo "openai-codex  gpt-5.4-mini  272K"; echo "openrouter  slow  128K"');
     writeFakeCli("opencode", 'echo "opencode/big-pickle"');
-    const queuing = attemptQueue({ provider: "pi", model: "default" });
-    const queue = await Effect.runPromise(queuing);
+    const queue = await createAttemptQueue({ provider: "pi", model: "default" });
 
     expect(queue[0]).toEqual({ provider: "pi", model: "openai-codex/gpt-5.4-mini" });
     expect(queue.map((attempt) => attempt.provider)).toEqual(
@@ -124,8 +123,7 @@ describe("refine rotation", () => {
 
   it("auto tries the first provider's models, then one model from each of four fallback providers", async () => {
     writeFakeCli("opencode", 'printf "a/one\\na/two\\na/three\\na/four\\n"');
-    const queuing = attemptQueue({ provider: "auto", model: "" });
-    const queue = await Effect.runPromise(queuing);
+    const queue = await createAttemptQueue({ provider: "auto", model: "" });
     const providers = queue.map((attempt) => attempt.provider);
 
     expect(providers.filter((provider) => provider === "codex")).toHaveLength(6);
@@ -135,27 +133,25 @@ describe("refine rotation", () => {
   it("rejects a CLI that exits non-zero instead of typing its error text", async () => {
     writeFakeCli("grok", 'echo "network unreachable, try again later" >&2; exit 1');
     const attempt = { provider: "grok" as const, model: "", effort: "", draft: "make a branch for the login fix" };
-    const refining = refineWithProvider(attempt);
-    const exit = await Effect.runPromiseExit(refining);
+    const refining = refineWithProvider(attempt, makeSignal());
 
-    expect(Exit.isFailure(exit)).toBe(true);
+    await expect(refining).rejects.toThrow();
   });
 
   it("keeps a failed CLI's stderr in the failure even when it printed to stdout, so the error still rotates", async () => {
     writeFakeCli("grok", 'echo "Here is a cleaner prompt:"; echo "connection refused by the model host" >&2; exit 1');
     const attempt = { provider: "grok" as const, model: "", effort: "", draft: "make a branch for the login fix" };
-    const failing = refineWithProvider(attempt).pipe(Effect.flip);
-    const failure = await Effect.runPromise(failing);
+    const failing = refineWithProvider(attempt, makeSignal());
 
-    expect(failure.detail).toBe("connection refused by the model host\nHere is a cleaner prompt:");
-    expect(shouldRotate(failure.detail)).toBe(true);
+    await expect(failing).rejects.toThrow("connection refused by the model host\nHere is a cleaner prompt:");
+    expect(canRotate("connection refused by the model host")).toBe(true);
   });
 
   it("refines with codex, keeps protected literals, and remembers the working model", async () => {
     fakeCodex({ reply: "finish-and-push: run `pnpm verify` then open a PR", badModels: [] });
     const refined = await refine("uh run `pnpm verify` and like open a pr dont merge");
 
-    expect(refined).toEqual(Exit.succeed("finish-and-push: run `pnpm verify` then open a PR"));
+    expect(refined).toBe("finish-and-push: run `pnpm verify` then open a PR");
     const choiceFile = path.join(home, ".agent-voice", "refine-choice.json");
     const choiceText = readFileSync(choiceFile, "utf8");
     const choice = JSON.parse(choiceText);
@@ -166,7 +162,7 @@ describe("refine rotation", () => {
     fakeCodex({ reply: "Ship the voice refine fix", badModels: ["gpt-5.3-codex-spark"] });
     const refined = await refine("uh ship the voice refine fix please now");
 
-    expect(refined).toEqual(Exit.succeed("Ship the voice refine fix"));
+    expect(refined).toBe("Ship the voice refine fix");
     expect([...codexFailedModels()]).toEqual(["gpt-5.3-codex-spark"]);
   });
 
@@ -174,8 +170,8 @@ describe("refine rotation", () => {
     for (const name of PROVIDER_BINARIES) {
       writeFakeCli(name, 'echo \'{"error":{"code":402,"message":"requires more credits"}}\'');
     }
-    const refined = await refine("make a branch and open a pull request");
-    expect(Exit.isFailure(refined)).toBe(true);
+
+    await expect(refine("make a branch and open a pull request")).rejects.toThrow();
   });
 });
 
@@ -186,8 +182,7 @@ describe("discoverProviders", () => {
     const fakePi = path.join(bin, "pi");
     rmSync(fakePi);
     writeFakeCli("pie", 'echo "openai-codex  gpt-5.4-mini  272K"');
-    const discovering = discoverProviders({ refresh: true });
-    const providers = await Effect.runPromise(discovering);
+    const providers = await discoverProviders({ refresh: true });
 
     expect(providers.find((provider) => provider.id === "gemini")?.models).toEqual(["gemini-2.5-pro"]);
     expect(providers.find((provider) => provider.id === "pi")).toMatchObject({
@@ -198,8 +193,7 @@ describe("discoverProviders", () => {
 
   it("lists installed providers with their models", async () => {
     writeFakeCli("ollama", 'echo "NAME ID SIZE"; echo "llama3.2:latest abc 2.0 GB"');
-    const discovering = discoverProviders({ refresh: true });
-    const providers = await Effect.runPromise(discovering);
+    const providers = await discoverProviders({ refresh: true });
     const ollama = providers.find((provider) => provider.id === "ollama");
 
     expect(ollama).toEqual({
@@ -221,7 +215,7 @@ describe("discoverProviders", () => {
   });
 });
 
-describe("pickerModels", () => {
+describe("listPickerModels", () => {
   const providers: ReadonlyArray<DiscoveredProvider> = [
     { id: "opencode", binary: "opencode", path: "/bin/opencode", effort: true, models: ["opencode/big-pickle"] },
     { id: "codex", binary: "codex", path: "/bin/codex", effort: true, models: ["gpt-5.4-mini"] },
@@ -229,10 +223,14 @@ describe("pickerModels", () => {
 
   it("offers the preferred model first only for its own provider", () => {
     expect(
-      pickerModels({ provider: "opencode", providers, preferred: { provider: "codex", model: "gpt-5.5" } }),
+      listPickerModels({ provider: "opencode", providers, preferred: { provider: "codex", model: "gpt-5.5" } }),
     ).toEqual(["opencode/big-pickle"]);
     expect(
-      pickerModels({ provider: "opencode", providers, preferred: { provider: "opencode", model: "opencode/grok" } }),
+      listPickerModels({
+        provider: "opencode",
+        providers,
+        preferred: { provider: "opencode", model: "opencode/grok" },
+      }),
     ).toEqual(["opencode/grok", "opencode/big-pickle"]);
   });
 
@@ -244,7 +242,7 @@ describe("pickerModels", () => {
     writeFileSync(choiceFile, savedChoice);
 
     expect(
-      pickerModels({ provider: "codex", providers, preferred: { provider: "claude", model: "opus" } }),
+      listPickerModels({ provider: "codex", providers, preferred: { provider: "claude", model: "opus" } }),
     ).not.toContain("opus");
   });
 });

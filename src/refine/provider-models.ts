@@ -1,15 +1,15 @@
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { Effect, Option, Schema } from "effect";
+import { z } from "zod";
 
 import { readJsonFile, readTextIfReadable } from "#src/storage/state-files.js";
 import { containsAny, dedupe, findFirstCli, nonBlankLines, runCliLines } from "./agent-cli.js";
 import { codexLastGoodModel } from "./refine-choices.js";
 
-export const providerIdSchema = Schema.Literal("codex", "claude", "gemini", "grok", "ollama", "opencode", "pi");
+export const providerIdSchema = z.enum(["codex", "claude", "gemini", "grok", "ollama", "opencode", "pi"]);
 
-export type ProviderId = Schema.Schema.Type<typeof providerIdSchema>;
+export type ProviderId = z.infer<typeof providerIdSchema>;
 
 // Tried in order when the requested Codex model is missing or not allowed for this account; fast first.
 export const CODEX_MODEL_FALLBACKS = [
@@ -44,17 +44,27 @@ const MAX_LISTED_MODELS = 80;
 
 const EDGE_BRACKETS = /^[()[\],]+|[()[\],]+$/gu;
 
+// A listing has no caller to cancel it, so its own timeout is its signal.
 const listLines = (request: { readonly executable: string; readonly args: ReadonlyArray<string> }) =>
-  Effect.promise((signal) => runCliLines({ ...request, timeoutMs: LISTING_TIMEOUT_MS, signal }));
+  runCliLines({
+    ...request,
+    timeoutMs: LISTING_TIMEOUT_MS,
+    signal: AbortSignal.timeout(LISTING_TIMEOUT_MS),
+  });
 
 const helpLines = (executable: string) =>
-  Effect.promise((signal) => runCliLines({ executable, args: ["--help"], timeoutMs: HELP_TIMEOUT_MS, signal }));
+  runCliLines({
+    executable,
+    args: ["--help"],
+    timeoutMs: HELP_TIMEOUT_MS,
+    signal: AbortSignal.timeout(HELP_TIMEOUT_MS),
+  });
 
-const matchesOf = (text: string, pattern: RegExp): ReadonlyArray<string> => text.match(pattern) || [];
+const findMatches = (line: string, pattern: RegExp): ReadonlyArray<string> => line.match(pattern) ?? [];
 
-const firstWord = (text: string): string => text.split(/\s+/u)[0] || "";
+const firstWord = (line: string): string => line.split(/\s+/u)[0] ?? "";
 
-const bareWord = (text: string): string => firstWord(text).replace(EDGE_BRACKETS, "");
+const bareWord = (token: string): string => firstWord(token).replace(EDGE_BRACKETS, "");
 
 const topModels = (tokens: ReadonlyArray<string>): ReadonlyArray<string> => dedupe(tokens).slice(0, MAX_LISTED_MODELS);
 
@@ -63,15 +73,15 @@ const codexFile = (name: string): string => {
   return path.join(home, ".codex", name);
 };
 
-const codexCachedModelSchema = Schema.Struct({
-  slug: Schema.optional(Schema.String),
-  id: Schema.optional(Schema.String),
-  visibility: Schema.optional(Schema.String),
+const codexCachedModelSchema = z.object({
+  slug: z.string().optional(),
+  id: z.string().optional(),
+  visibility: z.string().optional(),
 });
 
-const codexModelsCacheSchema = Schema.Struct({ models: Schema.Array(codexCachedModelSchema) });
+const codexModelsCacheSchema = z.object({ models: z.array(codexCachedModelSchema) });
 
-type CodexCachedModel = Schema.Schema.Type<typeof codexCachedModelSchema>;
+type CodexCachedModel = z.infer<typeof codexCachedModelSchema>;
 
 const HIDDEN_VISIBILITIES = ["hide", "hidden", "never"];
 
@@ -84,48 +94,46 @@ const modelSlug = (model: CodexCachedModel): string => (model.slug || model.id |
 
 // The live account catalog the Codex CLI caches.
 export const codexCachedModels = (): ReadonlyArray<string> => {
-  const cacheFile = codexFile("models_cache.json");
-  const cache = readJsonFile({ path: cacheFile, schema: codexModelsCacheSchema });
-  return cache.pipe(
-    Option.map((cached) =>
-      cached.models
-        .filter(isVisibleModel)
-        .map(modelSlug)
-        .filter((slug) => slug !== ""),
-    ),
-    Option.getOrElse(() => []),
-  );
+  const modelsCache = readJsonFile({ path: codexFile("models_cache.json"), schema: codexModelsCacheSchema });
+  const isCacheMissing = modelsCache === null;
+  if (isCacheMissing) {
+    return [];
+  }
+
+  return modelsCache.models
+    .filter(isVisibleModel)
+    .map(modelSlug)
+    .filter((slug) => slug !== "");
 };
 
 const isModelSetting = (line: string): boolean =>
   line.startsWith("model") && !line.startsWith("model_") && line.includes("=");
 
 const codexConfiguredModel = (): ReadonlyArray<string> => {
-  const configFile = codexFile("config.toml");
-  const config = readTextIfReadable(configFile) ?? "";
-  const modelLine = nonBlankLines(config).find(isModelSetting);
+  const configToml = readTextIfReadable(codexFile("config.toml")) ?? "";
+  const modelLine = nonBlankLines(configToml).find(isModelSetting);
   const model = (modelLine || "")
     .split("=")
     .slice(1)
     .join("=")
     .trim()
     .replace(/^["']|["']$/gu, "");
-  if (model === "") {
+  const isModelMissing = model === "";
+  if (isModelMissing) {
     return [];
   }
 
   return [model];
 };
 
-const listCodexModels = Effect.sync(() =>
+const listCodexModels = async (): Promise<ReadonlyArray<string>> =>
   dedupe([
     ...codexConfiguredModel(),
     ...codexCachedModels(),
     codexLastGoodModel(),
     ...CODEX_PICKER_MODELS,
     ...CODEX_MODEL_FALLBACKS,
-  ]),
-);
+  ]);
 
 const ollamaModelNames = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
   lines
@@ -133,7 +141,10 @@ const ollamaModelNames = (lines: ReadonlyArray<string>): ReadonlyArray<string> =
     .map(firstWord)
     .filter((name) => name !== "" && name.toUpperCase() !== "NAME");
 
-const listOllamaModels = listLines({ executable: "ollama", args: ["list"] }).pipe(Effect.map(ollamaModelNames));
+const listOllamaModels = async (): Promise<ReadonlyArray<string>> => {
+  const ollamaListLines = await listLines({ executable: "ollama", args: ["list"] });
+  return ollamaModelNames(ollamaListLines);
+};
 
 const CLAUDE_FALLBACK = ["claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5", "sonnet", "opus", "haiku"];
 const CLAUDE_ALIASES = ["sonnet", "opus", "haiku"];
@@ -143,13 +154,13 @@ const claudeModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> 
   lines
     .filter((line) => !line.toLowerCase().startsWith("usage") && !line.startsWith("-"))
     .flatMap((line) => [
-      ...matchesOf(line, /\bclaude-[\w.-]+\b/gu),
+      ...findMatches(line, /\bclaude-[\w.-]+\b/gu),
       ...line.split(/[\s,|]+/u).filter((part) => CLAUDE_ALIASES.includes(part)),
     ]);
 
-const listClaudeModels = Effect.gen(function* () {
+const listClaudeModels = async (): Promise<ReadonlyArray<string>> => {
   for (const args of [["models"], ["--list-models"]]) {
-    const lines = yield* listLines({ executable: "claude", args });
+    const lines = await listLines({ executable: "claude", args });
     const listing = lines.join("\n");
     const isLoggedOut = containsAny(listing, CLAUDE_LOGGED_OUT_MARKERS);
     if (isLoggedOut) {
@@ -157,16 +168,17 @@ const listClaudeModels = Effect.gen(function* () {
     }
 
     const tokens = claudeModelTokens(lines);
-    if (tokens.length > 0) {
+    const hasTokens = tokens.length > 0;
+    if (hasTokens) {
       return dedupe(tokens);
     }
   }
 
   return CLAUDE_FALLBACK;
-});
+};
 
 // agy prints IDs glued to their Title Case label: "gemini-3.6-flash-highGemini 3.6 Flash (High)".
-const unglueLabel = (text: string): string => (text.split(/(?<=[a-z0-9])(?=[A-Z][a-z])/u)[0] || "").trim();
+const unglueLabel = (label: string): string => (label.split(/(?<=[a-z0-9])(?=[A-Z][a-z])/u)[0] ?? "").trim();
 
 const GEMINI_FALLBACK = [
   "gemini-3.6-flash-low",
@@ -185,42 +197,47 @@ const agyModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
     .filter((token) => /^(?:gemini-|claude-|gpt-)/u.test(token));
 
 // Only agy has a models command; gemini names its models in its help text.
-const listAgyModels = (cli: { readonly name: string; readonly path: string }): Effect.Effect<ReadonlyArray<string>> => {
+const listAgyModels = async (cli: { readonly name: string; readonly path: string }): Promise<ReadonlyArray<string>> => {
   const isAgy = cli.name === "agy";
   if (!isAgy) {
-    return Effect.succeed([]);
+    return [];
   }
 
-  return listLines({ executable: cli.path, args: ["models"] }).pipe(Effect.map(agyModelTokens));
+  const agyLines = await listLines({ executable: cli.path, args: ["models"] });
+  return agyModelTokens(agyLines);
 };
 
 // Models of the CLI refine runs (gemini before agy): agy's list also holds Claude and GPT IDs that gemini rejects.
-const listGeminiModels = Effect.gen(function* () {
-  const cli = Option.fromNullable(findFirstCli(["gemini", "agy"]));
-  if (Option.isNone(cli)) {
+const listGeminiModels = async (): Promise<ReadonlyArray<string>> => {
+  const cli = findFirstCli(["gemini", "agy"]);
+  const isNoCliInstalled = cli === null;
+  if (isNoCliInstalled) {
     return GEMINI_FALLBACK;
   }
 
-  const agyModels = yield* listAgyModels(cli.value);
-  if (agyModels.length > 0) {
+  const agyModels = await listAgyModels(cli);
+  const hasAgyModels = agyModels.length > 0;
+  if (hasAgyModels) {
     return topModels(agyModels);
   }
 
-  const help = yield* helpLines(cli.value.path);
-  const helpModels = help.flatMap((line) => matchesOf(line, /gemini-[\w.-]+/gu).map(unglueLabel));
-  if (helpModels.length === 0) {
+  const help = await helpLines(cli.path);
+  const helpModels = help.flatMap((line) => findMatches(line, /gemini-[\w.-]+/gu).map(unglueLabel));
+  const isHelpEmpty = helpModels.length === 0;
+  if (isHelpEmpty) {
     return GEMINI_FALLBACK;
   }
 
   return topModels(helpModels);
-});
+};
 
 const GROK_FALLBACK = ["grok-4.5", "grok-4", "grok-3", "grok-3-mini"];
 const GROK_MODEL = /\bgrok-[\w.-]+\b/gu;
 
 const grokListedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   const headingIndex = lines.findIndex((line) => line.toLowerCase().includes("available model"));
-  if (headingIndex < 0) {
+  const isHeadingMissing = headingIndex < 0;
+  if (isHeadingMissing) {
     return [];
   }
 
@@ -232,7 +249,7 @@ const grokListedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> =
 };
 
 const grokMentionedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
-  lines.flatMap((line) => matchesOf(line, GROK_MODEL));
+  lines.flatMap((line) => findMatches(line, GROK_MODEL));
 
 const grokModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   const listed = grokListedModels(lines);
@@ -240,31 +257,33 @@ const grokModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
   return dedupe([...listed, ...mentioned]);
 };
 
-const grokListing = Effect.gen(function* () {
-  const grokLines = yield* listLines({ executable: "grok", args: ["models"] });
-  if (grokLines.length > 0) {
+const listGrokLines = async (): Promise<ReadonlyArray<string>> => {
+  const grokLines = await listLines({ executable: "grok", args: ["models"] });
+  const hasGrokLines = grokLines.length > 0;
+  if (hasGrokLines) {
     return grokLines;
   }
 
-  return yield* listLines({ executable: "agent", args: ["models"] });
-});
+  return listLines({ executable: "agent", args: ["models"] });
+};
 
-const listGrokModels = Effect.gen(function* () {
-  const lines = yield* grokListing;
+const listGrokModels = async (): Promise<ReadonlyArray<string>> => {
+  const lines = await listGrokLines();
   const tokens = grokModelTokens(lines);
-  if (tokens.length > 0) {
+  const hasTokens = tokens.length > 0;
+  if (hasTokens) {
     return tokens;
   }
 
-  const help = yield* helpLines("grok");
-  const mentioned = grokMentionedModels(help);
-  const helpModels = dedupe(mentioned);
-  if (helpModels.length === 0) {
+  const help = await helpLines("grok");
+  const helpModels = dedupe(grokMentionedModels(help));
+  const isHelpEmpty = helpModels.length === 0;
+  if (isHelpEmpty) {
     return GROK_FALLBACK;
   }
 
   return helpModels;
-});
+};
 
 const opencodeLineModels = (line: string): ReadonlyArray<string> => {
   const isModelLine = /^[\w.-]+\/[\w.-]+$/u.test(line);
@@ -272,23 +291,24 @@ const opencodeLineModels = (line: string): ReadonlyArray<string> => {
     return [line];
   }
 
-  return matchesOf(line, /[\w.-]+\/[\w.-]+/gu).filter((token) => !token.includes("http"));
+  return findMatches(line, /[\w.-]+\/[\w.-]+/gu).filter((token) => !token.includes("http"));
 };
 
 const opencodeModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
   lines.filter((line) => !/^(?:usage|error|options)/iu.test(line)).flatMap(opencodeLineModels);
 
-const listOpencodeModels = Effect.gen(function* () {
+const listOpencodeModels = async (): Promise<ReadonlyArray<string>> => {
   for (const args of [["models"], ["model", "list"]]) {
-    const lines = yield* listLines({ executable: "opencode", args });
+    const lines = await listLines({ executable: "opencode", args });
     const found = opencodeModelTokens(lines);
-    if (found.length > 0) {
+    const hasFound = found.length > 0;
+    if (hasFound) {
       return topModels(found);
     }
   }
 
   return [];
-});
+};
 
 // OAuth providers (codex, copilot) usually work; OpenRouter often needs credits.
 const PI_PREFERRED_PREFIXES = ["openai-codex/", "github-copilot/", "kimi"];
@@ -303,7 +323,8 @@ const piRank = (token: string): number => {
   }
 
   const rank = PI_PREFERRED_PREFIXES.findIndex((prefix) => lowercase.startsWith(prefix));
-  if (rank < 0) {
+  const isUnranked = rank < 0;
+  if (isUnranked) {
     return 5;
   }
 
@@ -313,10 +334,11 @@ const piRank = (token: string): number => {
 const byPiRank = (left: string, right: string): number => piRank(left) - piRank(right) || left.localeCompare(right);
 
 const piLineModels = (line: string): ReadonlyArray<string> => {
-  const slashTokens = matchesOf(line, /\b[a-z][\w.-]*\/[\w.:-]+\b/giu).filter(
+  const slashTokens = findMatches(line, /\b[a-z][\w.-]*\/[\w.:-]+\b/giu).filter(
     (token) => !token.toLowerCase().includes("http"),
   );
-  if (slashTokens.length > 0) {
+  const hasSlashTokens = slashTokens.length > 0;
+  if (hasSlashTokens) {
     return slashTokens;
   }
 
@@ -349,30 +371,29 @@ const rankPiModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   const tokens = piModelTokens(lines);
   const uniqueTokens = dedupe(tokens);
   const ranked = [...uniqueTokens].sort(byPiRank);
-  if (ranked.length === 0) {
+  const hasRankedModels = ranked.length > 0;
+  if (!hasRankedModels) {
     return ["default"];
   }
 
   return ranked.slice(0, MAX_LISTED_MODELS);
 };
 
-const piExecutable = (): string =>
-  Option.fromNullable(findFirstCli(["pi", "pie"])).pipe(
-    Option.match({ onNone: () => "pi", onSome: (found) => found.path }),
-  );
+const piExecutable = (): string => findFirstCli(["pi", "pie"])?.path ?? "pi";
 
 // provider/model IDs from the `pi --list-models` table ("openai-codex  gpt-5.4-mini  272K ..."), from pi or pie.
-const listPiModels = Effect.suspend(() => {
+const listPiModels = async (): Promise<ReadonlyArray<string>> => {
   const executable = piExecutable();
-  return listLines({ executable, args: ["--list-models"] });
-}).pipe(Effect.map(rankPiModels));
+  const piLines = await listLines({ executable, args: ["--list-models"] });
+  return rankPiModels(piLines);
+};
 
-type ProviderSpec = {
+interface ProviderSpec {
   readonly id: ProviderId;
   readonly binaries: ReadonlyArray<string>;
   readonly effort: boolean;
-  readonly listModels: Effect.Effect<ReadonlyArray<string>>;
-};
+  readonly listModels: () => Promise<ReadonlyArray<string>>;
+}
 
 // id, binary names (first found wins), reasoning-effort support, model lister.
 const PROVIDERS: ReadonlyArray<ProviderSpec> = [
@@ -385,60 +406,62 @@ const PROVIDERS: ReadonlyArray<ProviderSpec> = [
   { id: "pi", binaries: ["pi", "pie"], effort: true, listModels: listPiModels },
 ];
 
-const discoveredProviderSchema = Schema.Struct({
-  id: providerIdSchema,
-  binary: Schema.String,
-  path: Schema.String,
-  effort: Schema.Boolean,
-  models: Schema.Array(Schema.String),
-});
+export interface DiscoveredProvider {
+  readonly id: ProviderId;
+  readonly binary: string;
+  readonly path: string;
+  readonly effort: boolean;
+  readonly models: ReadonlyArray<string>;
+}
 
-export type DiscoveredProvider = Schema.Schema.Type<typeof discoveredProviderSchema>;
+const findProviderSpec = (provider: ProviderId): ProviderSpec | null =>
+  PROVIDERS.find((candidate) => candidate.id === provider) ?? null;
 
-const providerSpec = (provider: ProviderId): Option.Option<ProviderSpec> => {
-  const spec = PROVIDERS.find((candidate) => candidate.id === provider);
-  return Option.fromNullable(spec);
+export const isProviderInstalled = (provider: ProviderId): boolean => {
+  const spec = findProviderSpec(provider);
+  const isUnknownProvider = spec === null;
+  if (isUnknownProvider) {
+    return false;
+  }
+
+  const cli = findFirstCli(spec.binaries);
+  return cli !== null;
 };
 
-export const isProviderInstalled = (provider: ProviderId): boolean =>
-  providerSpec(provider).pipe(
-    Option.flatMap((spec) => Option.fromNullable(findFirstCli(spec.binaries))),
-    Option.isSome,
-  );
+export const providerModels = async (provider: ProviderId): Promise<ReadonlyArray<string>> => {
+  const spec = findProviderSpec(provider);
+  const isUnknownProvider = spec === null;
+  if (isUnknownProvider) {
+    return [];
+  }
 
-export const providerModels = (provider: ProviderId): Effect.Effect<ReadonlyArray<string>> =>
-  providerSpec(provider).pipe(
-    Option.match({
-      onNone: () => Effect.succeed([]),
-      onSome: (spec) => spec.listModels,
-    }),
-  );
+  return spec.listModels();
+};
 
 const withDefaultModel = (models: ReadonlyArray<string>): ReadonlyArray<string> => {
-  if (models.length === 0) {
+  const hasNoModels = models.length === 0;
+  if (hasNoModels) {
     return ["default"];
   }
 
   return models;
 };
 
-const describeProvider = (spec: ProviderSpec): Effect.Effect<Option.Option<DiscoveredProvider>> => {
-  const cli = Option.fromNullable(findFirstCli(spec.binaries));
-  if (Option.isNone(cli)) {
-    return Effect.succeedNone;
+const describeProvider = async (spec: ProviderSpec): Promise<DiscoveredProvider | null> => {
+  const cli = findFirstCli(spec.binaries);
+  const isNotInstalled = cli === null;
+  if (isNotInstalled) {
+    return null;
   }
 
-  const installed = cli.value;
-  return spec.listModels.pipe(
-    Effect.map((models) => ({
-      id: spec.id,
-      binary: installed.name,
-      path: installed.path,
-      effort: spec.effort,
-      models: withDefaultModel(models),
-    })),
-    Effect.asSome,
-  );
+  const models = await spec.listModels();
+  return {
+    id: spec.id,
+    binary: cli.name,
+    path: cli.path,
+    effort: spec.effort,
+    models: withDefaultModel(models),
+  };
 };
 
 const DISCOVERY_CACHE_MS = 120_000;
@@ -447,19 +470,18 @@ const DISCOVERY_CACHE_MS = 120_000;
 const discoveryCache: { at: number; providers: ReadonlyArray<DiscoveredProvider> } = { at: 0, providers: [] };
 
 // Listed in parallel and remembered for two minutes.
-export const discoverProviders = (request: {
+export const discoverProviders = async (request: {
   readonly refresh: boolean;
-}): Effect.Effect<ReadonlyArray<DiscoveredProvider>> =>
-  Effect.gen(function* () {
-    const age = Date.now() - discoveryCache.at;
-    const isFresh = !request.refresh && age < DISCOVERY_CACHE_MS;
-    if (isFresh) {
-      return discoveryCache.providers;
-    }
+}): Promise<ReadonlyArray<DiscoveredProvider>> => {
+  const age = Date.now() - discoveryCache.at;
+  const isFresh = !request.refresh && age < DISCOVERY_CACHE_MS;
+  if (isFresh) {
+    return discoveryCache.providers;
+  }
 
-    const described = yield* Effect.forEach(PROVIDERS, describeProvider, { concurrency: 8 });
-    const providers = described.flatMap(Option.toArray);
-    discoveryCache.at = Date.now();
-    discoveryCache.providers = providers;
-    return providers;
-  });
+  const described = await Promise.all(PROVIDERS.map(describeProvider));
+  const providers = described.filter((provider): provider is DiscoveredProvider => provider !== null);
+  discoveryCache.at = Date.now();
+  discoveryCache.providers = providers;
+  return providers;
+};
