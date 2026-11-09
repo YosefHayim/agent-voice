@@ -3,9 +3,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { Effect, Fiber, Schema } from "effect";
-import { writePrivateFile } from "../files/state-files.js";
-import { stateFolder } from "../settings/agent-voice-home.js";
-import type { Config } from "../settings/config-schema.js";
+import { writePrivateFile } from "#src/files/state-files.js";
+import { stateFolder } from "#src/settings/agent-voice-home.js";
+import type { Config } from "#src/settings/config-schema.js";
 import { markdownToSpeech } from "./markdown-to-speech.js";
 import { chunkSpeech, SPEECH_CHUNK_CHARACTERS, speedForWordsPerMinute } from "./speech-chunks.js";
 import type { SupertonicEngine, SupertonicError } from "./supertonic.js";

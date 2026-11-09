@@ -4,9 +4,9 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import { Effect, Option, Schema } from "effect";
-import { writePrivateFile } from "../files/state-files.js";
-import { stateFolder } from "../settings/agent-voice-home.js";
-import type { Config } from "../settings/config-schema.js";
+import { writePrivateFile } from "#src/files/state-files.js";
+import { stateFolder } from "#src/settings/agent-voice-home.js";
+import type { Config } from "#src/settings/config-schema.js";
 import { cliFailureText, findCli, nonBlankLines, runCli } from "./agent-cli.js";
 
 export class CmuxDeliveryFailed extends Schema.TaggedError<CmuxDeliveryFailed>()("CmuxDeliveryFailed", {

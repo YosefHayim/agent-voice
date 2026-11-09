@@ -1,7 +1,7 @@
 import { Command, Options } from "@effect/cli";
 import { Option } from "effect";
 
-import { runReplyHookFromArguments } from "../agents/reply-hook.js";
+import { runReplyHookFromArguments } from "#src/agents/reply-hook.js";
 
 // Free text, not a choice: an unknown agent must be a silent no-op, never a usage error (main.ts also routes
 // `reply` around the parser, so this command mostly documents the hook in --help).

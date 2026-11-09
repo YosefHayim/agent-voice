@@ -4,10 +4,10 @@ import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { Effect, Schema } from "effect";
-import { downloadFile, type ModelDownloadError } from "../files/model-download.js";
-import { stateFolder } from "../settings/agent-voice-home.js";
-import type { Config } from "../settings/config-schema.js";
-import type { AgentVoiceEnvironment } from "../settings/environment-variables.js";
+import { downloadFile, type ModelDownloadError } from "#src/files/model-download.js";
+import { stateFolder } from "#src/settings/agent-voice-home.js";
+import type { Config } from "#src/settings/config-schema.js";
+import type { AgentVoiceEnvironment } from "#src/settings/environment-variables.js";
 
 export const whisperModelSchema = Schema.Struct({
   key: Schema.Literal("tiny", "base", "small", "turbo-q5", "turbo-q8", "turbo", "ivrit"),

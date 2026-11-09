@@ -1,6 +1,8 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // Resolves "#src/*" to src/ (see package.json "imports"), the same as tsx run with --conditions=source.
+  resolve: { conditions: ["source"] },
   test: {
     include: ["src/**/*.test.ts"],
     exclude: ["**/node_modules/**", "**/dist/**"],

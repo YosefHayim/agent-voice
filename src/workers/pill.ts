@@ -1,8 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 
 import { Option } from "effect";
-import { removeIfPresent } from "../files/state-files.js";
-import { agentVoiceHome, stateFile } from "../settings/agent-voice-home.js";
+import { removeIfPresent } from "#src/files/state-files.js";
+import { agentVoiceHome, stateFile } from "#src/settings/agent-voice-home.js";
 import { runningPid, signalGroup, writePid } from "./worker-processes.js";
 
 // A bottom-centre panel that shows the dictation stage from status.json. It is a JavaScript for Automation script

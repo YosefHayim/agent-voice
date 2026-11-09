@@ -2,7 +2,7 @@
 
 import { Effect, Schema } from "effect";
 
-import { readConfigOrDefaults } from "../settings/config-file.js";
+import { readConfigOrDefaults } from "#src/settings/config-file.js";
 
 class KeyboardError extends Schema.TaggedError<KeyboardError>()("KeyboardError", {
   issue: Schema.String,

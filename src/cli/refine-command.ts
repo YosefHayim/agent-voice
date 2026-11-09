@@ -1,10 +1,10 @@
 import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
-import { deliverToCmux } from "../refine/cmux-delivery.js";
-import { discoverProviders, REASONING_EFFORTS } from "../refine/provider-models.js";
-import { refinePrompt } from "../refine/refine-attempts.js";
-import { readConfig } from "../settings/config-file.js";
-import { refineProviders } from "../settings/config-schema.js";
+import { deliverToCmux } from "#src/refine/cmux-delivery.js";
+import { discoverProviders, REASONING_EFFORTS } from "#src/refine/provider-models.js";
+import { refinePrompt } from "#src/refine/refine-attempts.js";
+import { readConfig } from "#src/settings/config-file.js";
+import { refineProviders } from "#src/settings/config-schema.js";
 import { CliUsageError } from "./cli-usage-error.js";
 import { speakAloud } from "./speak-command.js";
 import * as TerminalUI from "./terminal-ui.js";

@@ -4,10 +4,10 @@ import path from "node:path";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeTestFolder } from "../scripts/test-folder.js";
-import { readConfig } from "../settings/config-file.js";
-import { stopSpeech } from "../workers/worker-processes.js";
-import { makeStatusWriter } from "../workers/worker-status.js";
+import { makeTestFolder } from "#src/scripts/test-folder.js";
+import { readConfig } from "#src/settings/config-file.js";
+import { stopSpeech } from "#src/workers/worker-processes.js";
+import { makeStatusWriter } from "#src/workers/worker-status.js";
 import { makeHoldController } from "./hold-controller.js";
 import { HOLD_THRESHOLD_MS } from "./hold-key.js";
 import type { Keyboard } from "./keyboard.js";
@@ -15,8 +15,8 @@ import { makeLiveCaption } from "./live-preview.js";
 import { makeClipBuffer } from "./microphone.js";
 
 // The real one signals the speech worker named in speech.pid; the tests only count the stops.
-vi.mock("../workers/worker-processes.js", async (importOriginal) => {
-  const workerProcesses = await importOriginal<typeof import("../workers/worker-processes.js")>();
+vi.mock("#src/workers/worker-processes.js", async (importOriginal) => {
+  const workerProcesses = await importOriginal<typeof import("#src/workers/worker-processes.js")>();
   return { ...workerProcesses, stopSpeech: vi.fn() };
 });
 

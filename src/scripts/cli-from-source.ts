@@ -7,4 +7,4 @@ if (hasVariablesFile) {
   process.loadEnvFile(".env");
 }
 
-await import("../cli/main.js");
+await import("#src/cli/main.js");

@@ -6,9 +6,9 @@ import path from "node:path";
 import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { samplesFromPcm } from "../dictation/clip-audio.js";
-import { loadTranscriber } from "../dictation/transcriber.js";
-import { makeTestFolder } from "../scripts/test-folder.js";
+import { samplesFromPcm } from "#src/dictation/clip-audio.js";
+import { loadTranscriber } from "#src/dictation/transcriber.js";
+import { makeTestFolder } from "#src/scripts/test-folder.js";
 import { renderMarkdownToWav } from "./speech-player.js";
 import { loadSupertonic } from "./supertonic.js";
 import { decodeWav } from "./wav-file.js";

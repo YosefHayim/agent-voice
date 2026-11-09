@@ -1,18 +1,18 @@
 import { Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
-import { registeredSettingsFiles } from "../agents/hook-registration.js";
+import { registeredSettingsFiles } from "#src/agents/hook-registration.js";
 import {
   isWhisperModelPresent,
   selectWhisperModel,
   whisperModelPath,
   whisperModels,
-} from "../dictation/whisper-models.js";
-import { agentVoiceHome, configFilePath } from "../settings/agent-voice-home.js";
-import { readConfigOrDefaults } from "../settings/config-file.js";
-import type { Config } from "../settings/config-schema.js";
-import { readEnvironment } from "../settings/environment-variables.js";
-import { isWorkerRunning, readPid } from "../workers/worker-processes.js";
-import { readWorkerStatus } from "../workers/worker-status.js";
+} from "#src/dictation/whisper-models.js";
+import { agentVoiceHome, configFilePath } from "#src/settings/agent-voice-home.js";
+import { readConfigOrDefaults } from "#src/settings/config-file.js";
+import type { Config } from "#src/settings/config-schema.js";
+import { readEnvironment } from "#src/settings/environment-variables.js";
+import { isWorkerRunning, readPid } from "#src/workers/worker-processes.js";
+import { readWorkerStatus } from "#src/workers/worker-status.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 const NOT_STARTED = { stage: "starting", detail: "", model: "", backend: "" };

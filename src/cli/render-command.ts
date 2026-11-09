@@ -1,6 +1,6 @@
 import { Args, Command } from "@effect/cli";
 
-import { markdownToSpeech } from "../speech/markdown-to-speech.js";
+import { markdownToSpeech } from "#src/speech/markdown-to-speech.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 const markdownArgument = Args.text({ name: "markdown" }).pipe(Args.withDescription("A complete reply, in Markdown"));

@@ -15,7 +15,7 @@ export const runAgentVoice = async (request: {
   readonly environment: NodeJS.ProcessEnv;
   readonly stdin?: string;
 }): Promise<AgentVoiceRun> => {
-  const child = spawn(process.execPath, ["--import", "tsx", mainScript, ...request.args], {
+  const child = spawn(process.execPath, ["--conditions=source", "--import", "tsx", mainScript, ...request.args], {
     cwd: repositoryRoot,
     env: request.environment,
   });

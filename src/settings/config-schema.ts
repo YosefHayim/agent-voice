@@ -1,6 +1,6 @@
 import { Effect, Option, ParseResult, Schema, SchemaAST, Struct } from "effect";
 
-import { MODEL_ALIASES, whisperModelSchema } from "../dictation/whisper-models.js";
+import { MODEL_ALIASES, whisperModelSchema } from "#src/dictation/whisper-models.js";
 
 const withDefault = <Value, Encoded>(schema: Schema.Schema<Value, Encoded>, fallback: Value) =>
   Schema.optionalWith(schema, { default: () => fallback, exact: true });

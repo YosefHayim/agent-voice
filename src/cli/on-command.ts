@@ -2,20 +2,20 @@ import { existsSync, statSync } from "node:fs";
 
 import { Command, Options } from "@effect/cli";
 import { Effect, Schedule } from "effect";
-import { type HookChange, registerReplyHooks } from "../agents/hook-registration.js";
-import { holdKeyLabels } from "../dictation/hold-key.js";
+import { type HookChange, registerReplyHooks } from "#src/agents/hook-registration.js";
+import { holdKeyLabels } from "#src/dictation/hold-key.js";
 import {
   ensureWhisperModel,
   isWhisperModelPresent,
   selectWhisperModel,
   whisperModelPath,
-} from "../dictation/whisper-models.js";
-import type { ModelDownloadError } from "../files/model-download.js";
-import { readConfig } from "../settings/config-file.js";
-import type { Config } from "../settings/config-schema.js";
-import { readEnvironment } from "../settings/environment-variables.js";
-import { ensureSupertonicModels, missingSupertonicFiles } from "../speech/supertonic-models.js";
-import { startWorkers, stopWorkers } from "../workers/worker-processes.js";
+} from "#src/dictation/whisper-models.js";
+import type { ModelDownloadError } from "#src/files/model-download.js";
+import { readConfig } from "#src/settings/config-file.js";
+import type { Config } from "#src/settings/config-schema.js";
+import { readEnvironment } from "#src/settings/environment-variables.js";
+import { ensureSupertonicModels, missingSupertonicFiles } from "#src/speech/supertonic-models.js";
+import { startWorkers, stopWorkers } from "#src/workers/worker-processes.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 const backupNote = (change: HookChange): string => {

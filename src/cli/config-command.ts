@@ -1,19 +1,19 @@
 import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
-import { selectWhisperModel } from "../dictation/whisper-models.js";
-import { type DiscoveredProvider, discoverProviders, REASONING_EFFORTS } from "../refine/provider-models.js";
-import { saveRefineChoice } from "../refine/refine-choices.js";
-import { pickerModels, pickRefineTargetWithDialogs, type RefinePick } from "../refine/refine-picker.js";
-import { readConfig, saveConfig } from "../settings/config-file.js";
+import { selectWhisperModel } from "#src/dictation/whisper-models.js";
+import { type DiscoveredProvider, discoverProviders, REASONING_EFFORTS } from "#src/refine/provider-models.js";
+import { saveRefineChoice } from "#src/refine/refine-choices.js";
+import { pickerModels, pickRefineTargetWithDialogs, type RefinePick } from "#src/refine/refine-picker.js";
+import { readConfig, saveConfig } from "#src/settings/config-file.js";
 import {
   type Config,
   configSettings,
   defaultConfig,
   settingValueFromText,
   withSettingValue,
-} from "../settings/config-schema.js";
-import { readEnvironment } from "../settings/environment-variables.js";
-import { isWorkerRunning, startSpeechWorker, stopSpeech } from "../workers/worker-processes.js";
+} from "#src/settings/config-schema.js";
+import { readEnvironment } from "#src/settings/environment-variables.js";
+import { isWorkerRunning, startSpeechWorker, stopSpeech } from "#src/workers/worker-processes.js";
 import { CliUsageError } from "./cli-usage-error.js";
 import { describeSpeech, prepareModels, restartWorkers } from "./on-command.js";
 import * as TerminalUI from "./terminal-ui.js";

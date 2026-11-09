@@ -4,7 +4,7 @@ import path from "node:path";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { isMacOS, makeTestFolder } from "../scripts/test-folder.js";
+import { isMacOS, makeTestFolder } from "#src/scripts/test-folder.js";
 import { holdLock, removeFreeLock } from "./file-lock.js";
 
 let folder = "";

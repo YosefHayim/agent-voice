@@ -1,6 +1,6 @@
 import { Effect, Either, Option, Schema } from "effect";
 
-import type { Config } from "../settings/config-schema.js";
+import type { Config } from "#src/settings/config-schema.js";
 import { containsAny, dedupe } from "./agent-cli.js";
 import { CODEX_MODEL_FALLBACKS, isProviderInstalled, type ProviderId, providerModels } from "./provider-models.js";
 import {

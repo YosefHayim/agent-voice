@@ -1,4 +1,4 @@
-import { pcmFromSamples } from "../dictation/clip-audio.js";
+import { pcmFromSamples } from "#src/dictation/clip-audio.js";
 
 export const encodeWav = (request: { readonly samples: Float32Array; readonly sampleRate: number }): Buffer => {
   const pcm = pcmFromSamples(request.samples);

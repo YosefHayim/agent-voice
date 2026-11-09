@@ -3,7 +3,7 @@ import { CliConfig, Command, ValidationError } from "@effect/cli";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { Effect, ParseResult } from "effect";
 
-import { runReplyHookFromArguments } from "../agents/reply-hook.js";
+import { runReplyHookFromArguments } from "#src/agents/reply-hook.js";
 import { agentVoiceVersion } from "./agent-voice-version.js";
 import { CliUsageError } from "./cli-usage-error.js";
 import { configCommand } from "./config-command.js";

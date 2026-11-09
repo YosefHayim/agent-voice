@@ -3,12 +3,12 @@
 
 import { Effect, Schedule } from "effect";
 
-import { readConfigOrDefaults } from "../settings/config-file.js";
-import { readEnvironment } from "../settings/environment-variables.js";
-import { startPill, stopPill } from "../workers/pill.js";
-import { appendDictationLog } from "../workers/worker-log.js";
-import { claimWorkerLock, startSpeechWorker, stopRequested } from "../workers/worker-processes.js";
-import { makeStatusWriter } from "../workers/worker-status.js";
+import { readConfigOrDefaults } from "#src/settings/config-file.js";
+import { readEnvironment } from "#src/settings/environment-variables.js";
+import { startPill, stopPill } from "#src/workers/pill.js";
+import { appendDictationLog } from "#src/workers/worker-log.js";
+import { claimWorkerLock, startSpeechWorker, stopRequested } from "#src/workers/worker-processes.js";
+import { makeStatusWriter } from "#src/workers/worker-status.js";
 import { startDictationQueue } from "./dictation-queue.js";
 import { makeHoldController } from "./hold-controller.js";
 import { HOLD_POLL_MS } from "./hold-key.js";

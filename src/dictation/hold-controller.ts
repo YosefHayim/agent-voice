@@ -1,10 +1,10 @@
 import { Effect } from "effect";
-import { refinePrompt } from "../refine/refine-attempts.js";
-import { readConfig, readConfigOrDefaults, saveConfig } from "../settings/config-file.js";
-import { isSpeaking, queueReply } from "../speech/inbox.js";
-import { appendDictationLog } from "../workers/worker-log.js";
-import { stopSpeech } from "../workers/worker-processes.js";
-import type { StatusWriter } from "../workers/worker-status.js";
+import { refinePrompt } from "#src/refine/refine-attempts.js";
+import { readConfig, readConfigOrDefaults, saveConfig } from "#src/settings/config-file.js";
+import { isSpeaking, queueReply } from "#src/speech/inbox.js";
+import { appendDictationLog } from "#src/workers/worker-log.js";
+import { stopSpeech } from "#src/workers/worker-processes.js";
+import type { StatusWriter } from "#src/workers/worker-status.js";
 import { readClipboard, writeClipboard } from "./caret.js";
 import type { DictationQueue } from "./dictation-queue.js";
 import {

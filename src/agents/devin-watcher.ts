@@ -1,7 +1,7 @@
 import { Effect, Fiber, Option, Ref, Schema } from "effect";
-import { readJsonFile } from "../files/state-files.js";
-import { queueReply } from "../speech/inbox.js";
-import { appendSpeechLog } from "../workers/worker-log.js";
+import { readJsonFile } from "#src/files/state-files.js";
+import { queueReply } from "#src/speech/inbox.js";
+import { appendSpeechLog } from "#src/workers/worker-log.js";
 
 const atifExportSchema = Schema.Struct({
   steps: Schema.Array(

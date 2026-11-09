@@ -3,9 +3,9 @@
 
 import { Effect, Option } from "effect";
 
-import { readConfigOrDefaults } from "../settings/config-file.js";
-import { appendDictationLog } from "../workers/worker-log.js";
-import type { StatusWriter } from "../workers/worker-status.js";
+import { readConfigOrDefaults } from "#src/settings/config-file.js";
+import { appendDictationLog } from "#src/workers/worker-log.js";
+import type { StatusWriter } from "#src/workers/worker-status.js";
 import { SAMPLE_RATE } from "./clip-audio.js";
 import type { ClipBuffer } from "./microphone.js";
 import type { Transcriber } from "./transcriber.js";
