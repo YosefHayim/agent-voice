@@ -85,9 +85,20 @@ await downloadFile({ url, destination, onProgress: () => undefined });
 
 // Another process downloading the same file with the same code, as a second `agent-voice on` or worker would.
 const startDownloader = (request: { readonly url: string; readonly destination: string }) => {
+  // Same source condition as run-agent-voice.ts: without it, "#src/*" resolves to dist/, which may not be built.
   const child = spawn(
     process.execPath,
-    ["--import", "tsx", "--input-type=module", "-e", DOWNLOADER, modelDownloadModule, request.url, request.destination],
+    [
+      "--conditions=source",
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "-e",
+      DOWNLOADER,
+      modelDownloadModule,
+      request.url,
+      request.destination,
+    ],
     { cwd: repositoryRoot, stdio: "ignore" },
   );
   return { child, exited: new Promise<number | null>((resolve) => child.once("exit", resolve)) };

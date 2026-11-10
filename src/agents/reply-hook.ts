@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { text } from "node:stream/consumers";
 
-import { readConfigOrDefaults } from "#src/settings/config-file.js";
-import type { Config } from "#src/settings/config-schema.js";
+import { readConfigFileReading } from "#src/settings/config-file.js";
+import { type Config, defaultConfig } from "#src/settings/config-schema.js";
 import { queueReply, type ReplyOrigin } from "#src/speech/inbox.js";
 import { isWorkerRunning, spawnWorker, startSpeechWorker } from "#src/workers/worker-processes.js";
 import { type AgentId, agentIdSchema } from "./agent-catalog.js";
@@ -26,8 +26,10 @@ const replyOrigin = (): ReplyOrigin => {
   };
 };
 
+// A missing transcript is an expected outcome: the reply is simply empty, and nothing is printed.
 const transcriptReply = (transcriptPath: string): string => {
-  if (transcriptPath === "") {
+  const isThereNoTranscript = transcriptPath === "" || !existsSync(transcriptPath);
+  if (isThereNoTranscript) {
     return "";
   }
 
@@ -56,7 +58,10 @@ const queueAgentReply = async (agent: AgentId): Promise<void> => {
     return;
   }
 
-  const config = readConfigOrDefaults();
+  const configFileReading = readConfigFileReading();
+  const isConfigFileBroken = configFileReading.status === "broken";
+  // A broken file reads as the defaults, and the hook says nothing about it, since its stderr shows to the user.
+  const config = isConfigFileBroken ? defaultConfig : configFileReading.config;
   // Every finished turn wakes dictation, so it comes back after a reboot even with speech off or muted.
   wakeWorkers(config);
   const isSpeechSilent = config.speechMode === "off" || config.speechMuted;
