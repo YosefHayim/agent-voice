@@ -18,7 +18,7 @@ import { isFailedModelReply, isModelUnavailableError } from "./refine-reply.js";
 
 const REFINED_STATUS = "refined";
 
-const AUTO_VALUE = "auto";
+const AUTO_CHOICE = "auto";
 
 const FAILED_STATUS = "failed";
 
@@ -100,7 +100,7 @@ const listDiscoveredModels = async (provider: ProviderId, preferred: string): Pr
 };
 
 const listModelCandidates = async (provider: ProviderId, preferred: string): Promise<ReadonlyArray<string>> => {
-  const chosenModel = readNamedModel(preferred, [DEFAULT_MODEL_NAME, AUTO_VALUE]);
+  const chosenModel = readNamedModel(preferred, [DEFAULT_MODEL_NAME, AUTO_CHOICE]);
   const saved = readSavedChoice();
   const savedModel = pickSavedModel(saved, provider);
   const discovered = await listDiscoveredModels(provider, preferred);
@@ -181,7 +181,7 @@ export const createAttemptQueue = async (request: {
   readonly provider: Settings["refineProvider"];
   readonly model: string;
 }): Promise<ReadonlyArray<AttemptTarget>> => {
-  const isAutoProvider = request.provider === AUTO_VALUE;
+  const isAutoProvider = request.provider === AUTO_CHOICE;
   if (isAutoProvider) {
     return listAutoAttempts(request.model);
   }
@@ -211,7 +211,7 @@ const readSavedEffort = (): string => readSavedChoice()?.effort ?? "";
 const pickStartingModel = (request: RefineRequest): string => {
   const configuredModel = request.model.trim();
 
-  const isModelChosen = configuredModel !== "" || request.provider === AUTO_VALUE;
+  const isModelChosen = configuredModel !== "" || request.provider === AUTO_CHOICE;
   if (isModelChosen) {
     return configuredModel;
   }

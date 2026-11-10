@@ -73,8 +73,8 @@ export const readSettingsOrDefaults = (): Settings => {
 };
 
 export const saveSettings = (settings: Settings): void => {
-  const jsonIndentSpaces = 2;
+  const indentSpaceCount = 2;
 
-  const savedFileMessages = JSON.stringify(settings, null, jsonIndentSpaces);
+  const savedFileMessages = JSON.stringify(settings, null, indentSpaceCount);
   writeFileAtomically({ path: readSettingsFilePath(), contents: `${savedFileMessages}\n` });
 };

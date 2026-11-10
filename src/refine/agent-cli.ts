@@ -7,7 +7,7 @@ const NEWLINE = "\n";
 
 const UTF8_ENCODING = "utf8";
 
-const DATA_EVENT = "data";
+const STREAM_CHUNK_EVENT = "data";
 
 const KILL_SIGNAL = "SIGKILL";
 
@@ -116,8 +116,8 @@ export const runCli = (request: {
       child.kill(KILL_SIGNAL);
       failRun(createCliRunError(request.executable, "timed out"));
     }, request.timeoutMs);
-    child.stdout.on(DATA_EVENT, (chunk: Buffer) => stdoutChunks.push(chunk));
-    child.stderr.on(DATA_EVENT, (chunk: Buffer) => stderrChunks.push(chunk));
+    child.stdout.on(STREAM_CHUNK_EVENT, (chunk: Buffer) => stdoutChunks.push(chunk));
+    child.stderr.on(STREAM_CHUNK_EVENT, (chunk: Buffer) => stderrChunks.push(chunk));
     child.on("error", (error) => {
       clearTimeout(timer);
       failRun(createCliRunError(request.executable, error.message));

@@ -1,12 +1,12 @@
 import { containsAny, listNonBlankLines, parseDocumentOrNull } from "./agent-cli.js";
 
-const OUTPUT_KEY = "output";
+const PRINTED_FIELD = "output";
 
-const CONTENT_KEY = "content";
+const WORDS_FIELD = "content";
 
-const RESULT_KEY = "result";
+const ANSWER_FIELD = "result";
 
-const TEXT_PART_TYPE = "text";
+const PROSE_PART_TYPE = "text";
 
 const STRING_KIND = "string";
 
@@ -303,7 +303,7 @@ const readJoinedBlocks = (field: unknown): string | null => {
 const isReplyPart = (event: DocumentObject, part: DocumentObject): boolean => {
   const partType = readFieldOrEmpty(part.type);
   const eventType = readFieldOrEmpty(event.type);
-  return partType === "" || partType === TEXT_PART_TYPE || eventType === TEXT_PART_TYPE;
+  return partType === "" || partType === PROSE_PART_TYPE || eventType === PROSE_PART_TYPE;
 };
 
 const readPartReply = (event: DocumentObject): string | null => {
@@ -330,7 +330,7 @@ const readFieldReply = (document: DocumentObject, key: string): string | null =>
   readNonBlankField(document[key]) ?? readNestedReply(document[key]);
 
 const readDocumentReply = (document: DocumentObject): string | null => {
-  const keyReplies = [RESULT_KEY, TEXT_PART_TYPE, CONTENT_KEY, MESSAGE_FIELD, OUTPUT_KEY, "response"].map((key) =>
+  const keyReplies = [ANSWER_FIELD, PROSE_PART_TYPE, WORDS_FIELD, MESSAGE_FIELD, PRINTED_FIELD, "response"].map((key) =>
     readFieldReply(document, key),
   );
   const firstKeyReply = keyReplies.find(isNonNullPiece) ?? null;
@@ -349,7 +349,7 @@ const readMessageReply = (event: DocumentObject): string | null => {
 };
 
 const readEventReply = (event: DocumentObject): string | null => {
-  const directFields = [RESULT_KEY, TEXT_PART_TYPE, CONTENT_KEY, MESSAGE_FIELD, OUTPUT_KEY]
+  const directFields = [ANSWER_FIELD, PROSE_PART_TYPE, WORDS_FIELD, MESSAGE_FIELD, PRINTED_FIELD]
     .map((key) => readNonBlankField(event[key]))
     .filter(isNonNullPiece);
   const lastDirectReply = directFields.at(-1) ?? null;

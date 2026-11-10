@@ -197,9 +197,9 @@ const decodeAndDeliverJob = async (pipeline: DictationPipeline, job: DictationJo
   });
   const dictated = cleanTranscript(transcription.text) || cleanTranscript(job.fallbackCaption);
   const decodeMs = transcription.decodeMs.toFixed(1);
-  const inputLevelDecimalPlaces = 4;
+  const levelDecimalPlaces = 4;
 
-  const level = transcription.inputLevel.toFixed(inputLevelDecimalPlaces);
+  const level = transcription.inputLevel.toFixed(levelDecimalPlaces);
   appendDictationLog(
     `stt gen=${generation} secs=${seconds} decode_ms=${decodeMs} level=${level} whisper=${String(transcription.ranWhisper)} text=${JSON.stringify(dictated)}`,
   );

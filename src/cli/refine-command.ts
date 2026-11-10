@@ -9,7 +9,7 @@ import * as TerminalUI from "./terminal-ui.js";
 
 const PROMPT_NAME = "prompt";
 
-const TEXT_KIND = "text";
+const FREEFORM_KIND = "text";
 
 const BOOLEAN_KIND = "boolean";
 
@@ -23,23 +23,23 @@ export const refineCommand: CommandSpec = {
   flags: {
     speak: { kind: BOOLEAN_KIND, description: "Read the refined prompt aloud" },
     provider: {
-      kind: TEXT_KIND,
+      kind: FREEFORM_KIND,
       description: "Provider for this run (default: refine-provider)",
       choices: refineProviders,
     },
-    model: { kind: TEXT_KIND, description: "Model for this run (default: refine-model)" },
+    model: { kind: FREEFORM_KIND, description: "Model for this run (default: refine-model)" },
     effort: {
-      kind: TEXT_KIND,
+      kind: FREEFORM_KIND,
       description: "Reasoning effort for this run (default: refine-effort)",
       choices: REASONING_EFFORTS,
     },
     "send-to": {
-      kind: TEXT_KIND,
+      kind: FREEFORM_KIND,
       description: "Also send the result to cmux (caret only prints it)",
       choices: refineSendTargets,
     },
     "cmux-command": {
-      kind: TEXT_KIND,
+      kind: FREEFORM_KIND,
       description: "Command template for cmux-new ({{prompt_file}}, {{prompt}}, {{cwd}}, each shell-quoted)",
     },
     "press-enter": { kind: BOOLEAN_KIND, description: "Press Enter after sending to cmux" },

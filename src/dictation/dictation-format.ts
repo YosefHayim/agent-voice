@@ -8,7 +8,7 @@ const NEW_LINE_KIND = "newLine";
 
 const LINE_WORD = "line";
 
-const NEXT_ITEM_KIND = "nextItem";
+const NEXT_LIST_MARK_KIND = "nextItem";
 
 const QUESTION_MARK = "?";
 
@@ -76,7 +76,7 @@ const SPOKEN_COMMANDS: ReadonlyArray<SpokenCommand> = [
   { phrase: [BULLET_WORD, POINT_WORD], command: { kind: BULLET_WORD } },
   { phrase: [NEXT_WORD, BULLET_WORD], command: { kind: BULLET_WORD } },
   { phrase: [NEW_WORD, BULLET_WORD], command: { kind: BULLET_WORD } },
-  { phrase: [NEXT_WORD, "item"], command: { kind: NEXT_ITEM_KIND } },
+  { phrase: [NEXT_WORD, "item"], command: { kind: NEXT_LIST_MARK_KIND } },
   { phrase: [NEXT_WORD, LINE_WORD], command: { kind: NEW_LINE_KIND } },
   { phrase: ["full", "stop"], command: readPunctuation(PERIOD_MARK) },
   { phrase: [NEW_WORD, LINE_WORD], command: { kind: NEW_LINE_KIND } },
@@ -299,7 +299,7 @@ const pushPiece = (formatStatus: FormatStatus, piece: Piece): FormatStatus => {
       return { ...element, nextNumber: 0 };
     }
     case NUMBERED_LIST_KIND:
-    case NEXT_ITEM_KIND: {
+    case NEXT_LIST_MARK_KIND: {
       const number = listNumber(formatStatus, piece.kind);
       const listLine = startListLine(formatStatus, `${String(number)}. `);
       return { ...listLine, nextNumber: number + 1 };

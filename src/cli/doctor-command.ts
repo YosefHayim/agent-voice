@@ -18,7 +18,7 @@ const DOCTOR_TITLE = "doctor";
 
 const CLIPBOARD_PASTE_PURPOSE = "clipboard refine and long pastes";
 
-const CONFIG_CHECK_NAME = "Config";
+const SETTINGS_CHECK_NAME = "Config";
 
 const CMUX_CHECK_NAME = "cmux";
 
@@ -38,7 +38,7 @@ const MICROPHONE_CHECK_NAME = "Microphone";
 
 const WARN_STATUS = "warn";
 
-const INPUT_MONITORING_CHECK_NAME = "Input Monitoring";
+const KEY_LISTENING_CHECK_NAME = "Input Monitoring";
 
 const NOT_ALLOWED_DETAIL = "not allowed";
 
@@ -161,10 +161,10 @@ const checkInputMonitoring = (keyboard: Keyboard): DoctorCheck => {
   const isReadingBlocked = !canReadKeys;
   if (isReadingBlocked) {
     const fix = `${PRIVACY_PANE} Input Monitoring: ${ALLOW_TERMINAL}`;
-    return { name: INPUT_MONITORING_CHECK_NAME, status: WARN_STATUS, detail: NOT_ALLOWED_DETAIL, fix };
+    return { name: KEY_LISTENING_CHECK_NAME, status: WARN_STATUS, detail: NOT_ALLOWED_DETAIL, fix };
   }
 
-  return createOkCheck(INPUT_MONITORING_CHECK_NAME, "agent-voice can read keyboard state");
+  return createOkCheck(KEY_LISTENING_CHECK_NAME, "agent-voice can read keyboard state");
 };
 
 const checkKeyboard = async (): Promise<ReadonlyArray<DoctorCheck>> => {
@@ -320,7 +320,7 @@ const checkRefine = async (settings: Settings): Promise<ReadonlyArray<DoctorChec
 const checkSettings = async (settings: Settings): Promise<ReadonlyArray<DoctorCheck>> => {
   const refineChecks = await checkRefine(settings);
   return [
-    createOkCheck(CONFIG_CHECK_NAME, "valid"),
+    createOkCheck(SETTINGS_CHECK_NAME, "valid"),
     checkWhisperModel(settings),
     checkSupertonicVoices(settings),
     ...refineChecks,
@@ -328,7 +328,7 @@ const checkSettings = async (settings: Settings): Promise<ReadonlyArray<DoctorCh
 };
 
 const createSettingsFailedCheck = (error: unknown): DoctorCheck => ({
-  name: CONFIG_CHECK_NAME,
+  name: SETTINGS_CHECK_NAME,
   status: FAIL_STATUS,
   detail: describeError(error),
   fix: "Fix the file, or reset a setting: agent-voice config unset <name>",

@@ -4,7 +4,7 @@ const ASCII_ENCODING = "ascii";
 const RIFF_TAG = "RIFF";
 const WAVE_TAG = "WAVE";
 const FORMAT_CHUNK_TAG = "fmt ";
-const DATA_CHUNK_TAG = "data";
+const SAMPLES_CHUNK_TAG = "data";
 const TAG_BYTES = 4;
 const CHUNK_SIZE_OFFSET = 4;
 const CHUNK_HEADER_BYTES = 8;
@@ -25,11 +25,11 @@ const FORMAT_SAMPLE_RATE_OFFSET = 24;
 const FORMAT_BYTE_RATE_OFFSET = 28;
 const FORMAT_BLOCK_ALIGN_OFFSET = 32;
 const FORMAT_BITS_OFFSET = 34;
-const DATA_CHUNK_TAG_OFFSET = 36;
-const DATA_CHUNK_SIZE_OFFSET = 40;
-const FORMAT_BODY_CHANNELS_OFFSET = 2;
-const FORMAT_BODY_SAMPLE_RATE_OFFSET = 4;
-const FORMAT_BODY_BITS_OFFSET = 14;
+const SAMPLES_CHUNK_TAG_OFFSET = 36;
+const SAMPLES_CHUNK_SIZE_OFFSET = 40;
+const FORMAT_CHUNK_CHANNELS_OFFSET = 2;
+const FORMAT_CHUNK_SAMPLE_RATE_OFFSET = 4;
+const FORMAT_CHUNK_BITS_OFFSET = 14;
 
 export const encodeWav = (request: { readonly samples: Float32Array; readonly sampleRate: number }): Buffer => {
   const pcm = readPcmFromSamples(request.samples);
@@ -45,8 +45,8 @@ export const encodeWav = (request: { readonly samples: Float32Array; readonly sa
   bytes.writeUInt32LE(request.sampleRate * BYTES_PER_SAMPLE, FORMAT_BYTE_RATE_OFFSET);
   bytes.writeUInt16LE(BYTES_PER_SAMPLE, FORMAT_BLOCK_ALIGN_OFFSET);
   bytes.writeUInt16LE(BITS_PER_SAMPLE, FORMAT_BITS_OFFSET);
-  bytes.write(DATA_CHUNK_TAG, DATA_CHUNK_TAG_OFFSET, ASCII_ENCODING);
-  bytes.writeUInt32LE(pcmBytes, DATA_CHUNK_SIZE_OFFSET);
+  bytes.write(SAMPLES_CHUNK_TAG, SAMPLES_CHUNK_TAG_OFFSET, ASCII_ENCODING);
+  bytes.writeUInt32LE(pcmBytes, SAMPLES_CHUNK_SIZE_OFFSET);
   for (const [index, sample] of pcm.entries()) {
     bytes.writeInt16LE(sample, WAV_HEADER_BYTES + index * BYTES_PER_SAMPLE);
   }
@@ -79,19 +79,21 @@ export const decodeWav = (bytes: Buffer): { readonly sampleRate: number; readonl
   const chunks = listWavChunks(bytes);
   const format = chunks.find((chunk) => chunk.id === FORMAT_CHUNK_TAG);
 
-  const samples = chunks.find((chunk) => chunk.id === DATA_CHUNK_TAG);
+  const samples = chunks.find((chunk) => chunk.id === SAMPLES_CHUNK_TAG);
 
   const isUnsupportedWave =
-    format == null || samples == null || bytes.readUInt16LE(format.start + FORMAT_BODY_BITS_OFFSET) !== BITS_PER_SAMPLE;
+    format == null ||
+    samples == null ||
+    bytes.readUInt16LE(format.start + FORMAT_CHUNK_BITS_OFFSET) !== BITS_PER_SAMPLE;
   if (isUnsupportedWave) {
     return null;
   }
 
-  const channels = bytes.readUInt16LE(format.start + FORMAT_BODY_CHANNELS_OFFSET);
+  const channels = bytes.readUInt16LE(format.start + FORMAT_CHUNK_CHANNELS_OFFSET);
   const sampleBytes = Math.min(samples.size, bytes.length - samples.start);
   const frameCount = Math.floor(sampleBytes / (BYTES_PER_SAMPLE * channels));
   const pcm = Int16Array.from({ length: frameCount }, (_unused, frame) =>
     bytes.readInt16LE(samples.start + frame * BYTES_PER_SAMPLE * channels),
   );
-  return { sampleRate: bytes.readUInt32LE(format.start + FORMAT_BODY_SAMPLE_RATE_OFFSET), pcm };
+  return { sampleRate: bytes.readUInt32LE(format.start + FORMAT_CHUNK_SAMPLE_RATE_OFFSET), pcm };
 };

@@ -19,7 +19,7 @@ import * as TerminalUI from "./terminal-ui.js";
 
 const BAD_USAGE_EXIT_CODE = 2;
 
-const VALUE_NAME = "value";
+const NEW_SETTING_PLACEHOLDER = "value";
 
 const OFF_MODE = "off";
 
@@ -197,7 +197,7 @@ const setCommand: CommandSpec = {
   flags: {},
   positionals: [
     { name: SETTING_NAME, description: SETTING_POSITIONAL_DESCRIPTION, isRequired: true },
-    { name: VALUE_NAME, description: "The new value", isRequired: true },
+    { name: NEW_SETTING_PLACEHOLDER, description: "The new value", isRequired: true },
   ],
   run: async (parsedCommand) => {
     const settingName = readRequiredPositional(parsedCommand, SETTING_NAME);
@@ -209,7 +209,7 @@ const setCommand: CommandSpec = {
       return BAD_USAGE_EXIT_CODE;
     }
 
-    const enteredWords = readRequiredPositional(parsedCommand, VALUE_NAME);
+    const enteredWords = readRequiredPositional(parsedCommand, NEW_SETTING_PLACEHOLDER);
     const answer = parseSettingField({ setting, enteredWords });
     await saveSetting({ setting, answer });
     return 0;

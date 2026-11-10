@@ -17,7 +17,7 @@ const SPOKE_STEP = "spoke";
 
 const WAIT_STEP = "wait";
 
-const JSON_FILE_SUFFIX = ".json";
+const REPLY_FILE_SUFFIX = ".json";
 
 type SpeakStep = "wait" | "idle" | "spoke";
 
@@ -34,7 +34,7 @@ export const speakNextReply = async (engine: SupertonicEngine, player: SpeechPla
 
   // Before the dictation wait, so a reply that came in while muted is never kept for after an unmute.
   if (settings.speechMuted) {
-    removeInboxFiles([JSON_FILE_SUFFIX]);
+    removeInboxFiles([REPLY_FILE_SUFFIX]);
     return WAIT_STEP;
   }
 
@@ -83,7 +83,7 @@ const speakUntilStopped = async (engine: SupertonicEngine, player: SpeechPlayer)
 
     const isSpeechOff = settings.speechMode === OFF_MODE;
     if (isSpeechOff) {
-      removeInboxFiles([JSON_FILE_SUFFIX, SPEAKING_FILE_SUFFIX]);
+      removeInboxFiles([REPLY_FILE_SUFFIX, SPEAKING_FILE_SUFFIX]);
       return;
     }
 
@@ -106,7 +106,7 @@ const loadAndSpeak = async (player: SpeechPlayer): Promise<void> => {
 
   const isSpeechOff = settings.speechMode === OFF_MODE;
   if (isSpeechOff) {
-    removeInboxFiles([JSON_FILE_SUFFIX]);
+    removeInboxFiles([REPLY_FILE_SUFFIX]);
     return;
   }
 

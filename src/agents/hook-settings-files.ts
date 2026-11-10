@@ -7,7 +7,7 @@ import { readStatusFile } from "#src/settings/agent-voice-home.js";
 import { readDocumentFile, writeDocumentAtomically } from "#src/storage/state-files.js";
 import { type AgentHookTarget, type AgentId, agentHookTargets } from "./agent-catalog.js";
 
-const CLAUDE_CONFIG_FOLDERS_STATUS_FILE = "claude-config-folders.json";
+const CLAUDE_FOLDERS_STATUS_FILE = "claude-config-folders.json";
 
 export interface HookSettingsFile {
   readonly agent: AgentId;
@@ -38,7 +38,7 @@ const listConfiguredClaudeFolders = (): ReadonlyArray<string> => {
 };
 
 const listRememberedClaudeFolders = (): ReadonlyArray<string> => {
-  const foldersPath = readStatusFile(CLAUDE_CONFIG_FOLDERS_STATUS_FILE);
+  const foldersPath = readStatusFile(CLAUDE_FOLDERS_STATUS_FILE);
   const remembered = readDocumentFile({ path: foldersPath, schema: claudeSettingsFoldersSchema }) ?? [];
   return remembered.filter((folder) => existsSync(folder));
 };
@@ -53,7 +53,7 @@ export const rememberClaudeSettingsFolder = (): void => {
     return;
   }
 
-  const foldersPath = readStatusFile(CLAUDE_CONFIG_FOLDERS_STATUS_FILE);
+  const foldersPath = readStatusFile(CLAUDE_FOLDERS_STATUS_FILE);
   writeDocumentAtomically({ path: foldersPath, value: [...remembered, ...newFolders] });
 };
 

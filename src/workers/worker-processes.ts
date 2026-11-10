@@ -26,11 +26,11 @@ const NEWLINE = "\n";
 
 const STOP_STATUS_NAME = "stop";
 
-const ZOMBIE_PROCESS_STATE = "Z";
+const ZOMBIE_PROCESS_STATUS = "Z";
 
 const PS_PID_FLAG = "-p";
 
-const PS_OUTPUT_FLAG = "-o";
+const PS_FIELDS_FLAG = "-o";
 
 const PILL_PID_FILE = "pill.pid";
 
@@ -69,8 +69,8 @@ const sendSignal = (pid: number, signal: NodeJS.Signals | 0): boolean => {
 
 // A zombie still answers signal 0 until it is reaped, so it is checked by its ps state.
 const isZombie = (pid: number): boolean => {
-  const processStatus = runPs([PS_OUTPUT_FLAG, "state=", PS_PID_FLAG, String(pid)]);
-  return processStatus.startsWith(ZOMBIE_PROCESS_STATE);
+  const processStatus = runPs([PS_FIELDS_FLAG, "state=", PS_PID_FLAG, String(pid)]);
+  return processStatus.startsWith(ZOMBIE_PROCESS_STATUS);
 };
 
 const isProcessAlive = (pid: number): boolean => sendSignal(pid, 0) && !isZombie(pid);
@@ -116,7 +116,7 @@ const isNamedProcess = (name: PidFileName, commandLine: string): boolean => {
 };
 
 const isRunningAs = (name: PidFileName, pid: number): boolean => {
-  const psLine = runPs([PS_OUTPUT_FLAG, "state=,args=", PS_PID_FLAG, String(pid)]);
+  const psLine = runPs([PS_FIELDS_FLAG, "state=,args=", PS_PID_FLAG, String(pid)]);
 
   const parsedPsLine = PS_LINE_PATTERN.exec(psLine);
 
@@ -127,7 +127,7 @@ const isRunningAs = (name: PidFileName, pid: number): boolean => {
 
   const processStatus = parsedPsLine[1] || "";
   const commandLine = parsedPsLine[2] || "";
-  return !processStatus.startsWith(ZOMBIE_PROCESS_STATE) && isNamedProcess(name, commandLine);
+  return !processStatus.startsWith(ZOMBIE_PROCESS_STATUS) && isNamedProcess(name, commandLine);
 };
 
 // The pid from the pid file, only when that process still runs as the named worker.
@@ -169,7 +169,7 @@ export const stopSpeech = (): void => {
 };
 
 const readProcessGroupId = (pid: number): number => {
-  const group = runPs([PS_OUTPUT_FLAG, "pgid=", PS_PID_FLAG, String(pid)]);
+  const group = runPs([PS_FIELDS_FLAG, "pgid=", PS_PID_FLAG, String(pid)]);
   return Number(group);
 };
 
@@ -310,7 +310,7 @@ export const stopWorkers = async (): Promise<void> => {
 };
 
 const listStrayAgentVoiceProcesses = (): ReadonlyArray<number> => {
-  const processList = runPs(["-ax", PS_OUTPUT_FLAG, "pid=,args="]);
+  const processList = runPs(["-ax", PS_FIELDS_FLAG, "pid=,args="]);
   return processList.split(NEWLINE).flatMap((line) => {
     const parsedPsLine = PS_LINE_PATTERN.exec(line);
     const commandLine = parsedPsLine?.[2] || "";

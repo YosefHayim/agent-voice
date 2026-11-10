@@ -8,7 +8,7 @@ const MARKDOWN_SPOKEN_NAME = "Markdown";
 
 const JAVASCRIPT_SPOKEN_NAME = "JavaScript";
 
-const EQUALS_SPOKEN_TEXT = " equals ";
+const EQUALS_SPOKEN_PHRASE = " equals ";
 
 const SECOND_GROUP_REFERENCE = "$2";
 
@@ -71,13 +71,13 @@ const readCodeSpeech = (line: string): string => {
     ["===", " strictly equals "],
     ["!==", " does not strictly equal "],
     ["=>", " arrow "],
-    ["==", EQUALS_SPOKEN_TEXT],
+    ["==", EQUALS_SPOKEN_PHRASE],
     ["!=", " does not equal "],
     [">=", " greater than or equal to "],
     ["<=", " less than or equal to "],
     ["&&", " and "],
     ["||", " or "],
-    ["=", EQUALS_SPOKEN_TEXT],
+    ["=", EQUALS_SPOKEN_PHRASE],
     [";", " semicolon "],
     ["{", " open brace "],
     ["}", " close brace "],

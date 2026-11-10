@@ -26,11 +26,11 @@ const AGY_PROVIDER_ID = "agy";
 
 const GEMINI_PROVIDER_ID = "gemini";
 
-const TEXT_OUTPUT_VALUE = "text";
+const PLAIN_FORMAT = "text";
 
-const JSON_OUTPUT_VALUE = "json";
+const STRUCTURED_FORMAT = "json";
 
-const AUTO_VALUE = "auto";
+const AUTO_CHOICE = "auto";
 
 const OPENCODE_PROVIDER_ID = "opencode";
 
@@ -52,7 +52,7 @@ const RUN_COMMAND = "run";
 
 const MODEL_LONG_FLAG = "--model";
 
-const OUTPUT_FORMAT_FLAG = "--output-format";
+const FORMAT_FLAG = "--output-format";
 
 const PROMPT_SHORT_FLAG = "-p";
 
@@ -226,7 +226,7 @@ const readGrokReply = async (attempt: RefineAttempt, executable: string, signal:
   const argumentList = [
     PROMPT_SHORT_FLAG,
     prompt,
-    OUTPUT_FORMAT_FLAG,
+    FORMAT_FLAG,
     "plain",
     "--always-approve",
     "--max-turns",
@@ -320,12 +320,12 @@ const OPENCODE_VARIANTS = new Map([
 const readOpencodeReply = async (attempt: RefineAttempt, executable: string, signal: AbortSignal): Promise<string> => {
   const effort = attempt.effort.toLowerCase();
   const variant = OPENCODE_VARIANTS.get(effort) ?? "";
-  const model = readNamedModel(attempt.model, [DEFAULT_MODEL_NAME, OPENCODE_PROVIDER_ID, AUTO_VALUE]);
+  const model = readNamedModel(attempt.model, [DEFAULT_MODEL_NAME, OPENCODE_PROVIDER_ID, AUTO_CHOICE]);
   const prompt = createRefinePrompt(attempt.draft);
   const argumentList = [
     RUN_COMMAND,
     "--format",
-    JSON_OUTPUT_VALUE,
+    STRUCTURED_FORMAT,
     ...listOptionalFlag(MODEL_SHORT_FLAG, model),
     ...listOptionalFlag("--variant", variant),
     prompt,
@@ -350,8 +350,8 @@ const readClaudeReply = async (attempt: RefineAttempt, executable: string, signa
   const argumentList = [
     PROMPT_SHORT_FLAG,
     prompt,
-    OUTPUT_FORMAT_FLAG,
-    TEXT_OUTPUT_VALUE,
+    FORMAT_FLAG,
+    PLAIN_FORMAT,
     ...listOptionalFlag(MODEL_LONG_FLAG, model),
   ];
   const cliRun = await runSucceeded(attempt, { executable, args: argumentList }, signal);
@@ -368,7 +368,7 @@ const AGY_EFFORTS = new Map([
   [MAX_EFFORT, HIGH_EFFORT],
 ]);
 
-const GEMINI_DEFAULT_MODELS = [DEFAULT_MODEL_NAME, GEMINI_PROVIDER_ID, AUTO_VALUE];
+const GEMINI_DEFAULT_MODELS = [DEFAULT_MODEL_NAME, GEMINI_PROVIDER_ID, AUTO_CHOICE];
 
 // -p and --print take the next argument as the prompt.
 const listAgyArgumentList = (attempt: RefineAttempt): ReadonlyArray<string> => {
@@ -377,8 +377,8 @@ const listAgyArgumentList = (attempt: RefineAttempt): ReadonlyArray<string> => {
   const agyEffort = AGY_EFFORTS.get(effort) ?? "";
   const prompt = createRefinePrompt(attempt.draft);
   return [
-    OUTPUT_FORMAT_FLAG,
-    JSON_OUTPUT_VALUE,
+    FORMAT_FLAG,
+    STRUCTURED_FORMAT,
     ...listOptionalFlag(MODEL_LONG_FLAG, model),
     ...listOptionalFlag("--effort", agyEffort),
     "--print",
@@ -442,7 +442,7 @@ const readPiReply = async (attempt: RefineAttempt, executable: string, signal: A
     "--no-tools",
     "--no-session",
     "--mode",
-    TEXT_OUTPUT_VALUE,
+    PLAIN_FORMAT,
     ...listOptionalFlag(MODEL_LONG_FLAG, model),
     ...listOptionalFlag("--thinking", thinking),
     PROMPT_SHORT_FLAG,

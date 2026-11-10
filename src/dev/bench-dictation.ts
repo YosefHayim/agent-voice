@@ -116,7 +116,7 @@ for (const key of modelKeys) {
 
 const backend = readWhisperBackend();
 
-const jsonIndentSpaces = 2;
+const indentSpaceCount = 2;
 
 const benchReport = JSON.stringify(
   {
@@ -125,7 +125,7 @@ const benchReport = JSON.stringify(
     models: modelReports,
   },
   null,
-  jsonIndentSpaces,
+  indentSpaceCount,
 );
 
 process.stdout.write(`${benchReport}\n`);

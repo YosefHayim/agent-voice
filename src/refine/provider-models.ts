@@ -33,7 +33,7 @@ const OPUS_MODEL_ALIAS = "opus";
 
 const SONNET_MODEL_ALIAS = "sonnet";
 
-const KEY_VALUE_SEPARATOR = "=";
+const KEY_PAIR_SEPARATOR = "=";
 
 const MODEL_WORD = "model";
 
@@ -170,15 +170,15 @@ export const listCodexCachedModels = (): ReadonlyArray<string> => {
 };
 
 const isModelSetting = (line: string): boolean =>
-  line.startsWith(MODEL_WORD) && !line.startsWith("model_") && line.includes(KEY_VALUE_SEPARATOR);
+  line.startsWith(MODEL_WORD) && !line.startsWith("model_") && line.includes(KEY_PAIR_SEPARATOR);
 
 const listCodexConfiguredModel = (): ReadonlyArray<string> => {
   const settingsToml = readFileIfReadable(readCodexFile("config.toml")) ?? "";
   const modelLine = listNonBlankLines(settingsToml).find(isModelSetting);
   const model = (modelLine || "")
-    .split(KEY_VALUE_SEPARATOR)
+    .split(KEY_PAIR_SEPARATOR)
     .slice(1)
-    .join(KEY_VALUE_SEPARATOR)
+    .join(KEY_PAIR_SEPARATOR)
     .trim()
     .replace(/^["']|["']$/gu, "");
 

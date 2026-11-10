@@ -27,7 +27,7 @@ const WORKSPACE_LIST_STEP = "workspace list";
 
 const WORKSPACE_COMMAND = "workspace";
 
-const JSON_FLAG = "--json";
+const MACHINE_READABLE_FLAG = "--json";
 
 const IDENTIFY_COMMAND = "identify";
 
@@ -208,7 +208,7 @@ const readFocusedOrCaller = (identity: unknown): unknown => {
 
 const identifyFocus = async (): Promise<unknown> => {
   const identity = await runCmuxDocument({
-    args: [IDENTIFY_COMMAND, JSON_FLAG, "--id-format", "both"],
+    args: [IDENTIFY_COMMAND, MACHINE_READABLE_FLAG, "--id-format", "both"],
     step: IDENTIFY_COMMAND,
   });
   return readFocusedOrCaller(identity);
@@ -231,7 +231,10 @@ const readWorkspaces = (listing: unknown): ReadonlyArray<unknown> => {
 
 const listWorkspaces = async (): Promise<ReadonlyArray<unknown>> => {
   try {
-    const listing = await runCmuxDocument({ args: [WORKSPACE_COMMAND, "list", JSON_FLAG], step: WORKSPACE_LIST_STEP });
+    const listing = await runCmuxDocument({
+      args: [WORKSPACE_COMMAND, "list", MACHINE_READABLE_FLAG],
+      step: WORKSPACE_LIST_STEP,
+    });
     return readWorkspaces(listing);
   } catch (error) {
     console.error({ step: WORKSPACE_LIST_STEP, error });
@@ -363,7 +366,7 @@ const runInNewWorkspace = async (request: {
   });
   const createArgumentList = createWorkspaceArgumentList({ promptText: request.promptText, folder: request.folder });
   const created = await runCmuxDocument({
-    args: [...createArgumentList, "--command", command, JSON_FLAG],
+    args: [...createArgumentList, "--command", command, MACHINE_READABLE_FLAG],
     step: WORKSPACE_CREATE_STEP,
   });
   const workspace = readFirstFilledField(created, [WORKSPACE_REF_FIELD, WORKSPACE_ID_FIELD]) ?? "?";
@@ -379,7 +382,10 @@ const pasteInNewWorkspace = async (request: {
   readonly pressEnter: boolean;
 }): Promise<string> => {
   const createArgumentList = createWorkspaceArgumentList({ promptText: request.promptText, folder: request.folder });
-  const created = await runCmuxDocument({ args: [...createArgumentList, JSON_FLAG], step: WORKSPACE_CREATE_STEP });
+  const created = await runCmuxDocument({
+    args: [...createArgumentList, MACHINE_READABLE_FLAG],
+    step: WORKSPACE_CREATE_STEP,
+  });
   const surface = readFirstFilledField(created, [SURFACE_ID_FIELD, SURFACE_REF_FIELD]);
 
   const hasNoSurface = surface == null;

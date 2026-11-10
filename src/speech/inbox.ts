@@ -17,11 +17,13 @@ const SECONDS_PER_MINUTE = 60;
 const MINUTES_PER_HOUR = 60;
 const HOURS_PER_DAY = 24;
 
-const JSON_FILE_SUFFIX = ".json";
+const REPLY_FILE_SUFFIX = ".json";
 
 const SPEAKING_FILE_SUFFIX = ".speaking";
 
-const UNKNOWN_VALUE = "unknown";
+const UNKNOWN_AGENT_ID = "unknown";
+
+const UNKNOWN_FOCUS_KIND = "unknown";
 
 const CMUX_TARGET = "cmux";
 
@@ -90,7 +92,7 @@ export const readSurfaceIdentity = (reply: QueuedReply): string => {
 };
 
 const replyPlace = (reply: QueuedReply): string => {
-  const agentId = reply.source || UNKNOWN_VALUE;
+  const agentId = reply.source || UNKNOWN_AGENT_ID;
   const surface = readSurfaceIdentity(reply) || TERMINAL_TARGET;
   return `${agentId}:${surface}`;
 };
@@ -123,7 +125,7 @@ export const isSpeaksForFocus = (surface: string, focus: CmuxFocus): boolean => 
       return focus.surface === surface;
     case "away":
       return false;
-    case UNKNOWN_VALUE:
+    case UNKNOWN_FOCUS_KIND:
       return true;
   }
 };
@@ -232,7 +234,7 @@ const isSpeakable = (reply: QueuedReply): boolean => {
 
 // Oldest first; an unreadable, empty, or expired file is deleted.
 const listPendingReplies = (): ReadonlyArray<PendingReply> => {
-  const files = listInboxFiles(JSON_FILE_SUFFIX);
+  const files = listInboxFiles(REPLY_FILE_SUFFIX);
   return files.flatMap((file) => {
     const storedReply = readDocumentFile({ path: file, schema: queuedReplySchema });
 
@@ -300,7 +302,7 @@ export const claimNextReply = async (mode: Settings["speechMode"]): Promise<Pend
 
   const isModeOff = mode === "off";
   if (isModeOff) {
-    removeInboxFiles([JSON_FILE_SUFFIX]);
+    removeInboxFiles([REPLY_FILE_SUFFIX]);
     return null;
   }
 

@@ -4,7 +4,7 @@ import type { AgentId } from "./agent-catalog.js";
 
 const CLOSING_CHARACTER_COUNT = 2;
 
-const JSON_ARRAY_TYPE = "array";
+const ARRAY_TYPE_NAME = "array";
 
 const STOP_HOOK_KEY = "Stop";
 
@@ -14,7 +14,7 @@ const COMMAND_KEY = "command";
 
 const NEWLINE = "\n";
 
-const JSON_OBJECT_TYPE = "object";
+const OBJECT_TYPE_NAME = "object";
 
 // agent-voice's one Stop entry is added and removed by text edits at jsonc-parser offsets: comments, key order, and spacing
 // of everything else stay byte for byte, and removing the entry right after adding it restores the original text.
@@ -69,7 +69,7 @@ const parseSettings = (code: string): Node => {
   const errors: Array<ParseError> = [];
   const root = parseTree(code, errors, { allowTrailingComma: true, disallowComments: false });
 
-  const isRootObject = root?.type === JSON_OBJECT_TYPE;
+  const isRootObject = root?.type === OBJECT_TYPE_NAME;
 
   const isSettingsUnreadable = errors.length > 0 || !isRootObject;
   if (isSettingsUnreadable) {
@@ -176,7 +176,7 @@ const readHookCommand = (hook: Node): string => {
 const findReplyHook = (root: Node, hits: (command: string) => boolean): ReplyHookLocation | null => {
   const stopArray = findNodeAtLocation(root, [HOOKS_KEY, STOP_HOOK_KEY]);
 
-  const isStopArrayTypeNotArray = stopArray?.type !== JSON_ARRAY_TYPE;
+  const isStopArrayTypeNotArray = stopArray?.type !== ARRAY_TYPE_NAME;
   if (isStopArrayTypeNotArray) {
     return null;
   }
@@ -184,7 +184,7 @@ const findReplyHook = (root: Node, hits: (command: string) => boolean): ReplyHoo
   const locations = (stopArray.children || []).flatMap((group) => {
     const groupHooks = findNodeAtLocation(group, [HOOKS_KEY]);
 
-    const isGroupHooksTypeNotArray = groupHooks?.type !== JSON_ARRAY_TYPE;
+    const isGroupHooksTypeNotArray = groupHooks?.type !== ARRAY_TYPE_NAME;
     if (isGroupHooksTypeNotArray) {
       return [];
     }
@@ -199,7 +199,7 @@ const findReplyHook = (root: Node, hits: (command: string) => boolean): ReplyHoo
 };
 
 const isEmptyContainer = (node: Node | undefined): boolean =>
-  (node?.type === JSON_ARRAY_TYPE || node?.type === JSON_OBJECT_TYPE) && (node.children || []).length === 0;
+  (node?.type === ARRAY_TYPE_NAME || node?.type === OBJECT_TYPE_NAME) && (node.children || []).length === 0;
 
 const pruneIfEmpty = (request: { readonly source: string; readonly path: ReadonlyArray<string> }): string => {
   const root = parseSettings(request.source);
@@ -248,12 +248,12 @@ const readHookInsertion = (root: Node, command: string): HookInsertion => {
   const hooks = findNodeAtLocation(root, [HOOKS_KEY]);
   const stopArray = findNodeAtLocation(root, [HOOKS_KEY, STOP_HOOK_KEY]);
 
-  const isHooksWrongType = hooks != null && hooks.type !== JSON_OBJECT_TYPE;
+  const isHooksWrongType = hooks != null && hooks.type !== OBJECT_TYPE_NAME;
   if (isHooksWrongType) {
     throw new Error("hooks is not an object");
   }
 
-  const isStopArrayWrongType = stopArray != null && stopArray.type !== JSON_ARRAY_TYPE;
+  const isStopArrayWrongType = stopArray != null && stopArray.type !== ARRAY_TYPE_NAME;
   if (isStopArrayWrongType) {
     throw new Error("hooks.Stop is not an array");
   }
