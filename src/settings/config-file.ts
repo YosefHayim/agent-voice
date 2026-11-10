@@ -31,24 +31,40 @@ export const readConfig = (): Config => {
   return decodeSavedText({ filePath, text: savedFileContents });
 };
 
+// A broken file is a reading the caller checks, so the Stop hook can stay silent while workers log it.
+type ConfigFileReading =
+  | { readonly status: "read"; readonly config: Config }
+  | { readonly status: "broken"; readonly issue: string };
+
+export const readConfigFileReading = (): ConfigFileReading => {
+  try {
+    const config = readConfig();
+    return { status: "read", config };
+  } catch (error) {
+    const issue = error instanceof Error ? error.message : String(error);
+    return { status: "broken", issue };
+  }
+};
+
 // Each distinct broken-config message is logged once per process, since workers read the config often.
-const loggedConfigErrors = new Set<string>();
+const loggedConfigIssues = new Set<string>();
 
 // Workers read the config on every decision; a broken file means defaults, never a crashed worker.
 export const readConfigOrDefaults = (): Config => {
-  try {
-    return readConfig();
-  } catch (error) {
-    const issue = error instanceof Error ? error.message : String(error);
-    const isIssueNew = !loggedConfigErrors.has(issue);
-
-    if (isIssueNew) {
-      loggedConfigErrors.add(issue);
-      console.error({ error });
-    }
-
-    return defaultConfig;
+  const configFileReading = readConfigFileReading();
+  const isConfigFileBroken = configFileReading.status === "broken";
+  if (!isConfigFileBroken) {
+    return configFileReading.config;
   }
+
+  const isIssueNew = !loggedConfigIssues.has(configFileReading.issue);
+
+  if (isIssueNew) {
+    loggedConfigIssues.add(configFileReading.issue);
+    console.error({ issue: configFileReading.issue });
+  }
+
+  return defaultConfig;
 };
 
 export const saveConfig = (config: Config): void => {

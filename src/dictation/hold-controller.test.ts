@@ -141,7 +141,7 @@ describe("Right Option hold-only dictation", () => {
     expect(savedMute()).toBe(true);
   });
 
-  it("records only after the threshold and queues one clip after release", () => {
+  it("records only after the threshold and queues one clip after release", async () => {
     const hold = rightOptionController();
     const now = Date.now();
     const clock = vi.spyOn(Date, "now").mockReturnValue(now);
@@ -158,7 +158,8 @@ describe("Right Option hold-only dictation", () => {
       hold.pressed.modifiers = true;
       pollTap(hold.poll);
 
-      expect(hold.offer).toHaveBeenCalledOnce();
+      // The clip is queued after the keep-listening tail (0.2 s by default), so the test waits for that timer.
+      await vi.waitFor(() => expect(hold.offer).toHaveBeenCalledOnce());
       expect(hold.clip.isRecording()).toBe(false);
     } finally {
       clock.mockRestore();
