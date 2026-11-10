@@ -92,6 +92,9 @@ describe("worker pid files", () => {
   });
 });
 
+// A starter: once the `go` file exists it claims the dictation lock, prints "owner" or "busy", and an owner keeps the
+// lock for holdMs, so every racer tries while the winner still holds it. Its command line ends like a real dictation
+// worker's, so `ps` takes each starter for one.
 const startStarter = (request: { readonly go: string; readonly holdMs: number }) => {
   const child = spawn(
     process.execPath,

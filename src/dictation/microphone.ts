@@ -1,6 +1,3 @@
-// The microphone stays open for the dictation worker's lifetime (PvRecorder, 16 kHz mono), so the hold key only flips a
-// recording flag and the first word is never clipped by device start-up.
-
 import type { PvRecorder } from "@picovoice/pvrecorder-node";
 
 import { readSamplesFromPcm, SAMPLE_RATE } from "./clip-audio.js";
@@ -29,6 +26,8 @@ const joinFrames = (frames: ReadonlyArray<Int16Array>): Float32Array => {
 
 // Frames arriving while not recording are dropped. A modifier press begins a clip that may still be a typing shortcut, and
 // `confirm` marks it a hold. Every begin starts a new clip number, so work started for an earlier clip can tell it is late.
+// The microphone stays open for the dictation worker's lifetime (PvRecorder, 16 kHz mono), so the hold key only flips a
+// recording flag and the first word is never clipped by device start-up.
 export const makeClipBuffer = () => {
   let frames: Array<Int16Array> = [];
   let recording = false;

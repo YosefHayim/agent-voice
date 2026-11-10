@@ -24,7 +24,6 @@ type DictationStage = (typeof dictationStages)[number];
 // status.json is read by the pill every 80 ms and by `agent-voice status`.
 const workerStatusSchema = z.object({
   stage: z.enum(dictationStages),
-  // Short text for the pill and `agent-voice status`.
   detail: z.string(),
   // Live caption while the hold key is held; never typed.
   preview: z.string(),

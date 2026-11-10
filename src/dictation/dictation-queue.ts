@@ -1,7 +1,3 @@
-// A release only enqueues its clip, and jobs run one after another, so the next hold can start while the previous
-// clip decodes. Text is typed once and never erased and retyped, because the caret may have moved by the time a
-// model answers.
-
 import { describeError } from "#src/error-message.js";
 import { deliverToCmux } from "#src/refine/cmux-delivery.js";
 import { refinePrompt } from "#src/refine/refine-attempts.js";
@@ -25,6 +21,9 @@ export interface DictationJob {
   readonly generation: number;
 }
 
+// A release only enqueues its clip, and jobs run one after another, so the next hold can start while the previous
+// clip decodes. Text is typed once and never erased and retyped, because the caret may have moved by the time a
+// model answers.
 export interface DictationPipeline {
   readonly transcriber: Transcriber;
   readonly keyboard: Keyboard;
@@ -234,7 +233,6 @@ export interface DictationQueue {
   readonly isIdle: () => boolean;
 }
 
-// `offer` enqueues a released clip, and `isIdle` tells live captions when they may run.
 export const startDictationQueue = (pipeline: DictationPipeline): DictationQueue => {
   let waitingCount = 0;
   let isWorking = false;

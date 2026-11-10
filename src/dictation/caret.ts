@@ -1,6 +1,3 @@
-// Dictation-length text goes in as key events, because a failed Command-V would type a bare "v".
-// A long refined prompt goes through the clipboard, and the previous clipboard comes back right after.
-
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -135,6 +132,8 @@ const typeOrPasteWords = async (keyboard: Keyboard, string: string): Promise<voi
   }
 };
 
+// Dictation-length text goes in as key events, because a failed Command-V would type a bare "v".
+// A long refined prompt goes through the clipboard, and the previous clipboard comes back right after.
 export const typeAtCaret = async (request: {
   readonly keyboard: Keyboard;
   readonly text: string;

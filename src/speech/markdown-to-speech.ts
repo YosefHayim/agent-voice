@@ -66,6 +66,7 @@ const readCodeSpeech = (line: string): string => {
     return "Blank line.";
   }
 
+  // Longer symbols first, so "===" is never read as "==" plus "=".
   const spoken = [
     ["===", " strictly equals "],
     ["!==", " does not strictly equal "],
@@ -143,7 +144,6 @@ const listTableSpeech = (header: string, storedList: ReadonlyArray<string>): Rea
   });
 };
 
-// A table runs until the first line without a cell separator.
 const readTableEnd = (lines: ReadonlyArray<string>, storedFirst: number): number => {
   const end = lines.findIndex((line, index) => index >= storedFirst && !line.includes(PIPE_CHARACTER));
 

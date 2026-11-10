@@ -13,6 +13,8 @@ export const startPill = (workerPid: number): ChildProcess => {
   const child = spawn("osascript", ["-l", "JavaScript", "-", String(workerPid), readAgentVoiceHome()], {
     stdio: ["pipe", IGNORE_STDIO, IGNORE_STDIO],
   });
+  // A bottom-centre panel that shows the dictation stage from status.json. It is a JavaScript for Automation script
+  // run by `osascript`, so it needs no compiler and no app bundle, and it exits when the worker it serves is gone.
   child.stdin?.end(`
 ObjC.import("Cocoa");
 ObjC.import("QuartzCore");

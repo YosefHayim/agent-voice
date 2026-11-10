@@ -13,9 +13,7 @@ export type AgentId = z.infer<typeof agentIdSchema>;
 export interface AgentHookTarget {
   readonly agent: AgentId;
   readonly displayName: string;
-  // HOME-relative folder whose presence means the agent is installed (Claude Code may have more).
   readonly homeFolder: string;
-  // JSON file inside the agent's folder holding its hooks in the Claude-style hooks.Stop format.
   readonly settingsFile: string;
   // True when the whole file belongs to agent-voice, so `agent-voice off` may delete it once it is empty.
   readonly ownFile: boolean;

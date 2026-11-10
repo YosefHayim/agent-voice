@@ -108,7 +108,6 @@ export const speakMarkdown = async (request: {
   return "completed";
 };
 
-// Returns the length of the WAV file in seconds.
 export const writeMarkdownWav = async (request: {
   readonly engine: SupertonicEngine;
   readonly markdown: string;

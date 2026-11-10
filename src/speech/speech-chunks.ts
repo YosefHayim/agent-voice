@@ -6,7 +6,9 @@ const DOUBLE_QUOTE = '"';
 
 const DASH_CHARACTER = "-";
 
-const SPACE = " "; // Short chunks, so the first words play while the rest still renders.
+const SPACE = " ";
+
+// Short chunks, so the first words play while the rest still renders.
 export const SPEECH_CHUNK_CHARACTERS = 280;
 
 // The last sentence end that fits, else the last space, else a hard cut at the limit.

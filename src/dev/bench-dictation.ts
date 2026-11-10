@@ -1,6 +1,3 @@
-// `pnpm test:bench [--models tiny,base,small,turbo-q5] [--seconds 1,2,4] [--runs 3]`: Whisper load and warm decode times
-// on synthetic speech (no mic, no typing). Downloads a missing model first.
-
 import { parseArgs } from "node:util";
 
 import { z } from "zod";
@@ -13,6 +10,8 @@ const TENTHS_PER_UNIT = 10;
 
 const STRING_KIND = "string";
 
+// `pnpm test:bench [--models tiny,base,small,turbo-q5] [--seconds 1,2,4] [--runs 3]`: Whisper load and warm decode times
+// on synthetic speech (no mic, no typing). Downloads a missing model first.
 const { values: fields } = parseArgs({
   options: {
     models: { type: STRING_KIND, default: "tiny,base,small,turbo-q5" },

@@ -8,7 +8,6 @@ interface StopReply {
   readonly agentReplyId: string;
 }
 
-// A missing or null field reads as empty text.
 const stringOrEmpty = z
   .string()
   .nullish()
@@ -31,7 +30,6 @@ const snakeCaseStopSchema = z.object({
   turn_id: stringOrEmpty,
 });
 
-// Input that is not JSON is simply not a stop reply, so it reads as null.
 const parseDocumentOrNull = (stopHookStdin: string): unknown => {
   try {
     return JSON.parse(stopHookStdin);

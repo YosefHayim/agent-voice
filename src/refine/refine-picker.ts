@@ -156,7 +156,6 @@ const readSavedCodexModel = (): string => {
   return saved.model;
 };
 
-// Codex adds its last-good, saved, cached and curated models.
 export const listPickerModels = (request: {
   readonly provider: ProviderId;
   readonly providers: ReadonlyArray<DiscoveredProvider>;

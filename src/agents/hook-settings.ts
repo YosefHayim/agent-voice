@@ -1,6 +1,3 @@
-// agent-voice's one Stop entry is added and removed by text edits at jsonc-parser offsets: comments, key order, and spacing
-// of everything else stay byte for byte, and removing the entry right after adding it restores the original text.
-
 import { findNodeAtLocation, getNodeValue, type Node, type ParseError, parseTree } from "jsonc-parser";
 
 import type { AgentId } from "./agent-catalog.js";
@@ -19,6 +16,8 @@ const NEWLINE = "\n";
 
 const JSON_OBJECT_TYPE = "object";
 
+// agent-voice's one Stop entry is added and removed by text edits at jsonc-parser offsets: comments, key order, and spacing
+// of everything else stay byte for byte, and removing the entry right after adding it restores the original text.
 export interface SettingsEdit {
   readonly source: string;
   readonly changed: boolean;
@@ -202,7 +201,6 @@ const findReplyHook = (root: Node, hits: (command: string) => boolean): ReplyHoo
 const isEmptyContainer = (node: Node | undefined): boolean =>
   (node?.type === JSON_ARRAY_TYPE || node?.type === JSON_OBJECT_TYPE) && (node.children || []).length === 0;
 
-// Remove an object property, or nothing, once removing agent-voice's entry left its value empty.
 const pruneIfEmpty = (request: { readonly source: string; readonly path: ReadonlyArray<string> }): string => {
   const root = parseSettings(request.source);
   const parentPath = request.path.slice(0, -1);
@@ -230,7 +228,6 @@ const removeHookLine = (code: string, location: ReplyHookLocation): string => {
   return removeMember({ source: code, container: location.stopArray, member: location.group });
 };
 
-// A container left empty by the removal goes too.
 export const removeReplyHook = (request: { readonly source: string; readonly agent: AgentId }): SettingsEdit => {
   const root = parseSettings(request.source);
   const location = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
@@ -246,7 +243,6 @@ export const removeReplyHook = (request: { readonly source: string; readonly age
   return { source: withoutHooks, changed: true };
 };
 
-// agent-voice's hook group goes into the Stop array, into a new Stop key in hooks, or into a new hooks key.
 const readHookInsertion = (root: Node, command: string): HookInsertion => {
   const hookGroup = { hooks: [{ type: COMMAND_KEY, command }] };
   const hooks = findNodeAtLocation(root, [HOOKS_KEY]);

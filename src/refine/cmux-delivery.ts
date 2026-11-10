@@ -73,7 +73,6 @@ const readNonEmptyField = (field: unknown): string | null => {
   return field;
 };
 
-// The first key whose value is a non-empty string.
 const readFirstFilledField = (field: unknown, keys: ReadonlyArray<string>): string | null => {
   const stored = readPlainObject(field);
 

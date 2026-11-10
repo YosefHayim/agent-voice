@@ -1,8 +1,7 @@
-// Reads keys from HID state, which works without an event tap, and posts key events through CoreGraphics.
-
 import { readSettingsOrDefaults } from "#src/settings/config-file.js";
 import type { Settings } from "#src/settings/config-schema.js";
 
+// Reads keys from HID state, which works without an event tap, and posts key events through CoreGraphics.
 export interface Keyboard {
   readonly holdKey: Settings["dictationHoldKey"];
   readonly holdDown: () => boolean;

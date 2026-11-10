@@ -161,7 +161,6 @@ const routeLeaf = (request: {
   };
 };
 
-// Walks the words down the command tree: a group (config) has subcommands, a leaf has flags and a run function.
 const routeWithin = (request: {
   readonly commandWords: ReadonlyArray<string>;
   readonly group: CommandSpec | null;

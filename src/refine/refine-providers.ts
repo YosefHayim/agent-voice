@@ -64,7 +64,6 @@ export interface RefineAttempt {
   readonly provider: ProviderId;
   readonly model: string;
   readonly effort: string;
-  // The prompt as dictated or copied, before refining.
   readonly draft: string;
 }
 
@@ -490,7 +489,6 @@ const readCheckedReply = (attempt: RefineAttempt, reply: string): string => {
   return checked.prompt;
 };
 
-// One provider and model with no rotation: the checked, refined prompt, or why it failed.
 export const refineWithProvider = async (attempt: RefineAttempt, signal: AbortSignal): Promise<string> => {
   const reply = await readProviderReply(attempt, signal);
   return readCheckedReply(attempt, reply);

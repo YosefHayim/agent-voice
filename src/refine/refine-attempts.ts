@@ -31,7 +31,6 @@ const MAX_MODELS_PER_PROVIDER = 6;
 const MAX_CROSS_PROVIDER_ATTEMPTS = 4;
 const MAX_TOTAL_ATTEMPTS = 12;
 
-// The order for trying other providers after the requested one fails.
 const FALLBACK_ORDER: ReadonlyArray<ProviderId> = [
   CODEX_PROVIDER_ID,
   "opencode",
@@ -52,6 +51,7 @@ const LAST_RESORT_MODEL: Readonly<Record<ProviderId, string>> = {
   pi: DEFAULT_MODEL_NAME,
 };
 
+// Generic failures (network, CLI errors) still move on to the next candidate.
 export const canRotate = (detail: string): boolean =>
   isFailedModelReply(detail) ||
   containsAny(detail, [FAILED_STATUS, "error", "timeout", "timed out", "connection", "refused", "not found", "empty"]);
@@ -99,7 +99,6 @@ const listDiscoveredModels = async (provider: ProviderId, preferred: string): Pr
   return listCodexModelCandidates({ preferred, lastGood, failed });
 };
 
-// The preferred model, the saved pick, then the discovered list.
 const listModelCandidates = async (provider: ProviderId, preferred: string): Promise<ReadonlyArray<string>> => {
   const chosenModel = readNamedModel(preferred, [DEFAULT_MODEL_NAME, AUTO_VALUE]);
   const saved = readSavedChoice();
@@ -178,7 +177,6 @@ const listAutoAttempts = async (requestedModel: string): Promise<ReadonlyArray<A
   return [...leadTargets, ...fallbackTargets];
 };
 
-// The preferred provider's models first, then the first model of each other installed provider.
 export const createAttemptQueue = async (request: {
   readonly provider: Settings["refineProvider"];
   readonly model: string;
@@ -210,7 +208,6 @@ type RefineRequest = {
 
 const readSavedEffort = (): string => readSavedChoice()?.effort ?? "";
 
-// The configured model, else the saved pick for this provider, else Codex's default.
 const pickStartingModel = (request: RefineRequest): string => {
   const configuredModel = request.model.trim();
 
@@ -291,8 +288,6 @@ const tryAttempts = async (
   return { refined: null, failures };
 };
 
-// Refine with rotation; when every attempt fails, the picker (if allowed) can choose a model or skip refine.
-// Throws an Error with the reason when refine fails and the user does not skip it.
 export const refinePrompt = async (request: RefineRequest): Promise<string> => {
   const draft = request.draft.trim();
 

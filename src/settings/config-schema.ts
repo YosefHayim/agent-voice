@@ -34,7 +34,6 @@ const DEFAULT_VOICE_ID = "F4";
 
 const AUTO_VALUE = "auto";
 
-// A closed choice that also accepts any letter case and the listed aliases ("Hebrew" → "he").
 const createAliasedChoiceSchema = <Choice extends string>(aliases: Readonly<Record<string, Choice>>) =>
   z.string().transform((enteredWords, issueReporter) => {
     const key = enteredWords.trim().toLowerCase();
@@ -122,7 +121,6 @@ const refineEfforts = ["minimal", "low", "medium", "high", "xhigh"] as const;
 
 const dictationHoldKeys = [SHIFT_HOLD_KEY, "right-option"] as const;
 
-// Every setting's value rule. The title and description for each setting are in settingDefinitions below.
 const defaultKeepListeningSeconds = 0.2;
 
 const maximumKeepListeningSeconds = 2;
@@ -165,11 +163,9 @@ export type Settings = z.infer<typeof settingsSchema>;
 
 type SettingsKey = keyof Settings;
 
-// Reads a settings file or a `config set` value: one line per problem, with the setting name first.
 const describeSettingsIssues = (error: ZodError): string =>
   error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("\n");
 
-// Throws with the issues as text when a value does not match the config schema.
 export const decodeSettings = (storedSettings: unknown): Settings => {
   const checkedReply = settingsSchema.safeParse(storedSettings);
 
@@ -368,7 +364,6 @@ const parseBooleanWord = (trimmed: string): boolean => {
   throw new Error(`Expected true or false, actual "${trimmed}".`);
 };
 
-// Turns CLI text into the value a setting stores. Empty text returns null, which clears an optional setting.
 export const parseSettingField = (request: {
   readonly setting: SettingDefinition;
   readonly enteredWords: string;

@@ -165,7 +165,6 @@ export const runCliLines = async (request: {
   }
 };
 
-// Not JSON gives null, the same as JSON null.
 export const parseDocumentOrNull = (string: string): unknown => {
   try {
     return JSON.parse(string);

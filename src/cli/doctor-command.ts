@@ -195,6 +195,7 @@ const checkMicrophone = async (): Promise<DoctorCheck> => {
   try {
     const timeoutMilliseconds = 10_000;
 
+    // AVCaptureDevice through JXA: 3 is authorized, 0 not asked yet, 1 restricted, 2 denied.
     const authorizationRun = await runCli({
       executable: OSASCRIPT_EXECUTABLE,
       args: [

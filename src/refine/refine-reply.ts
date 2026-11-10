@@ -86,6 +86,7 @@ export const isModelUnavailableError = (message: string): boolean =>
     "model_not_supported",
   ]);
 
+// Error phrases only: a refined prompt about a budget, a billing page, a disk quota, or RPM is a real prompt.
 export const isQuotaOrLimitError = (message: string): boolean =>
   containsAny(message, [
     "quota exceeded",
@@ -252,7 +253,6 @@ const isDocumentObject = (field: unknown): field is DocumentObject =>
 
 const isNonNullPiece = (string: string | null): string is string => string != null;
 
-// The trimmed text, or null when the value is not a string or is blank.
 const readNonBlankField = (field: unknown): string | null => {
   const isStringField = typeof field === STRING_KIND;
 

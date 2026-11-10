@@ -283,7 +283,6 @@ const listRunningWorkerPids = (): ReadonlyArray<number> => [
   ...listRunningPidList(SPEECH_PID_FILE),
 ];
 
-// Asks both workers to stop, forces any survivor, and clears their pid, lock, and stop files.
 export const stopWorkers = async (): Promise<void> => {
   const stopPath = readStatusFile(STOP_STATUS_NAME);
   touchFile(stopPath);
@@ -310,7 +309,6 @@ export const stopWorkers = async (): Promise<void> => {
   removeInboxFiles([".speaking"]);
 };
 
-// Every agent-voice worker or pill process on this Mac, found by its command line.
 const listStrayAgentVoiceProcesses = (): ReadonlyArray<number> => {
   const processList = runPs(["-ax", PS_OUTPUT_FLAG, "pid=,args="]);
   return processList.split(NEWLINE).flatMap((line) => {

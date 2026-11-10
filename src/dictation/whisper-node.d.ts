@@ -1,6 +1,5 @@
 // The part of @fugood/whisper.node agent-voice uses. The package ships TypeScript sources without declarations, so
 // agent-voice imports it through a constant specifier and describes it here.
-
 export type TranscribeOptions = {
   readonly language?: string;
   readonly temperature?: number;

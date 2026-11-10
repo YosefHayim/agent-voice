@@ -127,7 +127,6 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
     return { textToLatent: readStyleTensor(style.style_ttl), duration: readStyleTensor(style.style_dp) };
   };
 
-  // Mono samples at `sampleRate` for one chunk of speech text.
   const synthesize = async (request: SynthesizeRequest): Promise<Float32Array> => {
     const supertonicSpeech = readSupertonicSpeech(request.text);
     const ids = listCharacterIds(supertonicSpeech, indexer);

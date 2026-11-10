@@ -1,5 +1,3 @@
-// Whisper ggml models: which file dictation loads, where it lives, and where it downloads from.
-
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 
@@ -195,7 +193,6 @@ export const isWhisperModelDownloaded = (model: WhisperModel): boolean => {
   return isModelSized;
 };
 
-// Returns the model file path, downloading the model first when it is missing.
 export const ensureWhisperModel = async (request: {
   readonly model: WhisperModel;
   readonly onProgress: (receivedBytes: number) => void;

@@ -155,7 +155,6 @@ const isVisibleModel = (model: CodexCachedModel): boolean => {
 
 const readModelSlug = (model: CodexCachedModel): string => (model.slug || model.id || "").trim();
 
-// The live account catalog the Codex CLI caches.
 export const listCodexCachedModels = (): ReadonlyArray<string> => {
   const modelsCache = readDocumentFile({ path: readCodexFile("models_cache.json"), schema: codexModelsCacheSchema });
 
@@ -399,6 +398,7 @@ const readPiRank = (token: string): number => {
     return openrouterRank;
   }
 
+  // OAuth providers (codex, copilot) usually work; OpenRouter often needs credits.
   const rank = ["openai-codex/", "github-copilot/", "kimi"].findIndex((prefix) => lowercase.startsWith(prefix));
 
   const isUnranked = rank < 0;
@@ -480,7 +480,6 @@ interface ProviderSpec {
   readonly listModels: () => Promise<ReadonlyArray<string>>;
 }
 
-// id, binary names (first found wins), reasoning-effort support, model lister.
 const PROVIDERS: ReadonlyArray<ProviderSpec> = [
   { id: CODEX_PROVIDER_ID, binaries: [CODEX_PROVIDER_ID], effort: true, listModels: listCodexModels },
   { id: CLAUDE_PROVIDER_ID, binaries: [CLAUDE_PROVIDER_ID], effort: false, listModels: listClaudeModels },

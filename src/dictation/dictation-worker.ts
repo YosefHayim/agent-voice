@@ -1,6 +1,3 @@
-// The dictation worker (`agent-voice worker dictation`): Whisper loads once, the mic stays open, the hold key is polled every
-// 8 ms, the pill shows, and the speech worker starts. It runs until `agent-voice off` or `agent-voice reset`.
-
 import { describeError } from "#src/error-message.js";
 import { readSettingsOrDefaults } from "#src/settings/config-file.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
@@ -22,7 +19,6 @@ const STARTING_STAGE = "starting";
 
 const stopCheckMilliseconds = 100;
 
-// Waits until `agent-voice off` or `agent-voice reset` asks the worker to stop.
 const waitForStop = async (): Promise<void> => {
   const isStopRequested = stopRequested();
   if (isStopRequested) {
@@ -155,6 +151,8 @@ const loadModelAndRun = async (): Promise<void> => {
 
 // A failure goes to status.json for `agent-voice on` and `agent-voice status`, and the next agent turn (or `agent-voice on`)
 // starts a fresh worker.
+// The dictation worker (`agent-voice worker dictation`): Whisper loads once, the mic stays open, the hold key is polled every
+// 8 ms, the pill shows, and the speech worker starts. It runs until `agent-voice off` or `agent-voice reset`.
 export const runDictationWorker = async (): Promise<void> => {
   const releaseWorkerLock = claimWorkerLock("dictation");
 

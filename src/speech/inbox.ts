@@ -31,7 +31,6 @@ const terminalOriginSchema = z.object({ kind: z.literal(TERMINAL_TARGET) });
 
 const cmuxOriginSchema = z.object({
   kind: z.literal(CMUX_TARGET),
-  // Cmux control socket that can say which surface is focused.
   socketPath: z.string(),
   workspaceId: z.string(),
   surfaceId: z.string(),
@@ -42,7 +41,6 @@ const replyOriginSchema = z.union([terminalOriginSchema, cmuxOriginSchema]);
 export type ReplyOrigin = z.infer<typeof replyOriginSchema>;
 
 const queuedReplySchema = z.object({
-  // Complete agent reply as Markdown.
   markdown: z.string(),
   // Where the agent ran: a plain terminal or a Cmux surface.
   origin: replyOriginSchema,
@@ -50,7 +48,6 @@ const queuedReplySchema = z.object({
   receivedAt: z.number(),
   // The agent's reply or turn ID, else the content token.
   agentReplyId: z.string(),
-  // Agent ID that produced the reply.
   source: z.string(),
 });
 
