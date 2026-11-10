@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { describeError } from "#src/error-message.js";
 
 const NEWLINE = "\n";
 
@@ -168,7 +169,7 @@ export const runCliLines = async (request: {
     const run = await runCli(request);
     return listNonBlankLines(`${run.stdout}\n${run.stderr}`);
   } catch (error) {
-    console.error({ executable: request.executable, error });
+    console.error({ executable: request.executable, error: describeError(error) });
     return [];
   }
 };
