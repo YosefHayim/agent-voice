@@ -86,8 +86,8 @@ const askCmux = (request: { readonly socketPath: string; readonly method: string
 
       const newline = received.indexOf("\n");
 
-      const isNewlineBelow0 = newline < 0;
-      if (isNewlineBelow0) {
+      const isNewlineNotFound = newline < 0;
+      if (isNewlineNotFound) {
         return;
       }
 

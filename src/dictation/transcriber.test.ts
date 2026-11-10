@@ -53,8 +53,9 @@ describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisp
 
     const decoded = decodeWav(wavBytes);
 
-    const isDecodedMissingOrSampleRateNot16000 = decoded === undefined || decoded.sampleRate !== 16_000;
-    if (isDecodedMissingOrSampleRateNot16000) {
+    const whisperSampleRate = 16_000;
+    const isNotWhisperAudio = decoded == null || decoded.sampleRate !== whisperSampleRate;
+    if (isNotWhisperAudio) {
       throw new Error("afconvert did not write 16 kHz PCM");
     }
 

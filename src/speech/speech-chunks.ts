@@ -86,8 +86,8 @@ export const characterIds = (text: string, indexer: ReadonlyArray<number>): Read
 
     const id = indexer[codePoint];
 
-    const isIdMissingOrBelow0 = id === undefined || id < 0;
-    if (isIdMissingOrBelow0) {
+    const isNoValidId = id == null || id < 0;
+    if (isNoValidId) {
       return [];
     }
 

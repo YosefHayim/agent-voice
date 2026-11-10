@@ -44,8 +44,9 @@ export const pcmFromSamples = (samples: Float32Array): Int16Array => Int16Array.
 export const peakNormalize = (samples: Float32Array, targetPeak: number): Float32Array => {
   const peak = peakOf(samples);
 
-  const isPeakBelow0Point000001 = peak < 1e-6;
-  if (isPeakBelow0Point000001) {
+  const silentPeakLimit = 1e-6;
+  const isPeakSilent = peak < silentPeakLimit;
+  if (isPeakSilent) {
     return samples;
   }
 
@@ -102,8 +103,8 @@ export const extractSpeechRegion = (samples: Float32Array): Float32Array | undef
   const voicedCount = voiced.filter(Boolean).length;
 
   // The adaptive threshold can wipe soft continuous speech; keep the whole clip when it is clearly not silence.
-  const isVoicedCount0 = voicedCount === 0;
-  if (isVoicedCount0) {
+  const hasNoVoicedFrames = voicedCount === 0;
+  if (hasNoVoicedFrames) {
     return keepIfLoud(samples, SILENCE_RMS * 1.5);
   }
 

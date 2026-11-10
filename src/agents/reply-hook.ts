@@ -109,8 +109,8 @@ const agentFromArguments = (args: ReadonlyArray<string>): AgentId | null => {
 
   const flagIndex = args.indexOf("--agent");
 
-  const isFlagIndexBelow0 = flagIndex < 0;
-  if (isFlagIndexBelow0) {
+  const isFlagNotGiven = flagIndex < 0;
+  if (isFlagNotGiven) {
     return null;
   }
 

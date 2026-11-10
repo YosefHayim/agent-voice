@@ -144,8 +144,8 @@ const tableSpeech = (header: string, rows: ReadonlyArray<string>): ReadonlyArray
 const tableEnd = (lines: ReadonlyArray<string>, firstRow: number): number => {
   const end = lines.findIndex((line, index) => index >= firstRow && !line.includes("|"));
 
-  const isEndBelow0 = end < 0;
-  if (isEndBelow0) {
+  const isEndNotFound = end < 0;
+  if (isEndNotFound) {
     return lines.length;
   }
 

@@ -67,8 +67,8 @@ const initialFormat: FormatState = {
 const replacementPair = (entry: string): ReadonlyArray<readonly [string, string]> => {
   const separator = entry.indexOf("=");
 
-  const isSeparatorBelow0 = separator < 0;
-  if (isSeparatorBelow0) {
+  const isSeparatorNotFound = separator < 0;
+  if (isSeparatorNotFound) {
     return [];
   }
 
@@ -76,8 +76,8 @@ const replacementPair = (entry: string): ReadonlyArray<readonly [string, string]
 
   const written = entry.slice(separator + 1).trim();
 
-  const isHeardOrWrittenEmpty = heard === "" || written === "";
-  if (isHeardOrWrittenEmpty) {
+  const hasEmptySide = heard === "" || written === "";
+  if (hasEmptySide) {
     return [];
   }
 
