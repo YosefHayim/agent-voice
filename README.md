@@ -38,7 +38,7 @@ agent-voice on      # restarts the workers on the new build
 | Need | Comes from | Install | Checked by `agent-voice doctor` |
 | --- | --- | --- | --- |
 | macOS on Apple Silicon (tested on an M5 Max; Intel Macs untested) | — | — | yes |
-| Node.js 22+ | Homebrew | `brew install node` | yes |
+| Node.js 22.12+ | Homebrew | `brew install node` | yes |
 | pnpm 11 | Corepack | `corepack enable` | — |
 | `osascript`, `afplay`, `pbcopy`, `pbpaste` | macOS | built in | yes |
 | An agent CLI for refine (optional) | its vendor | e.g. `npm i -g @openai/codex`, `brew install ollama` | yes, when refine is on |
