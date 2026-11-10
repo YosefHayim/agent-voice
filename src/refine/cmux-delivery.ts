@@ -114,13 +114,15 @@ const runCmuxCli = async (request: {
   readonly step: string;
 }): Promise<CliRun> => {
   try {
-    return await runCli({
+    const timeoutSignal = AbortSignal.timeout(CMUX_TIMEOUT_MS);
+    const cliRun = await runCli({
       executable: request.executable,
       args: request.args,
       timeoutMs: CMUX_TIMEOUT_MS,
       environment: { CMUX_QUIET: "1" },
-      signal: AbortSignal.timeout(CMUX_TIMEOUT_MS),
+      signal: timeoutSignal,
     });
+    return cliRun;
   } catch (error) {
     const isErrorInstanceError = error instanceof Error;
     const detail = isErrorInstanceError ? error.message : String(error);
@@ -171,6 +173,7 @@ const callRpc = (method: string, parameters: Readonly<Record<string, string>>): 
 const pressEnterKey = async (surface: string): Promise<void> => {
   const enterParameters = readSurfaceParameters(surface, { key: "enter" });
   const returnParameters = readSurfaceParameters(surface, { key: "return" });
+
   try {
     await callRpc(SURFACE_SEND_KEY_METHOD, enterParameters);
   } catch (enterError) {
@@ -318,6 +321,7 @@ export const expandCommandTemplate = (request: {
     prompt: request.prompt,
     cwd: request.folder,
   };
+
   return request.template.replace(/\{\{(prompt_file|prompt|cwd)\}\}/gu, (_placeholder, name: string) =>
     quoteShellWord(fields[name] || ""),
   );
@@ -371,6 +375,7 @@ const runInNewWorkspace = async (request: {
     step: WORKSPACE_CREATE_STEP,
   });
   const workspace = readFirstFilledField(created, [WORKSPACE_REF_FIELD, WORKSPACE_ID_FIELD]) ?? "?";
+
   return `cmux-new ran a command in workspace ${workspace}`;
 };
 
@@ -444,6 +449,7 @@ export const deliverToCmux = async (request: {
   readonly config: Settings;
 }): Promise<string> => {
   const prompt = request.promptText.trim();
+
   switch (request.config.refineSendTo) {
     case "cmux-new":
       return deliverToNewWorkspace({ promptText: prompt, config: request.config });

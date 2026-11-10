@@ -102,7 +102,8 @@ const readBenchModel = async (request: {
   };
 };
 
-const seconds = durationsSchema.parse(listCommaSeparatedList(fields.seconds));
+const secondsList = listCommaSeparatedList(fields.seconds);
+const seconds = durationsSchema.parse(secondsList);
 
 const runs = runsSchema.parse(fields.runs);
 

@@ -33,7 +33,8 @@ const runRoute = async (route: CommandRoute): Promise<ExitCode> => {
   }
 
   try {
-    return await route.run(route.parsedCommand);
+    const routeExitCode = await route.run(route.parsedCommand);
+    return routeExitCode;
   } catch (error) {
     TerminalUI.printError(error);
     return 1;
@@ -42,4 +43,7 @@ const runRoute = async (route: CommandRoute): Promise<ExitCode> => {
 
 const userArgumentsStart = 2;
 
-process.exitCode = await runRoute(parseCommandLine(process.argv.slice(userArgumentsStart)));
+const userArguments = process.argv.slice(userArgumentsStart);
+const parsedCommandLine = parseCommandLine(userArguments);
+const routeExitCode = await runRoute(parsedCommandLine);
+process.exitCode = routeExitCode;

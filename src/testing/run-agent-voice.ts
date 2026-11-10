@@ -20,11 +20,14 @@ export const runAgentVoice = async (request: {
     env: request.environment,
   });
   // A run that exits before reading its input closes the pipe; the exit code and output still tell the story.
+
   child.stdin.on("error", () => {});
   child.stdin.end(request.stdin || "");
+
   const stdout = text(child.stdout);
   const stderr = text(child.stderr);
   const exit = new Promise<number | null>((fulfill) => child.once("close", fulfill));
   const [stdoutReading, stderrReading, status] = await Promise.all([stdout, stderr, exit]);
+
   return { status, stdout: stdoutReading, stderr: stderrReading };
 };

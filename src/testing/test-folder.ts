@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 
 export const isMacOS = process.platform === "darwin";
 
-export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
+const repositoryRootUrl = new URL("../../", import.meta.url);
+export const repositoryRoot = fileURLToPath(repositoryRootUrl);
 
 // Tests write only under the gitignored .test-home/, never to the real ~/.agent-voice or ~/.claude.
 const testHomeRoot = path.join(repositoryRoot, ".test-home");

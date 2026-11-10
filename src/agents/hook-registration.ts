@@ -78,8 +78,11 @@ const writeSettings = (settings: HookSettingsFile, string: string): void => {
   const file = settings.file;
   const mode = readFileMode(file);
   const folder = path.dirname(file);
+
   mkdirSync(folder, { recursive: true });
+
   const staging = `${file}.agent-voice-partial`;
+
   writeFileSync(staging, string, { mode });
   renameSync(staging, file);
 };
@@ -126,6 +129,7 @@ const readSettings = (settings: HookSettingsFile): string | null => {
 
 const readAgentVoiceReplyCommand = (settings: HookSettingsFile): string => {
   const invocation = readAgentVoiceInvocation();
+
   return replyHookCommand({
     nodePath: invocation.executable,
     scriptArguments: invocation.scriptArguments,

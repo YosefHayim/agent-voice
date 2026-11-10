@@ -101,8 +101,10 @@ const readTimeout = (provider: ProviderId): number => {
   return AGENT_TIMEOUT_MS;
 };
 
-const run = (attempt: RefineAttempt, invocation: Invocation, signal: AbortSignal): Promise<CliRun> =>
-  runCli({ ...invocation, timeoutMs: readTimeout(attempt.provider), signal });
+const run = (attempt: RefineAttempt, invocation: Invocation, signal: AbortSignal): Promise<CliRun> => {
+  const attemptTimeoutMs = readTimeout(attempt.provider);
+  return runCli({ ...invocation, timeoutMs: attemptTimeoutMs, signal });
+};
 
 // A CLI that exits non-zero failed, whatever it printed: its stderr is a diagnostic, never a refined prompt.
 const requireCleanExit = (attempt: RefineAttempt, cliRun: CliRun): CliRun => {
@@ -157,6 +159,7 @@ const readCodexEffortSetting = (effort: string): string => {
 const listCodexArgumentList = (attempt: RefineAttempt, replyFile: string): ReadonlyArray<string> => {
   const effortSetting = readCodexEffortSetting(attempt.effort);
   const prompt = createRefinePrompt(attempt.draft);
+
   return [
     "exec",
     ...listOptionalFlag("-c", effortSetting),
@@ -209,9 +212,12 @@ const readCodexLastReply = (cliRun: CliRun, fileReply: string): string => {
 const readCodexReply = async (attempt: RefineAttempt, executable: string, signal: AbortSignal): Promise<string> => {
   // Codex writes the refined prompt here with its own file mode, so the folder keeps it private.
   const folder = readStatusFolder("prompts");
+
   makePrivateFolder(folder);
+
   const replyFile = path.join(folder, `codex-${randomUUID()}.txt`);
   const argumentList = listCodexArgumentList(attempt, replyFile);
+
   try {
     const cliRun = await run(attempt, { executable, args: argumentList }, signal);
     const fileReply = readReplyFile(replyFile);
@@ -238,6 +244,7 @@ const readGrokReply = async (attempt: RefineAttempt, executable: string, signal:
     ...listOptionalFlag("--reasoning-effort", attempt.effort),
   ];
   const cliRun = await runSucceeded(attempt, { executable, args: argumentList }, signal);
+
   return readCliReply(cliRun);
 };
 
@@ -268,11 +275,13 @@ const readGeneratedReply = (ollamaLine: string): string => {
 const askOllamaOverHttp = async (attempt: RefineAttempt, model: string): Promise<string> => {
   try {
     const refinePrompt = createRefinePrompt(attempt.draft);
+    const serializedOllamaRequest = JSON.stringify({ model, prompt: refinePrompt, stream: false });
+    const timeoutSignal = AbortSignal.timeout(AGENT_TIMEOUT_MS);
     const httpReply = await fetch("http://127.0.0.1:11434/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, prompt: refinePrompt, stream: false }),
-      signal: AbortSignal.timeout(AGENT_TIMEOUT_MS),
+      body: serializedOllamaRequest,
+      signal: timeoutSignal,
     });
     const ollamaLine = await httpReply.text();
     return readGeneratedReply(ollamaLine);
@@ -357,6 +366,7 @@ const readClaudeReply = async (attempt: RefineAttempt, executable: string, signa
     ...listOptionalFlag(MODEL_LONG_FLAG, model),
   ];
   const cliRun = await runSucceeded(attempt, { executable, args: argumentList }, signal);
+
   return readDocumentOrPlainReply(cliRun);
 };
 
@@ -378,6 +388,7 @@ const listAgyArgumentList = (attempt: RefineAttempt): ReadonlyArray<string> => {
   const effort = attempt.effort.toLowerCase();
   const agyEffort = AGY_EFFORTS.get(effort) ?? "";
   const prompt = createRefinePrompt(attempt.draft);
+
   return [
     FORMAT_FLAG,
     STRUCTURED_FORMAT,
@@ -451,6 +462,7 @@ const readPiReply = async (attempt: RefineAttempt, executable: string, signal: A
     prompt,
   ];
   const cliRun = await runSucceeded(attempt, { executable, args: argumentList }, signal);
+
   return readDocumentOrPlainReply(cliRun);
 };
 

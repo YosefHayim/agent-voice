@@ -325,5 +325,6 @@ export const createDictationTranscript = (transcript: string, replacements: Read
   const phrases = listReplacementPhrases(replacements);
   const pieces = listPiecesFrom({ words, canonical, phrases }, 0);
   const formatStatus = pieces.reduce(pushPiece, initialFormat);
+
   return readFinishedDictation(formatStatus);
 };

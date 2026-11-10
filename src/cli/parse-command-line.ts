@@ -109,8 +109,10 @@ const checkPositionalWords = (
 const bindPositionals = (
   positionalSpecs: ReadonlyArray<PositionalSpec>,
   positionalWords: ReadonlyArray<string>,
-): Readonly<Record<string, string | undefined>> =>
-  Object.fromEntries(positionalSpecs.map((positionalSpec, index) => [positionalSpec.name, positionalWords[index]]));
+): Readonly<Record<string, string | undefined>> => {
+  const nameWordPairs = positionalSpecs.map((positionalSpec, index) => [positionalSpec.name, positionalWords[index]]);
+  return Object.fromEntries(nameWordPairs);
+};
 
 const dropLeadingSeparator = (restWords: ReadonlyArray<string>): ReadonlyArray<string> => {
   const isSeparatorFirst = restWords[0] === "--";
@@ -145,9 +147,10 @@ const routeLeaf = (request: {
     return createCommandHelpRoute(commandPath, command);
   }
 
+  const parseSettings = createParseSettings(command.flags);
   const parsedArguments = parseArgs({
     args: [...restWords],
-    options: createParseSettings(command.flags),
+    options: parseSettings,
     allowPositionals: true,
     strict: true,
   });

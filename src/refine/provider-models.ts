@@ -109,20 +109,15 @@ const HELP_TIMEOUT_MS = 5_000;
 const MAX_LISTED_MODELS = 80;
 
 // A listing has no caller to cancel it, so its own timeout is its signal.
-const listLines = (request: { readonly executable: string; readonly args: ReadonlyArray<string> }) =>
-  runCliLines({
-    ...request,
-    timeoutMs: LISTING_TIMEOUT_MS,
-    signal: AbortSignal.timeout(LISTING_TIMEOUT_MS),
-  });
+const listLines = (request: { readonly executable: string; readonly args: ReadonlyArray<string> }) => {
+  const timeoutSignal = AbortSignal.timeout(LISTING_TIMEOUT_MS);
+  return runCliLines({ ...request, timeoutMs: LISTING_TIMEOUT_MS, signal: timeoutSignal });
+};
 
-const listHelpLines = (executable: string) =>
-  runCliLines({
-    executable,
-    args: ["--help"],
-    timeoutMs: HELP_TIMEOUT_MS,
-    signal: AbortSignal.timeout(HELP_TIMEOUT_MS),
-  });
+const listHelpLines = (executable: string) => {
+  const timeoutSignal = AbortSignal.timeout(HELP_TIMEOUT_MS);
+  return runCliLines({ executable, args: ["--help"], timeoutMs: HELP_TIMEOUT_MS, signal: timeoutSignal });
+};
 
 const findPatternTokens = (line: string, pattern: RegExp): ReadonlyArray<string> => line.match(pattern) ?? [];
 

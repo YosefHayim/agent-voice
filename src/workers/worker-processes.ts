@@ -94,7 +94,8 @@ export const readPid = (name: PidFileName): number | null => {
 
   const trimmedPidReading = pidFileReading.trim();
   const pid = Number(trimmedPidReading);
-  return isUsablePid(pid) ? pid : null;
+  const isPidUsable = isUsablePid(pid);
+  return isPidUsable ? pid : null;
 };
 
 export const writePid = (name: PidFileName, pid: number): void => {
@@ -141,7 +142,8 @@ export const readRunningPid = (name: PidFileName): number | null => {
     return null;
   }
 
-  return isRunningAs(name, savedPid) ? savedPid : null;
+  const isSavedPidRunning = isRunningAs(name, savedPid);
+  return isSavedPidRunning ? savedPid : null;
 };
 
 const listRunningPidList = (name: PidFileName): ReadonlyArray<number> => {
@@ -236,8 +238,8 @@ const readLineScript = (): string => {
     return builtLine;
   }
 
-  const sourceMainUrl = new URL("../cli/main.ts", import.meta.url);
-  return fileURLToPath(sourceMainUrl);
+  const cliMainUrl = new URL("../cli/main.ts", import.meta.url);
+  return fileURLToPath(cliMainUrl);
 };
 
 // This Node with its loader flags, so a worker or a hook runs the same agent-voice as the command that started it.
@@ -258,6 +260,7 @@ export const spawnWorker = (kind: WorkerKind): void => {
     detached: true,
     stdio: ["ignore", log, log],
   });
+
   child.unref();
   closeSync(log);
 };

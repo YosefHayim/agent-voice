@@ -40,7 +40,8 @@ const createSupertonicError = (issue: string, cause?: unknown): Error => new Err
 // Turns any failure from onnxruntime into one error that names Supertonic.
 const wrapSupertonicErrors = async <Field>(work: () => Promise<Field>): Promise<Field> => {
   try {
-    return await work();
+    const finishedWork = await work();
+    return finishedWork;
   } catch (error) {
     const errorDescription = describeError(error);
     throw createSupertonicError(errorDescription, error);
@@ -49,7 +50,8 @@ const wrapSupertonicErrors = async <Field>(work: () => Promise<Field>): Promise<
 
 const readSupertonicDocument = <Printout>(schema: z.ZodType<Printout>, file: string): Printout => {
   try {
-    const parsedFile = JSON.parse(readFileSync(file, "utf8"));
+    const fileContents = readFileSync(file, "utf8");
+    const parsedFile = JSON.parse(fileContents);
     return schema.parse(parsedFile);
   } catch (error) {
     const errorDescription = describeError(error);
@@ -101,10 +103,10 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
   const settings = readSupertonicDocument(ttsSettingsSchema, settingsFile);
   const indexer = readSupertonicDocument(numbersSchema, indexerFile);
 
-  const loadSession = (name: string) =>
-    wrapSupertonicErrors(() =>
-      ort.InferenceSession.create(path.join(onnxFolder, `${name}.onnx`), { executionProviders: ["cpu"] }),
-    );
+  const loadSession = (name: string) => {
+    const onnxPath = path.join(onnxFolder, `${name}.onnx`);
+    return wrapSupertonicErrors(() => ort.InferenceSession.create(onnxPath, { executionProviders: ["cpu"] }));
+  };
   const durationPredictor = await loadSession("duration_predictor");
   const stringEncoder = await loadSession("text_encoder");
   const vectorEstimator = await loadSession("vector_estimator");
@@ -163,6 +165,7 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
 
     const denoise = (noisyLatent: OnnxRuntime.Tensor, step: number) => {
       const currentStep = readFloatTensor([step], [1]);
+
       return runModel({
         model: vectorEstimator,
         feeds: {
@@ -182,7 +185,8 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
     const steps = Array.from({ length: FLOW_STEPS }, (_unused, step) => step);
     let latent = noise;
     for (const step of steps) {
-      latent = await denoise(latent, step);
+      const denoisedLatent = await denoise(latent, step);
+      latent = denoisedLatent;
     }
 
     const waveform = await runModel({ model: vocoder, feeds: { latent } });

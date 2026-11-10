@@ -68,6 +68,7 @@ const listClaudeSettingsFolders = (defaultFolder: string): ReadonlyArray<string>
   const rememberedFolders = listRememberedClaudeFolders();
   const configuredFolders = listConfiguredClaudeFolders();
   const folders = new Set([defaultFolder, ...accountFolders, ...rememberedFolders, ...configuredFolders]);
+
   return [...folders];
 };
 
@@ -87,6 +88,7 @@ const listAgentFolders = (target: AgentHookTarget): ReadonlyArray<string> => {
 export const listHookSettingsFiles = (): ReadonlyArray<HookSettingsFile> =>
   agentHookTargets.flatMap((target) => {
     const folders = listAgentFolders(target);
+
     return folders.map((folder) => ({
       agent: target.agent,
       displayName: target.displayName,

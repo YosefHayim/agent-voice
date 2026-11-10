@@ -141,6 +141,7 @@ export const isFailedModelReply = (string: string): boolean => {
     lowercase.includes('"error"') ||
     (lowercase.includes('"code"') && containsAny(lowercase, [MESSAGE_FIELD, "credits"]));
   const isDocumentError = trimmed.startsWith(OPEN_BRACE) && hasErrorFields;
+
   return isKnownFailure || isPaymentError || isDocumentError;
 };
 
@@ -279,7 +280,8 @@ const readFieldOrEmpty = (field: unknown): string => {
 
 // A block keeps its text as sent, blank included, so the joined reply keeps its line breaks.
 const readBlockReply = (block: unknown): string | null => {
-  const blockField = isDocumentObject(block) ? block.text : null;
+  const isBlockDocument = isDocumentObject(block);
+  const blockField = isBlockDocument ? block.text : null;
 
   const isNotStringField = typeof blockField !== STRING_KIND;
   if (isNotStringField) {
@@ -366,7 +368,8 @@ const readWholeReply = (printout: string): string | null => {
     return wholeReply;
   }
 
-  return isDocumentObject(whole) ? readDocumentReply(whole) : null;
+  const isWholeDocument = isDocumentObject(whole);
+  return isWholeDocument ? readDocumentReply(whole) : null;
 };
 
 const listDocumentLineEvents = (printout: string): ReadonlyArray<DocumentObject> =>

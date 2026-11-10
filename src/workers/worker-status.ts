@@ -36,16 +36,18 @@ const workerStatusSchema = z.object({
 
 type WorkerStatus = z.infer<typeof workerStatusSchema>;
 
-export const readWorkerStatus = (): WorkerStatus | null =>
-  readDocumentFile({ path: readStatusFile(STATUS_FILE_NAME), schema: workerStatusSchema });
+export const readWorkerStatus = (): WorkerStatus | null => {
+  const statusPath = readStatusFile(STATUS_FILE_NAME);
+  return readDocumentFile({ path: statusPath, schema: workerStatusSchema });
+};
 
 const millisecondsPerSecond = 1_000;
 
-export const writeWorkerStatus = (status: Omit<WorkerStatus, "updatedAt">): void =>
-  writeDocumentAtomically({
-    path: readStatusFile(STATUS_FILE_NAME),
-    value: { ...status, updatedAt: Date.now() / millisecondsPerSecond },
-  });
+export const writeWorkerStatus = (status: Omit<WorkerStatus, "updatedAt">): void => {
+  const statusPath = readStatusFile(STATUS_FILE_NAME);
+  const updatedAt = Date.now() / millisecondsPerSecond;
+  writeDocumentAtomically({ path: statusPath, value: { ...status, updatedAt } });
+};
 
 // Every write records whether the mic is capturing a hold, so a queued clip's "finishing" or "refining" never lets
 // speech into a newer hold.
@@ -55,6 +57,7 @@ export const makeStatusWriter = (request: {
   readonly recording: () => boolean;
 }) => {
   const readStatusFields = () => ({ model: request.model, backend: request.backend, recording: request.recording() });
+
   return {
     write: (stage: DictationStage, detail: string) =>
       writeWorkerStatus({ ...readStatusFields(), stage, detail, preview: "" }),

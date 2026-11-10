@@ -27,8 +27,10 @@ const CHOICE_FILE = "refine-choice.json";
 const CODEX_LAST_GOOD_FILE = "refine-codex-last-good.txt";
 const CODEX_FAILED_FILE = "refine-codex-failed.txt";
 
-export const readSavedChoice = (): SavedChoice | null =>
-  readDocumentFile({ path: readStatusFile(CHOICE_FILE), schema: savedChoiceSchema });
+export const readSavedChoice = (): SavedChoice | null => {
+  const choicePath = readStatusFile(CHOICE_FILE);
+  return readDocumentFile({ path: choicePath, schema: savedChoiceSchema });
+};
 
 export const readCodexLastGoodModel = (): string => {
   const lastGoodFile = readStatusFile(CODEX_LAST_GOOD_FILE);
@@ -43,6 +45,7 @@ const readModelSet = (modelListFileReading: string | null): ReadonlySet<string> 
 // Null when the file exists but cannot be read, so an update never replaces it unseen.
 const readCodexFailedModelsOrNull = (): ReadonlySet<string> | null => {
   const failedFile = readStatusFile(CODEX_FAILED_FILE);
+
   try {
     const failedFileReading = readFileIfExists(failedFile);
     return readModelSet(failedFileReading);
@@ -56,7 +59,8 @@ export const readCodexFailedModels = (): ReadonlySet<string> => readCodexFailedM
 const writeCodexFailedModels = (failed: ReadonlySet<string>): void => {
   const lines = [...failed].sort().map((model) => `${model}\n`);
   const codexFailedPath = readStatusFile(CODEX_FAILED_FILE);
-  writeFileAtomically({ path: codexFailedPath, contents: lines.join("") });
+  const failedModelsContents = lines.join("");
+  writeFileAtomically({ path: codexFailedPath, contents: failedModelsContents });
 };
 
 export const markCodexModelFailed = (model: string): void => {
@@ -89,13 +93,15 @@ export const saveRefineChoice = (request: {
 
   const millisecondsPerSecond = 1_000;
 
+  const choicePath = readStatusFile(CHOICE_FILE);
+  const updatedAt = Date.now() / millisecondsPerSecond;
   writeDocumentAtomically({
-    path: readStatusFile(CHOICE_FILE),
+    path: choicePath,
     value: {
       provider: request.provider,
       model,
       effort: request.effort || DEFAULT_REFINE_EFFORT,
-      updatedAt: Date.now() / millisecondsPerSecond,
+      updatedAt,
     },
   });
 

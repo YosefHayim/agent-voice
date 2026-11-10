@@ -70,7 +70,8 @@ describe("worker pid files", () => {
     const worker = await startSleeper(["worker", "dictation"]);
     writePidFile("dictation.pid", worker);
     writePidFile("speech.pid", worker);
-    expect(await waitUntilTrue(() => isWorkerRunning("dictation"))).toBe(true);
+    const isDictationWorkerRunning = await waitUntilTrue(() => isWorkerRunning("dictation"));
+    expect(isDictationWorkerRunning).toBe(true);
     expect(isWorkerRunning("speech")).toBe(false);
   });
 
@@ -81,12 +82,14 @@ describe("worker pid files", () => {
     }
     const speech = await startSleeper(["worker", "speech"]);
     writePidFile("speech.pid", speech);
-    expect(await waitUntilTrue(() => isWorkerRunning("speech"))).toBe(true);
+    const isSpeechWorkerRunning = await waitUntilTrue(() => isWorkerRunning("speech"));
+    expect(isSpeechWorkerRunning).toBe(true);
 
     await stopWorkers();
 
     const dictationPidFile = readHomeFile("dictation.pid");
-    expect(await waitUntilTrue(() => !isAlive(speech))).toBe(true);
+    const isSpeechWorkerStopped = await waitUntilTrue(() => !isAlive(speech));
+    expect(isSpeechWorkerStopped).toBe(true);
     expect(isAlive(stranger)).toBe(true);
     expect(existsSync(dictationPidFile)).toBe(false);
   });
@@ -142,7 +145,8 @@ describe("worker lock", () => {
       const pidFile = readHomeFile("dictation.pid");
       writeFileSync(go, "");
       const crashed = startStarter({ go, holdMs: 60_000 });
-      expect(await waitUntilTrue(() => crashed.stdoutSoFar().includes("owner"), 20_000)).toBe(true);
+      const isCrashedOwnerSeen = await waitUntilTrue(() => crashed.stdoutSoFar().includes("owner"), 20_000);
+      expect(isCrashedOwnerSeen).toBe(true);
       process.kill(crashed.pid, "SIGKILL");
       await crashed.exited;
       expect(existsSync(lockFile)).toBe(true);
@@ -150,13 +154,17 @@ describe("worker lock", () => {
       rmSync(go);
 
       const racers = Array.from({ length: 8 }, () => startStarter({ go, holdMs: 2_000 }));
-      expect(await waitUntilTrue(() => racers.every((racer) => racer.stdoutSoFar().includes("ready")), 20_000)).toBe(
-        true,
+      const areAllRacersReady = await waitUntilTrue(
+        () => racers.every((racer) => racer.stdoutSoFar().includes("ready")),
+        20_000,
       );
+      expect(areAllRacersReady).toBe(true);
       writeFileSync(go, "");
-      expect(await waitUntilTrue(() => racers.some((racer) => racer.stdoutSoFar().includes("owner")), 20_000)).toBe(
-        true,
+      const isRacerOwnerSeen = await waitUntilTrue(
+        () => racers.some((racer) => racer.stdoutSoFar().includes("owner")),
+        20_000,
       );
+      expect(isRacerOwnerSeen).toBe(true);
       const owner = racers.find((racer) => racer.stdoutSoFar().includes("owner"));
       expect(readFileSync(pidFile, "utf8")).toBe(String(owner?.pid));
 

@@ -18,6 +18,7 @@ const MIN_CAPTION_SAMPLES = SAMPLE_RATE * 0.4;
 // The final text always comes from the queue; the best caption is its fallback for short clips.
 export const makeLiveCaption = () => {
   let best = "";
+
   return {
     offer: (string: string) => {
       const isLengthAtLeastBestLength = string.length >= best.length;

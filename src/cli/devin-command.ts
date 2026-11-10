@@ -16,7 +16,11 @@ const killedExitCode = 1;
 const runDevin = (devinArguments: ReadonlyArray<string>): Promise<number> =>
   new Promise<number>((finishRun, failRun) => {
     const child = spawn(DEVIN_EXECUTABLE, [...devinArguments], { stdio: "inherit" });
-    child.on("error", (error) => failRun(new Error(`devin: ${error.message}`, { cause: error })));
+
+    child.on("error", (error) => {
+      const devinError = new Error(`devin: ${error.message}`, { cause: error });
+      failRun(devinError);
+    });
     child.on("exit", (code) => finishRun(code ?? killedExitCode));
   });
 
@@ -35,15 +39,22 @@ export const devinCommand: CommandSpec = {
   run: async (parsedCommand) => {
     TerminalUI.printIntro(DEVIN_EXECUTABLE);
     await startWorkers();
+
     const folder = readSessionFolder();
     // Devin writes the whole session here, so the folder is private.
+
     makePrivateFolder(folder);
+
     const exportFile = path.join(folder, "session.atif.json");
+
     TerminalUI.printDetail(`Reading finished turns aloud from Devin's ATIF export (${exportFile}).`);
+
     const devinArguments = ["--export", exportFile, ...parsedCommand.extraArguments];
     const readSession = () => runDevin(devinArguments);
     const exitCode = await watchDevinSession({ exportFile, readSession: readSession });
+
     TerminalUI.printOutro(`Devin exited with ${String(exitCode)}; the watcher stopped.`);
+
     return 0;
   },
 };

@@ -45,6 +45,7 @@ const readInlineSpeech = (string: string): string => {
     const spanIndex = codeSpans.push(code) - 1;
     return `${spanIndex}`;
   });
+
   return stripEmphasis(prose)
     .replace(/<[^>]+>/gu, SPACE)
     .replace(/(\d+)/gu, (_marker, spanIndex: string) => codeSpans[Number(spanIndex)] || "")
@@ -110,6 +111,7 @@ const readCodeStart = (language: string): string => {
       yml: YAML_SPOKEN_NAME,
       "": "code",
     }[language.toLowerCase()] || language;
+
   return readSentence(`Code block, ${name}`);
 };
 
@@ -138,6 +140,7 @@ const listTableSpeech = (header: string, storedList: ReadonlyArray<string>): Rea
     const field = cell || "empty";
     return readSentence(`${column}: ${field}`);
   };
+
   return storedList.map((stored, storedIndex) => {
     const cells = listTableCells(stored).map(readCellSpeech);
     return [`Row ${storedIndex + 1}.`, ...cells].join(SPACE);

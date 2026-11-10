@@ -21,7 +21,8 @@ const findPackageDocumentPath = (folder: string): string => {
 };
 
 // The folder depth differs between `src/cli` and the compiled `dist/src/cli`, so the file is found by walking up.
-const cliFolder = path.dirname(fileURLToPath(import.meta.url));
+const cliFilePath = fileURLToPath(import.meta.url);
+const cliFolder = path.dirname(cliFilePath);
 const packageDocumentPath = findPackageDocumentPath(cliFolder);
 const packageDocumentFile = readFileSync(packageDocumentPath, "utf8");
 const packageDocument: PackageDocument = JSON.parse(packageDocumentFile);

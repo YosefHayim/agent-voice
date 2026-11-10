@@ -41,6 +41,7 @@ const readBackupNote = (change: HookChange): string => {
 
 const printHookChange = (change: HookChange): void => {
   const where = `${change.displayName}: ${change.file}`;
+
   switch (change.change) {
     case ADDED_CHANGE_KIND:
     case "removed":

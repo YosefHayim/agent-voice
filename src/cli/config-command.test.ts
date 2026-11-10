@@ -86,19 +86,22 @@ describe("agent-voice config set speech-mode off", () => {
 
     expect(set.status).toBe(0);
     expect(set.stdout).toContain("Speech stops");
-    expect(await isSpeechStopped(marker)).toBe(true);
+    const isSpeechStoppedOnStop = await isSpeechStopped(marker);
+    expect(isSpeechStoppedOnStop).toBe(true);
   });
 });
 
 describe("agent-voice speech-muted", () => {
   it("starts muted, and config set speech-muted false unmutes", async () => {
-    expect(await readSpeechMuted()).toBe(true);
+    const isSpeechMutedAtStart = await readSpeechMuted();
+    expect(isSpeechMutedAtStart).toBe(true);
 
     const set = await readAgentVoice(["config", "set", "speech-muted", "false"]);
 
     expect(set.status).toBe(0);
     expect(set.stdout).toContain("speech-muted = false");
-    expect(await readSpeechMuted()).toBe(false);
+    const isSpeechMutedAfterUnmute = await readSpeechMuted();
+    expect(isSpeechMutedAfterUnmute).toBe(false);
   });
 
   it("stops the reply being read now when muted again", async () => {
@@ -112,7 +115,8 @@ describe("agent-voice speech-muted", () => {
 
     expect(set.status).toBe(0);
     expect(set.stdout).toContain("Speech muted");
-    expect(await isSpeechStopped(marker)).toBe(true);
+    const isSpeechStoppedOnMute = await isSpeechStopped(marker);
+    expect(isSpeechStoppedOnMute).toBe(true);
   });
 });
 

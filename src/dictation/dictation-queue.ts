@@ -167,7 +167,8 @@ const deliverPrompt = async (request: {
   }
 
   try {
-    return await deliverToCmux({ promptText: request.prompt.promptText, config: request.config });
+    const deliveryMessage = await deliverToCmux({ promptText: request.prompt.promptText, config: request.config });
+    return deliveryMessage;
   } catch (error) {
     appendDictationLog(`cmux delivery failed: ${describeError(error)}; typing at the caret`);
     return typeDictation({ pipeline: request.pipeline, config: request.config, text: request.prompt.promptText });
@@ -191,10 +192,11 @@ const decodeAndDeliverJob = async (pipeline: DictationPipeline, job: DictationJo
   const settings = readSettingsOrDefaults();
   const started = performance.now();
   const replacements = parseReplacements(settings.dictationReplacements);
+  const transcriptionPrompt = readPromptBoost(replacements);
   const transcription = await pipeline.transcriber.transcribe({
     samples: job.samples,
     language: settings.dictationLanguage,
-    prompt: readPromptBoost(replacements),
+    prompt: transcriptionPrompt,
   });
   const dictated = cleanTranscript(transcription.text) || cleanTranscript(job.fallbackCaption);
   const decodeMs = transcription.decodeMs.toFixed(1);

@@ -135,5 +135,6 @@ export const replyFromTranscript = (transcript: string): string => {
   const promptFlags = messages.map(isUserPrompt);
   const lastPromptIndex = promptFlags.lastIndexOf(true);
   const replyMessages = messages.slice(lastPromptIndex + 1);
+
   return replyMessages.flatMap(listAssistantReplies).join("\n\n");
 };

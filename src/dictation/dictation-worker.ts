@@ -103,13 +103,15 @@ const runWithTranscriber = async (request: {
   readonly isLivePreviewOn: boolean;
 }): Promise<void> => {
   const clip = makeClipBuffer();
+  const whisperBackend = readWhisperBackend();
   const status = makeStatusWriter({
     model: request.transcriber.modelName,
-    backend: readWhisperBackend(),
+    backend: whisperBackend,
     recording: clip.isConfirmedHold,
   });
   const keyboard = await loadKeyboard();
   const microphone = await openMicrophone(clip);
+
   try {
     await runWithMicrophone({ ...request, clip, keyboard, microphone, status });
   } finally {

@@ -66,6 +66,7 @@ export const writePrivateFile = (request: {
   readonly contents: string | Uint8Array;
 }): void => {
   const descriptor = openPrivateFile(request);
+
   try {
     writeFileSync(descriptor, request.contents);
   } finally {
@@ -76,9 +77,11 @@ export const writePrivateFile = (request: {
 // Written through a temporary sibling and a rename, so readers never see half a file.
 export const writeFileAtomically = (request: { readonly path: string; readonly contents: string }): void => {
   makeParentFolder(request.path);
+
   const folder = path.dirname(request.path);
   const fileName = path.basename(request.path);
   const staging = path.join(folder, `.${fileName}.${randomUUID()}.partial`);
+
   writeFileSync(staging, request.contents, { encoding: UTF8_ENCODING, mode: PRIVATE_FILE_MODE });
   renameSync(staging, request.path);
 };

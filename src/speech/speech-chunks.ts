@@ -32,13 +32,16 @@ const chunkEnd = (remaining: string, maxCharacters: number): number => {
 export const chunkSpeech = (string: string, maxCharacters: number): ReadonlyArray<string> => {
   const chunks: Array<string> = [];
   let remaining = string;
+
   while (remaining.length > maxCharacters) {
     const end = chunkEnd(remaining, maxCharacters);
     const chunk = remaining.slice(0, end);
     chunks.push(chunk);
     remaining = remaining.slice(end);
   }
+
   chunks.push(remaining);
+
   return chunks.map((chunk) => chunk.trim()).filter((chunk) => chunk !== "");
 };
 

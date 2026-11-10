@@ -81,7 +81,8 @@ const CAPTION_THREADS = Math.min(THREADS, 4);
 // Failures keep the Whisper prefix, so a log line says which engine failed.
 const wrapWhisperErrors = async <Report>(task: () => Promise<Report>): Promise<Report> => {
   try {
-    return await task();
+    const taskReport = await task();
+    return taskReport;
   } catch (error) {
     const isErrorInstanceError = error instanceof Error;
     const issue = isErrorInstanceError ? error.message : String(error);
@@ -126,8 +127,10 @@ const createDecodeLane = (): DecodeLane => {
 
   const run = async <Result>(task: () => Promise<Result>): Promise<Result> => {
     await takeTurn();
+
     try {
-      return await task();
+      const taskReport = await task();
+      return taskReport;
     } finally {
       passTurn();
     }
@@ -140,7 +143,8 @@ const createDecodeLane = (): DecodeLane => {
 
     isBusy = true;
     try {
-      return await task();
+      const taskReport = await task();
+      return taskReport;
     } finally {
       passTurn();
     }
@@ -199,6 +203,7 @@ export const loadTranscriber = async (modelPath: string): Promise<Transcriber> =
   // Compiles the Metal kernels now, so the first real dictation is not a cold start; speech-like audio passes the VAD.
   const warmUp = async (): Promise<void> => {
     const warmSamples = readSyntheticSpeech(1);
+
     try {
       await transcribe({ samples: warmSamples, language: "en", prompt: "" });
     } catch (error) {

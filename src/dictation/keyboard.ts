@@ -86,7 +86,8 @@ const readPostableChunk = (chunk: string): string => {
 // A failed native load is a keyboard error with the reason kept in the message.
 const importKoffi = async () => {
   try {
-    return await import("koffi");
+    const koffiModule = await import("koffi");
+    return koffiModule;
   } catch (error) {
     throw new Error(`Keyboard: ${String(error)}`, { cause: error });
   }
@@ -153,6 +154,7 @@ export const loadKeyboard = async (): Promise<Keyboard> => {
   const postUnicode = (chunk: string) => {
     const event = createKeyEvent(code, 0, true);
     const units = readUtf16Units(chunk);
+
     setUnicode(event, units.length, units);
     setFlags(event, 0n);
     postEvent(HID_EVENT_TAP, event);

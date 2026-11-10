@@ -109,6 +109,7 @@ const listRegisteredAgents = (): ReadonlyArray<string> => {
 
 const readCurrentStatus = (): AgentVoiceStatus => {
   const settings = readSettingsOrDefaults();
+
   return {
     home: readAgentVoiceHome(),
     configFile: readSettingsFilePath(),

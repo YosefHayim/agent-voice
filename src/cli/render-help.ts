@@ -62,6 +62,7 @@ export const createRootHelp = (commands: ReadonlyArray<CommandSpec>): string => 
     label: readUsageLabel(command.name, command),
     description: command.description,
   }));
+
   return [
     "agent-voice · Hold Shift to dictate into any text field and hear coding-agent replies read aloud.",
     "",
@@ -85,6 +86,7 @@ export const createCommandHelp = (commandPath: string, command: CommandSpec): st
     label: flagUsage(flagName, flag),
     description: flag.description,
   }));
+
   return [
     `${commandPath} — ${command.description}`,
     "",
