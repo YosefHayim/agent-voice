@@ -3,19 +3,19 @@ import { describe, expect, it, vi } from "vitest";
 import { makeClipBuffer, openMicrophone } from "./microphone.js";
 
 // The recorder is the only external system here: one frame arrives, then the device fails.
+// The code calls `new PvRecorder(...)`, and vitest cannot construct an arrow-function mock, so the fake is a class.
 vi.mock("@picovoice/pvrecorder-node", () => {
-  const fakeRecorder = () => {
-    const frame = new Int16Array(512).fill(100);
-    const deviceGone = new Error("device gone");
-    return {
-      start: () => undefined,
-      stop: () => undefined,
-      release: () => undefined,
-      getSelectedDevice: () => "Fake microphone",
-      read: vi.fn().mockResolvedValueOnce(frame).mockRejectedValue(deviceGone),
-    };
-  };
-  return { PvRecorder: vi.fn(fakeRecorder) };
+  class FakeRecorder {
+    readonly start = () => undefined;
+    readonly stop = () => undefined;
+    readonly release = () => undefined;
+    readonly getSelectedDevice = () => "Fake microphone";
+    readonly read = vi
+      .fn()
+      .mockResolvedValueOnce(new Int16Array(512).fill(100))
+      .mockRejectedValue(new Error("device gone"));
+  }
+  return { PvRecorder: FakeRecorder };
 });
 
 describe("clip buffer", () => {
