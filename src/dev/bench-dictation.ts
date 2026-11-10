@@ -6,7 +6,7 @@ import { readSyntheticSpeech, SAMPLE_RATE } from "#src/dictation/clip-audio.js";
 import { loadTranscriber, readWhisperBackend, type Transcriber } from "#src/dictation/transcriber.js";
 import { ensureWhisperModel, whisperModels } from "#src/dictation/whisper-models.js";
 
-const TENTHS_PER_UNIT = 10;
+const ONE_DECIMAL_PLACE_SCALE = 10;
 
 const STRING_KIND = "string";
 
@@ -26,7 +26,7 @@ const listCommaSeparatedList = (commaSeparatedNames: string) =>
     .map((word) => word.trim())
     .filter((word) => word !== "");
 
-const roundToTenth = (amount: number) => Math.round(amount * TENTHS_PER_UNIT) / TENTHS_PER_UNIT;
+const roundToTenth = (amount: number) => Math.round(amount * ONE_DECIMAL_PLACE_SCALE) / ONE_DECIMAL_PLACE_SCALE;
 
 // A malformed --seconds or --runs stops the bench instead of timing an empty clip or no decodes at all.
 const durationsSchema = z.array(z.coerce.number().positive());

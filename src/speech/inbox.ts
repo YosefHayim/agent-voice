@@ -15,15 +15,10 @@ import { type CmuxFocus, readCmuxFocus } from "./cmux-focus.js";
 
 const SECONDS_PER_MINUTE = 60;
 const MINUTES_PER_HOUR = 60;
-const HOURS_PER_DAY = 24;
 
 const REPLY_FILE_SUFFIX = ".json";
 
 const SPEAKING_FILE_SUFFIX = ".speaking";
-
-const UNKNOWN_AGENT_ID = "unknown";
-
-const UNKNOWN_FOCUS_KIND = "unknown";
 
 const CMUX_TARGET = "cmux";
 
@@ -92,7 +87,7 @@ export const readSurfaceIdentity = (reply: QueuedReply): string => {
 };
 
 const replyPlace = (reply: QueuedReply): string => {
-  const agentId = reply.source || UNKNOWN_AGENT_ID;
+  const agentId = reply.source || "unknown";
   const surface = readSurfaceIdentity(reply) || TERMINAL_TARGET;
   return `${agentId}:${surface}`;
 };
@@ -125,7 +120,7 @@ export const isSpeaksForFocus = (surface: string, focus: CmuxFocus): boolean => 
       return focus.surface === surface;
     case "away":
       return false;
-    case UNKNOWN_FOCUS_KIND:
+    case "unknown":
       return true;
   }
 };
@@ -163,7 +158,8 @@ const readSeenKeys = (): ReadonlyMap<string, number> => {
     return new Map();
   }
 
-  const seenTtlSeconds = HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE;
+  const hoursPerDay = 24;
+  const seenTtlSeconds = hoursPerDay * MINUTES_PER_HOUR * SECONDS_PER_MINUTE;
   const freshStamps = Object.entries(savedStamps).filter(([, stamp]) => now - stamp <= seenTtlSeconds);
   return new Map(freshStamps);
 };

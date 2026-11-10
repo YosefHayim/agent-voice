@@ -1,4 +1,4 @@
-const HALF = 0.5;
+const ENVELOPE_MIDPOINT = 0.5;
 
 const MAX_INT16 = 32_767;
 export const SAMPLE_RATE = 16_000;
@@ -178,7 +178,7 @@ const readSpeechSample = (index: number): number => {
 
   const envelopeFloor = 0.08;
 
-  const envelope = envelopeFloor + envelopeDepth * (HALF + HALF * syllable);
+  const envelope = envelopeFloor + envelopeDepth * (ENVELOPE_MIDPOINT + ENVELOPE_MIDPOINT * syllable);
   const lowToneHertz = 180;
 
   const low = Math.sin(time * lowToneHertz * TURN);
