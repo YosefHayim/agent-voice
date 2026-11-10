@@ -14,26 +14,26 @@ interface AgentVoiceVariable {
 }
 
 // "off", "0", "false", and "no" switch a feature off; anything else (or unset) leaves it on.
-const isSwitchOn = (text: string | undefined): boolean => {
-  const isUnset = text === undefined;
+const isSwitchOn = (string: string | undefined): boolean => {
+  const isUnset = string == null;
   if (isUnset) {
     return true;
   }
 
   const offWords = ["0", "false", "off", "no"];
-  const word = text.trim().toLowerCase();
+  const word = string.trim().toLowerCase();
   return !offWords.includes(word);
 };
 
-const trimText = (text: string | undefined): string => (text ?? "").trim();
+const trimWord = (string: string | undefined): string => (string ?? "").trim();
 
 export const readEnvironment = (): AgentVoiceEnvironment => ({
-  AGENT_VOICE_HOME: trimText(process.env.AGENT_VOICE_HOME),
-  AGENT_VOICE_CONFIG_FILE: trimText(process.env.AGENT_VOICE_CONFIG_FILE),
-  AGENT_VOICE_DICTATION_MODEL: trimText(process.env.AGENT_VOICE_DICTATION_MODEL),
+  AGENT_VOICE_HOME: trimWord(process.env.AGENT_VOICE_HOME),
+  AGENT_VOICE_CONFIG_FILE: trimWord(process.env.AGENT_VOICE_CONFIG_FILE),
+  AGENT_VOICE_DICTATION_MODEL: trimWord(process.env.AGENT_VOICE_DICTATION_MODEL),
   AGENT_VOICE_DICTATION_LIVE_PREVIEW: isSwitchOn(process.env.AGENT_VOICE_DICTATION_LIVE_PREVIEW),
   AGENT_VOICE_REFINE_PICKER: isSwitchOn(process.env.AGENT_VOICE_REFINE_PICKER),
-  CI: trimText(process.env.CI),
+  CI: trimWord(process.env.CI),
 });
 
 // README and .env.example list exactly these: agent-voice's own variables, not CI.

@@ -2,7 +2,7 @@
 // 8 ms, the pill shows, and the speech worker starts. It runs until `agent-voice off` or `agent-voice reset`.
 
 import { describeError } from "#src/error-message.js";
-import { readConfigOrDefaults } from "#src/settings/config-file.js";
+import { readSettingsOrDefaults } from "#src/settings/config-file.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { sleep } from "#src/sleep.js";
 import { startPill, stopPill } from "#src/workers/pill.js";
@@ -120,7 +120,7 @@ const runWithTranscriber = async (request: {
 };
 
 const loadModelAndRun = async (): Promise<void> => {
-  const settings = readConfigOrDefaults();
+  const settings = readSettingsOrDefaults();
   const environment = readEnvironment();
   const model = selectWhisperModel({ environment, config: settings });
   const loading = makeStatusWriter({ model: model.file, backend: readWhisperBackend(), recording: () => false });
@@ -154,7 +154,7 @@ const loadModelAndRun = async (): Promise<void> => {
 export const runDictationWorker = async (): Promise<void> => {
   const releaseWorkerLock = claimWorkerLock("dictation");
 
-  const isLockTaken = releaseWorkerLock === null;
+  const isLockTaken = releaseWorkerLock == null;
   if (isLockTaken) {
     return;
   }

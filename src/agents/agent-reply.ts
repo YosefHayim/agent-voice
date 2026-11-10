@@ -7,30 +7,30 @@ interface StopReply {
 }
 
 // A missing or null field reads as empty text.
-const textOrEmpty = z
+const stringOrEmpty = z
   .string()
   .nullish()
-  .transform((text) => text ?? "");
+  .transform((string) => string ?? "");
 
 // Grok writes its own camelCase envelope: https://docs.x.ai/build/features/hooks.md
 // Its transcriptPath is Grok's updates.jsonl, not a chat transcript, so it is never read.
 const grokStopSchema = z.object({
   hookEventName: z.string(),
-  reason: textOrEmpty,
-  lastAssistantMessage: textOrEmpty,
+  reason: stringOrEmpty,
+  lastAssistantMessage: stringOrEmpty,
 });
 
 type GrokStop = z.infer<typeof grokStopSchema>;
 
 // Claude Code, Codex, and Devin: https://code.claude.com/docs/en/hooks and https://developers.openai.com/codex/hooks
 const snakeCaseStopSchema = z.object({
-  last_assistant_message: textOrEmpty,
-  transcript_path: textOrEmpty,
-  turn_id: textOrEmpty,
+  last_assistant_message: stringOrEmpty,
+  transcript_path: stringOrEmpty,
+  turn_id: stringOrEmpty,
 });
 
 // Input that is not JSON is simply not a stop reply, so it reads as null.
-const parseJsonOrNull = (stopHookStdin: string): unknown => {
+const parseDocumentOrNull = (stopHookStdin: string): unknown => {
   try {
     return JSON.parse(stopHookStdin);
   } catch {
@@ -49,15 +49,15 @@ const readGrokTurnReply = (grokStop: GrokStop): StopReply | null => {
 };
 
 export const readStopReply = (stopHookStdin: string): StopReply | null => {
-  const stopHookValue = parseJsonOrNull(stopHookStdin);
-  const grokStopReply = grokStopSchema.safeParse(stopHookValue);
+  const stopHookField = parseDocumentOrNull(stopHookStdin);
+  const grokStopReply = grokStopSchema.safeParse(stopHookField);
 
   const isGrokStop = grokStopReply.success;
   if (isGrokStop) {
     return readGrokTurnReply(grokStopReply.data);
   }
 
-  const snakeCaseStopReply = snakeCaseStopSchema.safeParse(stopHookValue);
+  const snakeCaseStopReply = snakeCaseStopSchema.safeParse(stopHookField);
 
   const isNotSnakeCaseStop = !snakeCaseStopReply.success;
   if (isNotSnakeCaseStop) {
@@ -71,16 +71,16 @@ export const readStopReply = (stopHookStdin: string): StopReply | null => {
   };
 };
 
-const contentBlockSchema = z.object({
+const messageBlockSchema = z.object({
   type: z.string(),
   text: z.string().default(""),
 });
 
-type ContentBlock = z.infer<typeof contentBlockSchema>;
+type MessageBlock = z.infer<typeof messageBlockSchema>;
 
 const chatMessageSchema = z.object({
   role: z.string(),
-  content: z.union([z.string(), z.array(contentBlockSchema)]),
+  content: z.union([z.string(), z.array(messageBlockSchema)]),
 });
 
 type ChatMessage = z.infer<typeof chatMessageSchema>;
@@ -89,22 +89,22 @@ type ChatMessage = z.infer<typeof chatMessageSchema>;
 const claudeLineSchema = z.object({ message: chatMessageSchema });
 
 const listTranscriptMessage = (line: string): ReadonlyArray<ChatMessage> => {
-  const lineValue = parseJsonOrNull(line);
-  const claudeLine = claudeLineSchema.safeParse(lineValue);
+  const lineField = parseDocumentOrNull(line);
+  const claudeLine = claudeLineSchema.safeParse(lineField);
 
   const isClaudeLine = claudeLine.success;
   if (isClaudeLine) {
     return [claudeLine.data.message];
   }
 
-  const chatLine = chatMessageSchema.safeParse(lineValue);
+  const chatLine = chatMessageSchema.safeParse(lineField);
   const isChatLine = chatLine.success;
   return isChatLine ? [chatLine.data] : [];
 };
 
-const listContentBlocks = (message: ChatMessage): ReadonlyArray<ContentBlock> => {
-  const isPlainText = typeof message.content === "string";
-  if (isPlainText) {
+const listMessageBlocks = (message: ChatMessage): ReadonlyArray<MessageBlock> => {
+  const isPlainMessage = typeof message.content === "string";
+  if (isPlainMessage) {
     return [{ type: "text", text: message.content }];
   }
 
@@ -113,17 +113,17 @@ const listContentBlocks = (message: ChatMessage): ReadonlyArray<ContentBlock> =>
 
 // Claude Code feeds tool results back as user messages; only a prompt the user typed starts a new reply.
 const isUserPrompt = (message: ChatMessage): boolean => {
-  const blocks = listContentBlocks(message);
+  const blocks = listMessageBlocks(message);
   return message.role === "user" && blocks.every((block) => block.type !== "tool_result");
 };
 
-const listAssistantTexts = (message: ChatMessage): ReadonlyArray<string> => {
+const listAssistantReplies = (message: ChatMessage): ReadonlyArray<string> => {
   const isMessageRoleNotAssistant = message.role !== "assistant";
   if (isMessageRoleNotAssistant) {
     return [];
   }
 
-  const blocks = listContentBlocks(message);
+  const blocks = listMessageBlocks(message);
   return blocks.filter((block) => block.type === "text" && block.text.trim() !== "").map((block) => block.text);
 };
 
@@ -133,5 +133,5 @@ export const replyFromTranscript = (transcript: string): string => {
   const promptFlags = messages.map(isUserPrompt);
   const lastPromptIndex = promptFlags.lastIndexOf(true);
   const replyMessages = messages.slice(lastPromptIndex + 1);
-  return replyMessages.flatMap(listAssistantTexts).join("\n\n");
+  return replyMessages.flatMap(listAssistantReplies).join("\n\n");
 };

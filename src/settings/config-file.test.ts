@@ -4,8 +4,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeTestFolder } from "#src/testing/test-folder.js";
-import { readConfig, readConfigOrDefaults, saveConfig } from "./config-file.js";
-import { defaultConfig } from "./config-schema.js";
+import { readSettings, readSettingsOrDefaults, saveSettings } from "./config-file.js";
+import { defaultSettings } from "./config-schema.js";
 
 let home = "";
 
@@ -24,22 +24,22 @@ afterEach(() => {
 
 describe("config file", () => {
   it("reads the defaults when ~/.agent-voice/config.json does not exist yet", () => {
-    expect(readConfig()).toEqual(defaultConfig);
+    expect(readSettings()).toEqual(defaultSettings);
   });
 
   it("writes every setting and reads the same config back", () => {
-    const hebrewSettings = { ...defaultConfig, dictationLanguage: "he" as const, refineModel: "grok-4.5" };
+    const hebrewSettings = { ...defaultSettings, dictationLanguage: "he" as const, refineModel: "grok-4.5" };
 
-    saveConfig(hebrewSettings);
-    const configPath = path.join(home, "config.json");
-    const savedText = readFileSync(configPath, "utf8");
+    saveSettings(hebrewSettings);
+    const settingsPath = path.join(home, "config.json");
+    const savedSettingsFileReading = readFileSync(settingsPath, "utf8");
 
-    expect(JSON.parse(savedText)).toMatchObject({
+    expect(JSON.parse(savedSettingsFileReading)).toMatchObject({
       dictationLanguage: "he",
       refineModel: "grok-4.5",
       speechVoice: "F4",
     });
-    expect(readConfig()).toEqual(hebrewSettings);
+    expect(readSettings()).toEqual(hebrewSettings);
   });
 
   it("fails on a file it cannot read instead of reading the defaults, so `config set` never replaces it", () => {
@@ -48,17 +48,17 @@ describe("config file", () => {
     symlinkSync("config.json", file);
     vi.spyOn(console, "error").mockImplementation(() => {});
 
-    expect(() => readConfig()).toThrow();
-    expect(readConfigOrDefaults()).toEqual(defaultConfig);
+    expect(() => readSettings()).toThrow();
+    expect(readSettingsOrDefaults()).toEqual(defaultSettings);
     expect(readlinkSync(file)).toBe("config.json");
   });
 
   it("fails on a broken file, while workers fall back to the defaults", () => {
-    const configPath = path.join(home, "config.json");
-    writeFileSync(configPath, '{ "speechMode": "loud" }');
+    const settingsPath = path.join(home, "config.json");
+    writeFileSync(settingsPath, '{ "speechMode": "loud" }');
     vi.spyOn(console, "error").mockImplementation(() => {});
 
-    expect(() => readConfig()).toThrow();
-    expect(readConfigOrDefaults()).toEqual(defaultConfig);
+    expect(() => readSettings()).toThrow();
+    expect(readSettingsOrDefaults()).toEqual(defaultSettings);
   });
 });

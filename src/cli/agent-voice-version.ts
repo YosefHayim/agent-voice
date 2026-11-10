@@ -2,28 +2,28 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-interface PackageJson {
+interface PackageDocument {
   version: string;
 }
 
-const findPackageJsonPath = (folder: string): string => {
+const findPackageDocumentPath = (folder: string): string => {
   const candidatePath = path.join(folder, "package.json");
 
-  const isTherePackageJson = existsSync(candidatePath);
-  if (isTherePackageJson) return candidatePath;
+  const isTherePackageDocument = existsSync(candidatePath);
+  if (isTherePackageDocument) return candidatePath;
 
   const parentFolder = path.dirname(folder);
 
   const isFilesystemRoot = parentFolder === folder;
   if (isFilesystemRoot) throw new Error("No package.json found above the CLI files.");
 
-  return findPackageJsonPath(parentFolder);
+  return findPackageDocumentPath(parentFolder);
 };
 
 // The folder depth differs between `src/cli` and the compiled `dist/src/cli`, so the file is found by walking up.
 const cliFolder = path.dirname(fileURLToPath(import.meta.url));
-const packageJsonPath = findPackageJsonPath(cliFolder);
-const packageJsonText = readFileSync(packageJsonPath, "utf8");
-const packageJson: PackageJson = JSON.parse(packageJsonText);
+const packageDocumentPath = findPackageDocumentPath(cliFolder);
+const packageDocumentFile = readFileSync(packageDocumentPath, "utf8");
+const packageDocument: PackageDocument = JSON.parse(packageDocumentFile);
 
-export const agentVoiceVersion = packageJson.version;
+export const agentVoiceVersion = packageDocument.version;

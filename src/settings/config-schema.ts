@@ -19,8 +19,8 @@ const createAliasedChoiceSchema = <Choice extends string>(aliases: Readonly<Reco
 const readLiteralAliases = <Choice extends string>(
   choices: ReadonlyArray<Choice>,
 ): Readonly<Record<string, Choice>> => {
-  const lowercaseEntries = choices.map((choice) => [choice.toLowerCase(), choice]);
-  return Object.fromEntries(lowercaseEntries);
+  const lowercaseLines = choices.map((choice) => [choice.toLowerCase(), choice]);
+  return Object.fromEntries(lowercaseLines);
 };
 
 const createRangedNumberSchema = (request: {
@@ -81,8 +81,8 @@ const refineEfforts = ["minimal", "low", "medium", "high", "xhigh"] as const;
 
 const dictationHoldKeys = ["shift", "right-option"] as const;
 
-// Every setting's value rule. The title and description for each setting are in configSettings below.
-export const configSchema = z.strictObject({
+// Every setting's value rule. The title and description for each setting are in settingDefinitions below.
+export const settingsSchema = z.strictObject({
   speechMode: z.enum(speechModes).default("auto"),
   speechMuted: z.boolean().default(true),
   speechVoice: speechVoiceSchema.default("F4"),
@@ -110,32 +110,32 @@ export const configSchema = z.strictObject({
   refineCmuxPressEnter: z.boolean().default(false),
 });
 
-export type Config = z.infer<typeof configSchema>;
+export type Settings = z.infer<typeof settingsSchema>;
 
-type ConfigKey = keyof Config;
+type SettingsKey = keyof Settings;
 
 // Reads a settings file or a `config set` value: one line per problem, with the setting name first.
-const describeConfigIssues = (error: ZodError): string =>
+const describeSettingsIssues = (error: ZodError): string =>
   error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("\n");
 
 // Throws with the issues as text when a value does not match the config schema.
-export const decodeConfig = (storedSettings: unknown): Config => {
-  const checkedReply = configSchema.safeParse(storedSettings);
+export const decodeSettings = (storedSettings: unknown): Settings => {
+  const checkedReply = settingsSchema.safeParse(storedSettings);
 
   const isReplyInvalid = !checkedReply.success;
   if (isReplyInvalid) {
-    throw new Error(describeConfigIssues(checkedReply.error));
+    throw new Error(describeSettingsIssues(checkedReply.error));
   }
 
   return checkedReply.data;
 };
 
-export const defaultConfig: Config = decodeConfig({});
+export const defaultSettings: Settings = decodeSettings({});
 
 type SettingKind = "number" | "boolean" | "text";
 
-export interface ConfigSetting {
-  readonly key: ConfigKey;
+export interface SettingDefinition {
+  readonly key: SettingsKey;
   readonly name: string;
   readonly label: string;
   readonly description: string;
@@ -145,18 +145,18 @@ export interface ConfigSetting {
 }
 
 // e.g. "speechWordsPerMinute" → "speech-words-per-minute"
-const createSettingName = (key: ConfigKey): string => key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+const createSettingName = (key: SettingsKey): string => key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 
-type SettingDetails = Omit<ConfigSetting, "key" | "name">;
+type SettingDetails = Omit<SettingDefinition, "key" | "name">;
 
-const createSetting = (key: ConfigKey, details: SettingDetails): ConfigSetting => ({
+const createSetting = (key: SettingsKey, details: SettingDetails): SettingDefinition => ({
   key,
   name: createSettingName(key),
   ...details,
 });
 
 // Each setting's CLI label (title) and meaning (description), in the order `agent-voice config list` shows them.
-export const configSettings: ReadonlyArray<ConfigSetting> = [
+export const settingDefinitions: ReadonlyArray<SettingDefinition> = [
   createSetting("speechMode", {
     label: "speech mode",
     description:
@@ -289,9 +289,9 @@ export const configSettings: ReadonlyArray<ConfigSetting> = [
   }),
 ];
 
-export type ConfigValue = string | number | boolean;
+export type SettingsField = string | number | boolean;
 
-const parseNumberText = (trimmed: string): number => {
+const parseNumberWord = (trimmed: string): number => {
   const number = Number(trimmed);
 
   const isNotANumber = trimmed === "" || Number.isNaN(number);
@@ -302,7 +302,7 @@ const parseNumberText = (trimmed: string): number => {
   return number;
 };
 
-const parseBooleanText = (trimmed: string): boolean => {
+const parseBooleanWord = (trimmed: string): boolean => {
   const isTrue = trimmed === "true";
   const isFalse = trimmed === "false";
 
@@ -318,10 +318,10 @@ const parseBooleanText = (trimmed: string): boolean => {
 };
 
 // Turns CLI text into the value a setting stores. Empty text returns null, which clears an optional setting.
-export const parseSettingValue = (request: {
-  readonly setting: ConfigSetting;
+export const parseSettingField = (request: {
+  readonly setting: SettingDefinition;
   readonly enteredWords: string;
-}): ConfigValue | null => {
+}): SettingsField | null => {
   const trimmed = request.enteredWords.trim();
 
   const isClearedOptional = request.setting.optional && trimmed === "";
@@ -331,23 +331,23 @@ export const parseSettingValue = (request: {
 
   switch (request.setting.kind) {
     case "number":
-      return parseNumberText(trimmed);
+      return parseNumberWord(trimmed);
     case "boolean":
-      return parseBooleanText(trimmed);
+      return parseBooleanWord(trimmed);
     case "text":
       return request.enteredWords;
   }
 };
 
 // A cleared optional setting leaves config.json without the key instead of storing an empty value.
-export const setSettingValue = (request: {
-  readonly config: Config;
-  readonly key: ConfigKey;
-  readonly value: ConfigValue | null;
-}): Config => {
-  const isCleared = request.value === null;
-  const changedConfig = isCleared
+export const setSettingField = (request: {
+  readonly config: Settings;
+  readonly key: SettingsKey;
+  readonly value: SettingsField | null;
+}): Settings => {
+  const isCleared = request.value == null;
+  const changedSettings = isCleared
     ? Object.fromEntries(Object.entries(request.config).filter(([key]) => key !== request.key))
     : { ...request.config, [request.key]: request.value };
-  return decodeConfig(changedConfig);
+  return decodeSettings(changedSettings);
 };

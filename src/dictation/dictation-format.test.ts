@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createDictationText, parseReplacements, readPromptBoost } from "./dictation-format.js";
+import { createDictationTranscript, parseReplacements, readPromptBoost } from "./dictation-format.js";
 
 describe("formatDictation", () => {
   const replacements = new Map([["Joseph", "Yosef"]]);
@@ -17,7 +17,7 @@ describe("formatDictation", () => {
     ["is it ready question mark yes exclamation point", "Is it ready? Yes! "],
     ["", ""],
   ])("formats %j", (spoken, typed) => {
-    expect(createDictationText(spoken, replacements)).toBe(typed);
+    expect(createDictationTranscript(spoken, replacements)).toBe(typed);
   });
 
   it("matches multi-word replacements, longest first, ignoring case and trailing punctuation", () => {
@@ -25,18 +25,18 @@ describe("formatDictation", () => {
       ["type script", "TypeScript"],
       ["type", "kind"],
     ]);
-    expect(createDictationText("I like Type Script.", terms)).toBe("I like TypeScript. ");
-    expect(createDictationText("what type is it", terms)).toBe("What kind is it ");
+    expect(createDictationTranscript("I like Type Script.", terms)).toBe("I like TypeScript. ");
+    expect(createDictationTranscript("what type is it", terms)).toBe("What kind is it ");
   });
 
   it("keeps the punctuation Whisper put after a replaced word, so the next sentence still starts with a capital", () => {
     const names = new Map([["Joseph", "Yosef"]]);
-    expect(createDictationText("my name is Joseph. thanks", names)).toBe("My name is Yosef. Thanks ");
-    expect(createDictationText("Joseph, hi", names)).toBe("Yosef, hi ");
+    expect(createDictationTranscript("my name is Joseph. thanks", names)).toBe("My name is Yosef. Thanks ");
+    expect(createDictationTranscript("Joseph, hi", names)).toBe("Yosef, hi ");
   });
 
   it("leaves Hebrew words untouched", () => {
-    expect(createDictationText("שלום comma עולם", new Map())).toBe("שלום, עולם ");
+    expect(createDictationTranscript("שלום comma עולם", new Map())).toBe("שלום, עולם ");
   });
 });
 

@@ -30,8 +30,8 @@ const identitySchema = z.object({
 // A line that is not JSON is no answer, the same as a socket that closed before replying.
 const parseRpcReply = (line: string): z.infer<typeof rpcReplySchema> | null => {
   try {
-    const replyJson: unknown = JSON.parse(line);
-    const checkedReply = rpcReplySchema.safeParse(replyJson);
+    const replyDocument: unknown = JSON.parse(line);
+    const checkedReply = rpcReplySchema.safeParse(replyDocument);
 
     const isReplyInvalid = !checkedReply.success;
     if (isReplyInvalid) {
@@ -137,7 +137,7 @@ export const readCmuxFocus = async (socketPath: string): Promise<CmuxFocus> => {
   const windowsReply = await askCmux({ socketPath, method: "window.list" });
   const identityReply = await askCmux({ socketPath, method: "system.identify" });
 
-  const isThereNoAnswer = windowsReply === null || identityReply === null;
+  const isThereNoAnswer = windowsReply == null || identityReply == null;
   if (isThereNoAnswer) {
     return { kind: "unknown" };
   }

@@ -1,5 +1,5 @@
 import { describeError } from "#src/error-message.js";
-import { readConfigOrDefaults } from "#src/settings/config-file.js";
+import { readSettingsOrDefaults } from "#src/settings/config-file.js";
 import { sleep } from "#src/sleep.js";
 import { appendSpeechLog } from "#src/workers/worker-log.js";
 import { claimWorkerLock, stopRequested } from "#src/workers/worker-processes.js";
@@ -20,7 +20,7 @@ export const speakNextReply = async (engine: SupertonicEngine, player: SpeechPla
   // Before the claim, which can wait on Cmux: a stop that comes in meanwhile must still silence the reply.
   player.reset();
 
-  const settings = readConfigOrDefaults();
+  const settings = readSettingsOrDefaults();
 
   // Before the dictation wait, so a reply that came in while muted is never kept for after an unmute.
   if (settings.speechMuted) {
@@ -35,7 +35,7 @@ export const speakNextReply = async (engine: SupertonicEngine, player: SpeechPla
 
   const nextReply = await claimNextReply(settings.speechMode);
 
-  const isThereNoNext = nextReply === null;
+  const isThereNoNext = nextReply == null;
   if (isThereNoNext) {
     return "idle";
   }
@@ -69,7 +69,7 @@ const pauseAfter = (step: SpeakStep): number => {
 
 const speakUntilStopped = async (engine: SupertonicEngine, player: SpeechPlayer): Promise<void> => {
   while (!stopRequested()) {
-    const settings = readConfigOrDefaults();
+    const settings = readSettingsOrDefaults();
 
     const isSpeechOff = settings.speechMode === "off";
     if (isSpeechOff) {
@@ -90,7 +90,7 @@ const logDownload = (file: string, bytes: number): void => {
 const loadAndSpeak = async (player: SpeechPlayer): Promise<void> => {
   // A claim left by a crash would otherwise look like speech in progress forever.
   removeInboxFiles([".speaking"]);
-  const settings = readConfigOrDefaults();
+  const settings = readSettingsOrDefaults();
 
   const isSpeechOff = settings.speechMode === "off";
   if (isSpeechOff) {
@@ -111,7 +111,7 @@ export const runSpeechWorker = async (): Promise<void> => {
   process.on("SIGUSR2", player.stop);
   const releaseWorkerLock = claimWorkerLock("speech");
 
-  const isLockTaken = releaseWorkerLock === null;
+  const isLockTaken = releaseWorkerLock == null;
   if (isLockTaken) {
     return;
   }

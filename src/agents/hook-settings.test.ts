@@ -17,13 +17,13 @@ const command = replyHookCommand({
   agent: "codex",
 });
 
-const readAdded = (source: string, hookCommand = command) =>
-  addReplyHook({ source, command: hookCommand, agent: "codex" });
+const readAdded = (code: string, hookCommand = command) =>
+  addReplyHook({ source: code, command: hookCommand, agent: "codex" });
 
-const readRemoved = (source: string) => removeReplyHook({ source, agent: "codex" });
+const readRemoved = (code: string) => removeReplyHook({ source: code, agent: "codex" });
 
-const stopCommands = (source: string): ReadonlyArray<string> =>
-  (parse(source)?.hooks?.Stop || []).flatMap((group: { hooks: ReadonlyArray<{ command: string }> }) =>
+const stopCommands = (code: string): ReadonlyArray<string> =>
+  (parse(code)?.hooks?.Stop || []).flatMap((group: { hooks: ReadonlyArray<{ command: string }> }) =>
     group.hooks.map((hook) => hook.command),
   );
 
@@ -72,11 +72,11 @@ describe("addReplyHook and removeReplyHook", () => {
   it("appends one Stop entry, keeps every other byte, and restores the file exactly", () => {
     const withHook = readAdded(claudeSettings);
     const stopArrayEnd = claudeSettings.indexOf("    ]");
-    const textBeforeStopEnd = claudeSettings.slice(0, stopArrayEnd).trimEnd();
+    const stringBeforeStopEnd = claudeSettings.slice(0, stopArrayEnd).trimEnd();
 
     expect(withHook.changed).toBe(true);
     expect(stopCommands(withHook.source)).toEqual(["notify-send done", command]);
-    expect(withHook.source.startsWith(textBeforeStopEnd)).toBe(true);
+    expect(withHook.source.startsWith(stringBeforeStopEnd)).toBe(true);
     expect(withHook.source).toContain("// my settings");
     expect(readRemoved(withHook.source)).toEqual({ source: claudeSettings, changed: true });
   });

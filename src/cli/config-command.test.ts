@@ -21,10 +21,10 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-const readAgentVoice = (args: ReadonlyArray<string>) => {
+const readAgentVoice = (argumentList: ReadonlyArray<string>) => {
   const { AGENT_VOICE_CONFIG_FILE: _ignored, AGENT_VOICE_DICTATION_MODEL: _forced, ...environment } = process.env;
   return runAgentVoice({
-    args,
+    args: argumentList,
     environment: { ...environment, HOME: home, AGENT_VOICE_HOME: path.join(home, ".agent-voice") },
   });
 };
@@ -56,7 +56,7 @@ describe("agent-voice dictation hold key", () => {
 const startStandInSpeechWorker = async (marker: string) => {
   const listener = `process.on("SIGUSR2", () => { require("node:fs").writeFileSync(process.argv[1], "stopped"); process.exit(0); }); setInterval(() => {}, 1 << 30);`;
   sleeper = spawn(process.execPath, ["-e", listener, marker, "worker", "speech"], { stdio: "ignore" });
-  await new Promise((resolve) => sleeper?.once("spawn", resolve));
+  await new Promise((fulfill) => sleeper?.once("spawn", fulfill));
   const agentVoiceFolder = path.join(home, ".agent-voice");
   const pidFile = path.join(agentVoiceFolder, "speech.pid");
   const pid = String(sleeper.pid);
@@ -67,7 +67,7 @@ const startStandInSpeechWorker = async (marker: string) => {
 const isSpeechStopped = async (marker: string) => {
   const deadline = Date.now() + 3_000;
   while (!existsSync(marker) && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((fulfill) => setTimeout(fulfill, 50));
   }
   return existsSync(marker) && readFileSync(marker, "utf8") === "stopped";
 };
@@ -104,9 +104,9 @@ describe("agent-voice speech-muted", () => {
   it("stops the reply being read now when muted again", async () => {
     const marker = path.join(home, "stopped");
     await startStandInSpeechWorker(marker);
-    const configFile = path.join(home, ".agent-voice", "config.json");
-    const configText = JSON.stringify({ readSpeechMuted: false });
-    writeFileSync(configFile, configText);
+    const settingsFile = path.join(home, ".agent-voice", "config.json");
+    const serializedSettings = JSON.stringify({ readSpeechMuted: false });
+    writeFileSync(settingsFile, serializedSettings);
 
     const set = await readAgentVoice(["config", "set", "speech-muted", "true"]);
 

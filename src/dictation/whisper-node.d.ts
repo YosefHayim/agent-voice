@@ -19,7 +19,7 @@ export type TranscribedSpeech = {
 export type WhisperContext = {
   readonly transcribeData: (
     pcm: ArrayBuffer,
-    options?: TranscribeOptions,
+    transcribeOptions?: TranscribeOptions,
   ) => { readonly stop: () => Promise<void>; readonly promise: Promise<TranscribedSpeech> };
   readonly release: () => Promise<void>;
 };

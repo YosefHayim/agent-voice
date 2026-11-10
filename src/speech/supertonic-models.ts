@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import { readStateFolder } from "#src/settings/agent-voice-home.js";
+import { readStatusFolder } from "#src/settings/agent-voice-home.js";
 import { speechVoices } from "#src/settings/config-schema.js";
 import { downloadFile } from "#src/storage/model-download.js";
 
@@ -16,7 +16,7 @@ const supertonicFiles: ReadonlyArray<string> = [
 ];
 
 export const readSupertonicFolder = (): string => {
-  const modelsFolder = readStateFolder("models");
+  const modelsFolder = readStatusFolder("models");
   return path.join(modelsFolder, "supertonic-3");
 };
 

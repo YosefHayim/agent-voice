@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decodeWav } from "#src/speech/wav-file.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
 import { readSamplesFromPcm } from "./clip-audio.js";
-import { createDictationText } from "./dictation-format.js";
+import { createDictationTranscript } from "./dictation-format.js";
 import { loadTranscriber } from "./transcriber.js";
 
 // Smoke tests only read a Whisper model already in ~/.agent-voice/models and never download one.
@@ -22,7 +22,7 @@ const readInstalledModel = (): string | undefined => {
 
   const modelName = readdirSync(modelsFolder).find((file) => /^ggml-.*\.bin$/u.test(file));
 
-  const isModelNameMissing = modelName === undefined;
+  const isModelNameMissing = modelName == null;
   if (isModelNameMissing) {
     return undefined;
   }
@@ -32,7 +32,7 @@ const readInstalledModel = (): string | undefined => {
 
 const modelFile = readInstalledModel();
 
-describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisper transcription (smoke)", () => {
+describe.skipIf(modelFile == null || process.platform !== "darwin")("Whisper transcription (smoke)", () => {
   const modelPath = modelFile || "";
   let folder = "";
 
@@ -44,10 +44,10 @@ describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisp
     rmSync(folder, { recursive: true, force: true });
   });
 
-  const readSpokenFixture = (text: string): Float32Array => {
+  const readSpokenFixture = (string: string): Float32Array => {
     const aiff = path.join(folder, "spoken.aiff");
     const wav = path.join(folder, "spoken.wav");
-    execFileSync("say", ["-o", aiff, text]);
+    execFileSync("say", ["-o", aiff, string]);
     execFileSync("afconvert", ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", aiff, wav]);
     const wavBytes = readFileSync(wav);
 
@@ -68,7 +68,7 @@ describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisp
     await transcriber.warmUp();
     const transcription = await transcriber.transcribe({ samples, language: "en", prompt: "worktrees" });
     await transcriber.release();
-    const formatted = createDictationText(transcription.text, new Map());
+    const formatted = createDictationTranscript(transcription.text, new Map());
 
     expect(transcription.ranWhisper).toBe(true);
     expect(transcription.text.toLowerCase()).toMatch(/folder.*push every/u);

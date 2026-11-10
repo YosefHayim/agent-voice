@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { configSettings } from "./config-schema.js";
+import { settingDefinitions } from "./config-schema.js";
 import { agentVoiceVariables } from "./environment-variables.js";
 
 const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf8");
@@ -10,10 +10,10 @@ const exampleVariables = readFileSync(new URL("../../.env.example", import.meta.
 
 describe("settings docs", () => {
   it("README documents every setting with its own description in its own row", () => {
-    const rows = readme.split("\n");
-    for (const setting of configSettings) {
+    const storedList = readme.split("\n");
+    for (const setting of settingDefinitions) {
       const description = setting.description.replaceAll("|", "\\|");
-      const documented = rows.some(
+      const documented = storedList.some(
         (line) => line.startsWith(`| \`${setting.name}\` |`) && line.includes(` | ${description} |`),
       );
       expect(documented, setting.name).toBe(true);

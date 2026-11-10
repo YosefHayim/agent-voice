@@ -33,10 +33,10 @@ export const isPickerEnabled = (): boolean => {
   return environment.AGENT_VOICE_REFINE_PICKER && environment.CI === "" && process.platform === "darwin";
 };
 
-const escapeAppleScriptText = (plainText: string): string => plainText.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"');
+const escapeAppleScriptLiteral = (word: string): string => word.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"');
 
 const createAppleScriptList = (labels: ReadonlyArray<string>): string => {
-  const quotedLabels = labels.map((label) => `"${escapeAppleScriptText(label)}"`);
+  const quotedLabels = labels.map((label) => `"${escapeAppleScriptLiteral(label)}"`);
   return `{${quotedLabels.join(", ")}}`;
 };
 
@@ -84,7 +84,7 @@ const chooseFromList = async (request: {
   }
 
   const labelList = createAppleScriptList(orderedLabels);
-  const prompt = escapeAppleScriptText(request.prompt);
+  const prompt = escapeAppleScriptLiteral(request.prompt);
   const script = `try
   set theList to ${labelList}
   set theChoice to choose from list theList with title "${PICKER_TITLE}" with prompt "${prompt}" default items {item 1 of theList} OK button name "Use" cancel button name "Cancel"
@@ -105,9 +105,9 @@ end try`;
 };
 
 const showAlert = async (request: { readonly title: string; readonly message: string }): Promise<void> => {
-  const title = escapeAppleScriptText(request.title);
+  const title = escapeAppleScriptLiteral(request.title);
   const shortMessage = request.message.slice(0, 900);
-  const message = escapeAppleScriptText(shortMessage);
+  const message = escapeAppleScriptLiteral(shortMessage);
   const script = `try\n  display alert "${title}" message "${message}" as warning buttons {"OK"} default button "OK"\nend try`;
   try {
     await runOsascript(script, ALERT_TIMEOUT_MS);
@@ -119,7 +119,7 @@ const showAlert = async (request: { readonly title: string; readonly message: st
 const readListedModels = (providers: ReadonlyArray<DiscoveredProvider>, id: ProviderId): ReadonlyArray<string> => {
   const listed = providers.find((provider) => provider.id === id);
 
-  const isListedMissing = listed === undefined;
+  const isListedMissing = listed == null;
   if (isListedMissing) {
     return [];
   }
@@ -143,7 +143,7 @@ const pickPreferredModel = (
 const readSavedCodexModel = (): string => {
   const saved = readSavedChoice();
 
-  const isSavedMissing = saved === null;
+  const isSavedMissing = saved == null;
   if (isSavedMissing) {
     return "";
   }
@@ -182,7 +182,7 @@ const createProviderLabel = (provider: DiscoveredProvider): string =>
 const pickDefaultProviderLabel = (providers: ReadonlyArray<DiscoveredProvider>, preferredProvider: string): string => {
   const preferred = providers.find((provider) => provider.id === preferredProvider) ?? providers[0];
 
-  const isPreferredMissing = preferred === undefined;
+  const isPreferredMissing = preferred == null;
   if (isPreferredMissing) {
     return "";
   }
@@ -234,14 +234,14 @@ export const pickRefineTargetWithDialogs = async (request: {
     defaultLabel: pickDefaultProviderLabel(providers, request.preferredProvider),
   });
 
-  const isProviderDismissed = chosenLabel === null;
+  const isProviderDismissed = chosenLabel == null;
   if (isProviderDismissed) {
     return null;
   }
 
   const provider = findProviderWithLabel(providers, chosenLabel);
 
-  const isProviderUnknown = provider === null;
+  const isProviderUnknown = provider == null;
   if (isProviderUnknown) {
     return null;
   }
@@ -258,7 +258,7 @@ export const pickRefineTargetWithDialogs = async (request: {
     defaultLabel: models[0] || "",
   });
 
-  const isModelDismissed = chosenModel === null;
+  const isModelDismissed = chosenModel == null;
   if (isModelDismissed) {
     return null;
   }
@@ -279,7 +279,7 @@ export const pickRefineTargetWithDialogs = async (request: {
     defaultLabel: effortDefault,
   });
 
-  const isEffortDismissed = chosenEffort === null;
+  const isEffortDismissed = chosenEffort == null;
   if (isEffortDismissed) {
     return null;
   }

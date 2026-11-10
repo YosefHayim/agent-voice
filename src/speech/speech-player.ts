@@ -2,8 +2,8 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { readStateFolder } from "#src/settings/agent-voice-home.js";
-import type { Config } from "#src/settings/config-schema.js";
+import { readStatusFolder } from "#src/settings/agent-voice-home.js";
+import type { Settings } from "#src/settings/config-schema.js";
 import { writePrivateFile } from "#src/storage/state-files.js";
 import { convertMarkdownToSpeech } from "./markdown-to-speech.js";
 import { chunkSpeech, readSpeedFromWordsPerMinute, SPEECH_CHUNK_CHARACTERS } from "./speech-chunks.js";
@@ -42,7 +42,7 @@ export const makeSpeechPlayer = () => {
 
 export type SpeechPlayer = ReturnType<typeof makeSpeechPlayer>;
 
-type Voice = { readonly voice: Config["speechVoice"]; readonly wordsPerMinute: number };
+type Voice = { readonly voice: Settings["speechVoice"]; readonly wordsPerMinute: number };
 
 const listSpeechPieces = (markdown: string): ReadonlyArray<string> => {
   const speech = convertMarkdownToSpeech(markdown);
@@ -51,11 +51,11 @@ const listSpeechPieces = (markdown: string): ReadonlyArray<string> => {
 
 const createPieceSynthesizer = (engine: SupertonicEngine, voice: Voice) => {
   const speed = readSpeedFromWordsPerMinute(voice.wordsPerMinute);
-  return (text: string) => engine.synthesize({ text, voice: voice.voice, speed });
+  return (string: string) => engine.synthesize({ text: string, voice: voice.voice, speed });
 };
 
 const chunkFile = (index: number): string => {
-  const audioFolder = readStateFolder("audio");
+  const audioFolder = readStatusFolder("audio");
   return path.join(audioFolder, `speech-${process.pid}-${index % 2}.wav`);
 };
 
@@ -128,8 +128,8 @@ export const writeMarkdownWav = async (request: {
   }
 
   const wav = encodeWav({ samples, sampleRate: request.engine.sampleRate });
-  const outputFolder = path.dirname(request.outputFile);
-  mkdirSync(outputFolder, { recursive: true });
+  const printoutFolder = path.dirname(request.outputFile);
+  mkdirSync(printoutFolder, { recursive: true });
   writeFileSync(request.outputFile, wav);
   return samples.length / request.engine.sampleRate;
 };

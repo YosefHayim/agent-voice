@@ -1,5 +1,5 @@
 import type { CommandSpec } from "./command-spec.js";
-import { configCommand } from "./config-command.js";
+import { settingsCommand } from "./config-command.js";
 import { devinCommand } from "./devin-command.js";
 import { doctorCommand } from "./doctor-command.js";
 import { hotkeyCheckCommand } from "./hotkey-check-command.js";
@@ -18,7 +18,7 @@ export const commandSpecs: ReadonlyArray<CommandSpec> = [
   offCommand,
   statusCommand,
   doctorCommand,
-  configCommand,
+  settingsCommand,
   speakCommand,
   renderCommand,
   refineCommand,

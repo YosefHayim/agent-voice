@@ -21,11 +21,11 @@ beforeEach(async () => {
     });
     const pidPath = path.join(home, `${kind}.pid`);
     writeFileSync(pidPath, `${sleeper.pid}`);
-    return { sleeper, ready: new Promise((resolve) => sleeper.once("spawn", resolve)) };
+    return { sleeper, ready: new Promise((fulfill) => sleeper.once("spawn", fulfill)) };
   });
-  sleepers = spawned.map((entry) => entry.sleeper);
-  for (const entry of spawned) {
-    await entry.ready;
+  sleepers = spawned.map((line) => line.sleeper);
+  for (const spawnedSleeper of spawned) {
+    await spawnedSleeper.ready;
   }
 });
 
@@ -36,9 +36,9 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-const writeConfig = (configText: string): void => {
-  const configPath = path.join(home, "config.json");
-  writeFileSync(configPath, configText);
+const writeSettings = (serializedSettings: string): void => {
+  const settingsPath = path.join(home, "config.json");
+  writeFileSync(settingsPath, serializedSettings);
 };
 
 const runHook = (request: {
@@ -48,11 +48,11 @@ const runHook = (request: {
   readonly speechMuted?: boolean;
   readonly environment?: Readonly<Record<string, string>>;
 }) => {
-  const configText = JSON.stringify({
+  const serializedSettings = JSON.stringify({
     speechMode: request.speechMode || "auto",
     speechMuted: request.speechMuted === true,
   });
-  writeConfig(configText);
+  writeSettings(serializedSettings);
   return runAgentVoice({
     args: ["reply", "--agent", request.agent],
     stdin: request.stdin,
@@ -93,13 +93,13 @@ const isTestWorkerRunning = (): boolean => {
 const isTestWorkerExited = async (): Promise<boolean> => {
   const deadline = Date.now() + WORKER_EXIT_TIMEOUT_MS;
   while (isTestWorkerRunning() && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((fulfill) => setTimeout(fulfill, 100));
   }
   return !isTestWorkerRunning();
 };
 
-const runReply = (args: ReadonlyArray<string>, stdin: string) =>
-  runAgentVoice({ args: ["reply", ...args], stdin, environment: { ...process.env, AGENT_VOICE_HOME: home } });
+const runReply = (argumentList: ReadonlyArray<string>, stdin: string) =>
+  runAgentVoice({ args: ["reply", ...argumentList], stdin, environment: { ...process.env, AGENT_VOICE_HOME: home } });
 
 const listQueued = (): ReadonlyArray<unknown> => {
   const inbox = path.join(home, "inbox");
@@ -111,8 +111,8 @@ const listQueued = (): ReadonlyArray<unknown> => {
 
   return readdirSync(inbox).map((name) => {
     const replyPath = path.join(inbox, name);
-    const replyText = readFileSync(replyPath, "utf8");
-    return JSON.parse(replyText);
+    const replyFileReading = readFileSync(replyPath, "utf8");
+    return JSON.parse(replyFileReading);
   });
 };
 
@@ -202,8 +202,8 @@ describe("agent-voice reply (the agent Stop hook)", () => {
       }),
     ]);
     const queuedReplies = listQueued();
-    const queuedText = JSON.stringify(queuedReplies);
-    expect(queuedText).not.toContain("must-not-leak");
+    const queuedRepliesDocument = JSON.stringify(queuedReplies);
+    expect(queuedRepliesDocument).not.toContain("must-not-leak");
   });
 
   it("queues a finished Grok turn and ignores a session close", async () => {
@@ -227,19 +227,19 @@ describe("agent-voice reply (the agent Stop hook)", () => {
   });
 
   it("exits 0 with no output and queues nothing when --agent is unknown, missing, empty, or has extra arguments", async () => {
-    const configText = JSON.stringify({ speechMode: "auto", speechMuted: false });
-    writeConfig(configText);
+    const serializedSettings = JSON.stringify({ speechMode: "auto", speechMuted: false });
+    writeSettings(serializedSettings);
     const stdin = JSON.stringify({ last_assistant_message: "Should not be queued" });
-    for (const args of [
+    for (const argumentList of [
       ["--agent", "nosuch"],
       [],
       ["--agent"],
       ["--agent="],
       ["--bogus", "--agent", "renamed-agent"],
     ]) {
-      const execution = await runReply(args, stdin);
-      expect([args.join(" "), execution.status, execution.stdout, execution.stderr]).toEqual([
-        args.join(" "),
+      const execution = await runReply(argumentList, stdin);
+      expect([argumentList.join(" "), execution.status, execution.stdout, execution.stderr]).toEqual([
+        argumentList.join(" "),
         0,
         "",
         "",
@@ -257,7 +257,7 @@ describe("agent-voice reply (the agent Stop hook)", () => {
       const execution = await runHook({ agent: "claude-code", stdin });
       expect([execution.status, execution.stdout, execution.stderr]).toEqual([0, "", ""]);
     }
-    writeConfig("{ broken");
+    writeSettings("{ broken");
     const droppedReply = JSON.stringify({ last_assistant_message: "dropped, because the defaults are muted" });
     const broken = await runReply(["--agent", "codex"], droppedReply);
     expect([broken.status, broken.stdout, broken.stderr]).toEqual([0, "", ""]);

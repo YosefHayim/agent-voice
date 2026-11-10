@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { z } from "zod";
 
-import { readJsonFile, readTextIfReadable } from "#src/storage/state-files.js";
+import { readDocumentFile, readFileIfReadable } from "#src/storage/state-files.js";
 import { containsAny, dedupe, findFirstCli, listNonBlankLines, runCliLines } from "./agent-cli.js";
 import { readCodexLastGoodModel } from "./refine-choices.js";
 
@@ -60,7 +60,7 @@ const listHelpLines = (executable: string) =>
     signal: AbortSignal.timeout(HELP_TIMEOUT_MS),
   });
 
-const findMatches = (line: string, pattern: RegExp): ReadonlyArray<string> => line.match(pattern) ?? [];
+const findPatternTokens = (line: string, pattern: RegExp): ReadonlyArray<string> => line.match(pattern) ?? [];
 
 const readFirstWord = (line: string): string => line.split(/\s+/u)[0] ?? "";
 
@@ -95,9 +95,9 @@ const readModelSlug = (model: CodexCachedModel): string => (model.slug || model.
 
 // The live account catalog the Codex CLI caches.
 export const listCodexCachedModels = (): ReadonlyArray<string> => {
-  const modelsCache = readJsonFile({ path: readCodexFile("models_cache.json"), schema: codexModelsCacheSchema });
+  const modelsCache = readDocumentFile({ path: readCodexFile("models_cache.json"), schema: codexModelsCacheSchema });
 
-  const isCacheMissing = modelsCache === null;
+  const isCacheMissing = modelsCache == null;
   if (isCacheMissing) {
     return [];
   }
@@ -112,8 +112,8 @@ const isModelSetting = (line: string): boolean =>
   line.startsWith("model") && !line.startsWith("model_") && line.includes("=");
 
 const listCodexConfiguredModel = (): ReadonlyArray<string> => {
-  const configToml = readTextIfReadable(readCodexFile("config.toml")) ?? "";
-  const modelLine = listNonBlankLines(configToml).find(isModelSetting);
+  const settingsToml = readFileIfReadable(readCodexFile("config.toml")) ?? "";
+  const modelLine = listNonBlankLines(settingsToml).find(isModelSetting);
   const model = (modelLine || "")
     .split("=")
     .slice(1)
@@ -157,13 +157,13 @@ const listClaudeModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<stri
   lines
     .filter((line) => !line.toLowerCase().startsWith("usage") && !line.startsWith("-"))
     .flatMap((line) => [
-      ...findMatches(line, /\bclaude-[\w.-]+\b/gu),
+      ...findPatternTokens(line, /\bclaude-[\w.-]+\b/gu),
       ...line.split(/[\s,|]+/u).filter((part) => CLAUDE_ALIASES.includes(part)),
     ]);
 
 const listClaudeModels = async (): Promise<ReadonlyArray<string>> => {
-  for (const args of [["models"], ["--list-models"]]) {
-    const lines = await listLines({ executable: "claude", args });
+  for (const argumentList of [["models"], ["--list-models"]]) {
+    const lines = await listLines({ executable: "claude", args: argumentList });
     const listing = lines.join("\n");
 
     const isLoggedOut = containsAny(listing, CLAUDE_LOGGED_OUT_MARKERS);
@@ -216,7 +216,7 @@ const listAgyModels = async (cli: { readonly name: string; readonly path: string
 const listGeminiModels = async (): Promise<ReadonlyArray<string>> => {
   const cli = findFirstCli(["gemini", "agy"]);
 
-  const isNoCliInstalled = cli === null;
+  const isNoCliInstalled = cli == null;
   if (isNoCliInstalled) {
     return GEMINI_FALLBACK;
   }
@@ -229,7 +229,7 @@ const listGeminiModels = async (): Promise<ReadonlyArray<string>> => {
   }
 
   const help = await listHelpLines(cli.path);
-  const helpModels = help.flatMap((line) => findMatches(line, /gemini-[\w.-]+/gu).map(readUnglueLabel));
+  const helpModels = help.flatMap((line) => findPatternTokens(line, /gemini-[\w.-]+/gu).map(readUnglueLabel));
 
   const isHelpEmpty = helpModels.length === 0;
   if (isHelpEmpty) {
@@ -258,7 +258,7 @@ const listGrokListedModels = (lines: ReadonlyArray<string>): ReadonlyArray<strin
 };
 
 const listGrokMentionedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
-  lines.flatMap((line) => findMatches(line, GROK_MODEL));
+  lines.flatMap((line) => findPatternTokens(line, GROK_MODEL));
 
 const listGrokModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   const listed = listGrokListedModels(lines);
@@ -303,15 +303,15 @@ const listOpencodeLineModels = (line: string): ReadonlyArray<string> => {
     return [line];
   }
 
-  return findMatches(line, /[\w.-]+\/[\w.-]+/gu).filter((token) => !token.includes("http"));
+  return findPatternTokens(line, /[\w.-]+\/[\w.-]+/gu).filter((token) => !token.includes("http"));
 };
 
 const listOpencodeModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
   lines.filter((line) => !/^(?:usage|error|options)/iu.test(line)).flatMap(listOpencodeLineModels);
 
 const listOpencodeModels = async (): Promise<ReadonlyArray<string>> => {
-  for (const args of [["models"], ["model", "list"]]) {
-    const lines = await listLines({ executable: "opencode", args });
+  for (const argumentList of [["models"], ["model", "list"]]) {
+    const lines = await listLines({ executable: "opencode", args: argumentList });
     const found = listOpencodeModelTokens(lines);
 
     const hasFound = found.length > 0;
@@ -351,7 +351,7 @@ const readByPiRank = (left: string, right: string): number =>
   readPiRank(left) - readPiRank(right) || left.localeCompare(right);
 
 const listPiLineModels = (line: string): ReadonlyArray<string> => {
-  const slashTokens = findMatches(line, /\b[a-z][\w.-]*\/[\w.:-]+\b/giu).filter(
+  const slashTokens = findPatternTokens(line, /\b[a-z][\w.-]*\/[\w.:-]+\b/giu).filter(
     (token) => !token.toLowerCase().includes("http"),
   );
 
@@ -362,12 +362,12 @@ const listPiLineModels = (line: string): ReadonlyArray<string> => {
 
   const [provider = "", model = ""] = line.split(/\s+/u);
 
-  const isNotModelRow =
+  const isNotModelLine =
     model === "" ||
     provider.startsWith("-") ||
     PI_TABLE_COLUMNS.includes(model) ||
     model.toLowerCase().includes("http");
-  if (isNotModelRow) {
+  if (isNotModelLine) {
     return [];
   }
 
@@ -441,19 +441,19 @@ const findProviderSpec = (provider: ProviderId): ProviderSpec | null =>
 export const isProviderInstalled = (provider: ProviderId): boolean => {
   const spec = findProviderSpec(provider);
 
-  const isUnknownProvider = spec === null;
+  const isUnknownProvider = spec == null;
   if (isUnknownProvider) {
     return false;
   }
 
   const cli = findFirstCli(spec.binaries);
-  return cli !== null;
+  return cli != null;
 };
 
 export const listProviderModels = async (provider: ProviderId): Promise<ReadonlyArray<string>> => {
   const spec = findProviderSpec(provider);
 
-  const isUnknownProvider = spec === null;
+  const isUnknownProvider = spec == null;
   if (isUnknownProvider) {
     return [];
   }
@@ -473,7 +473,7 @@ const readModelsOrDefault = (models: ReadonlyArray<string>): ReadonlyArray<strin
 const describeProvider = async (spec: ProviderSpec): Promise<DiscoveredProvider | null> => {
   const cli = findFirstCli(spec.binaries);
 
-  const isNotInstalled = cli === null;
+  const isNotInstalled = cli == null;
   if (isNotInstalled) {
     return null;
   }
@@ -505,7 +505,7 @@ export const discoverProviders = async (request: {
   }
 
   const described = await Promise.all(PROVIDERS.map(describeProvider));
-  const providers = described.filter((provider): provider is DiscoveredProvider => provider !== null);
+  const providers = described.filter((provider): provider is DiscoveredProvider => provider != null);
   discoveryCache.at = Date.now();
   discoveryCache.providers = providers;
   return providers;

@@ -18,8 +18,8 @@ beforeEach(() => {
   home = makeTestFolder("queue");
   const bin = path.join(home, "bin");
   const cmuxPath = path.join(bin, "cmux");
-  const configPath = path.join(home, "config.json");
-  const settingsFileContents = JSON.stringify({ refineMode: "dictation", refineSendTo: "cmux-new" });
+  const settingsPath = path.join(home, "config.json");
+  const settingsFileMessages = JSON.stringify({ refineMode: "dictation", refineSendTo: "cmux-new" });
   cmuxLog = path.join(home, "cmux.log");
   mkdirSync(bin);
   writeFileSync(cmuxPath, `#!/bin/sh\necho "$@" >> '${cmuxLog}'\necho '{"surface_id":"s1"}'\n`);
@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.stubEnv("PATH", `${bin}:/usr/bin:/bin`);
   vi.stubEnv("AGENT_VOICE_HOME", home);
   vi.stubEnv("AGENT_VOICE_CONFIG_FILE", undefined);
-  writeFileSync(configPath, settingsFileContents);
+  writeFileSync(settingsPath, settingsFileMessages);
 });
 
 afterEach(() => {
@@ -43,8 +43,8 @@ const createFakeKeyboard = (): { readonly keyboard: Keyboard; readonly typed: Re
     otherModifiersDown: () => false,
     holdDown: () => false,
     otherKeysDown: () => 0n,
-    typeUnicode: (text) => {
-      typed.push(text);
+    typeUnicode: (string) => {
+      typed.push(string);
     },
     pressReturn: () => undefined,
     pressCommandV: () => undefined,

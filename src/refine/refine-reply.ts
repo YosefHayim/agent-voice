@@ -1,4 +1,4 @@
-import { containsAny, listNonBlankLines, parseJsonOrNull } from "./agent-cli.js";
+import { containsAny, listNonBlankLines, parseDocumentOrNull } from "./agent-cli.js";
 
 const REFINE_INSTRUCTIONS = `You refine messy freeform or spoken drafts into a single paste-ready prompt for a coding agent.
 
@@ -10,11 +10,11 @@ Rules:
 5. Do not answer the prompt. Do not add commentary, labels, Markdown fences around the whole reply, or invented requirements.
 6. Return only the revised prompt text.`;
 
-export const createRefineRequestText = (draft: string): string =>
+export const createRefinePrompt = (draft: string): string =>
   `${REFINE_INSTRUCTIONS}\n\nDraft to refine:\n---\n${draft}\n---\nReturn only the revised prompt text.`;
 
 // Agent CLIs that print auth or help failures with exit code 0.
-const AUTH_OR_CONFIG_MARKERS = [
+const AUTH_OR_SETTINGS_MARKERS = [
   "no api key found",
   "use /login",
   "not logged in",
@@ -85,8 +85,8 @@ const PAYMENT_ERROR_MARKERS = ['"code":402', '"code": 402', "invalid_request_err
 const HELP_ANCHORS = ["positionals:", "options:", "show help", "[boolean]"];
 
 // A CLI --help dump (say, OpenCode's yargs help printed with exit 0), not a refined prompt.
-export const isCliHelpText = (text: string): boolean => {
-  const lowercase = text.trim().toLowerCase();
+export const isCliHelpScreen = (string: string): boolean => {
+  const lowercase = string.trim().toLowerCase();
   const helpAnchors = HELP_ANCHORS.filter((anchor) => lowercase.includes(anchor));
   const isOpencodeHelp =
     (lowercase.includes("run opencode with a message") && lowercase.includes("positionals:")) ||
@@ -95,27 +95,27 @@ export const isCliHelpText = (text: string): boolean => {
   return helpAnchors.length >= 3 || isOpencodeHelp;
 };
 
-export const isAuthFailureText = (text: string): boolean => containsAny(text, AUTH_OR_CONFIG_MARKERS);
+export const isAuthFailureMessage = (string: string): boolean => containsAny(string, AUTH_OR_SETTINGS_MARKERS);
 
 export const isModelUnavailableError = (message: string): boolean => containsAny(message, MODEL_UNAVAILABLE_MARKERS);
 
 export const isQuotaOrLimitError = (message: string): boolean => containsAny(message, QUOTA_OR_LIMIT_MARKERS);
 
 // Several agents (pi, OpenRouter wrappers) print 402 or JSON errors with exit code 0; those must never reach the caret.
-export const isFailedModelOutputText = (text: string): boolean => {
-  const trimmed = text.trim();
+export const isFailedModelReply = (string: string): boolean => {
+  const trimmed = string.trim();
   const lowercase = trimmed.toLowerCase();
   const isKnownFailure =
     trimmed === "" ||
-    isCliHelpText(trimmed) ||
-    isAuthFailureText(trimmed) ||
+    isCliHelpScreen(trimmed) ||
+    isAuthFailureMessage(trimmed) ||
     isQuotaOrLimitError(trimmed) ||
     isModelUnavailableError(trimmed);
   const isPaymentError = lowercase.startsWith("402") || containsAny(lowercase, PAYMENT_ERROR_MARKERS);
   const hasErrorFields =
     lowercase.includes('"error"') || (lowercase.includes('"code"') && containsAny(lowercase, ["message", "credits"]));
-  const isJsonError = trimmed.startsWith("{") && hasErrorFields;
-  return isKnownFailure || isPaymentError || isJsonError;
+  const isDocumentError = trimmed.startsWith("{") && hasErrorFields;
+  return isKnownFailure || isPaymentError || isDocumentError;
 };
 
 const NOT_WORD_CHARACTER_BEFORE = "(?<![\\p{L}\\p{N}_])";
@@ -129,25 +129,25 @@ const LITERAL_PATTERNS = [
   new RegExp(`${NOT_WORD_CHARACTER_BEFORE}(?:'[^'\\n]+'|"[^"\\n]+")`, "gu"),
 ];
 
-type LiteralMatch = { readonly start: number; readonly end: number; readonly literal: string };
+type LiteralSpan = { readonly start: number; readonly end: number; readonly literal: string };
 
-const listLiteralMatches = (text: string, pattern: RegExp): ReadonlyArray<LiteralMatch> =>
-  [...text.matchAll(pattern)].map((match) => ({
-    start: match.index,
-    end: match.index + match[0].length,
-    literal: match[0],
+const listLiteralSpans = (string: string, pattern: RegExp): ReadonlyArray<LiteralSpan> =>
+  [...string.matchAll(pattern)].map((literalFound) => ({
+    start: literalFound.index,
+    end: literalFound.index + literalFound[0].length,
+    literal: literalFound[0],
   }));
 
-const readLength = (match: LiteralMatch): number => match.end - match.start;
+const readLength = (literalSpan: LiteralSpan): number => literalSpan.end - literalSpan.start;
 
-const isOverlapping = (left: LiteralMatch, right: LiteralMatch): boolean =>
+const isOverlapping = (left: LiteralSpan, right: LiteralSpan): boolean =>
   left.start < right.end && right.start < left.end;
 
 // Of two overlapping matches the longer one wins (earlier patterns on a tie), so a quote that holds a URL stays whole.
-export const listPromptLiterals = (text: string): ReadonlyArray<string> => {
-  const candidates = LITERAL_PATTERNS.flatMap((pattern) => listLiteralMatches(text, pattern));
+export const listPromptLiterals = (string: string): ReadonlyArray<string> => {
+  const candidates = LITERAL_PATTERNS.flatMap((pattern) => listLiteralSpans(string, pattern));
   const longestFirst = [...candidates].sort((left, right) => readLength(right) - readLength(left));
-  const kept: Array<LiteralMatch> = [];
+  const kept: Array<LiteralSpan> = [];
   for (const candidate of longestFirst) {
     const isNotOverlapping = !kept.some((taken) => isOverlapping(candidate, taken));
     if (isNotOverlapping) {
@@ -178,12 +178,12 @@ export const describeRefineReplyRejection = (rejection: RefineReplyRejection): s
   }
 };
 
-const stripWholeReplyFence = (text: string): string => {
-  const lines = text.split("\n");
+const stripWholeReplyFence = (string: string): string => {
+  const lines = string.split("\n");
 
-  const isNotFenced = !text.startsWith("```") || !text.endsWith("```") || lines.length < 2;
+  const isNotFenced = !string.startsWith("```") || !string.endsWith("```") || lines.length < 2;
   if (isNotFenced) {
-    return text;
+    return string;
   }
 
   return lines.slice(1, -1).join("\n").trim();
@@ -201,7 +201,7 @@ export const checkRefinedPrompt = (request: {
     return { status: "rejected", rejection: { reason: "empty" } };
   }
 
-  const isCliHelpReply = isCliHelpText(refinedPrompt);
+  const isCliHelpReply = isCliHelpScreen(refinedPrompt);
   if (isCliHelpReply) {
     return { status: "rejected", rejection: { reason: "cliHelp" } };
   }
@@ -209,7 +209,7 @@ export const checkRefinedPrompt = (request: {
   const literals = listPromptLiterals(request.draft);
   const droppedLiteral = literals.find((literal) => !refinedPrompt.includes(literal));
 
-  const hasDroppedLiteral = droppedLiteral !== undefined;
+  const hasDroppedLiteral = droppedLiteral != null;
   if (hasDroppedLiteral) {
     return { status: "rejected", rejection: { reason: "droppedLiteral", literal: droppedLiteral } };
   }
@@ -217,136 +217,136 @@ export const checkRefinedPrompt = (request: {
   return { status: "accepted", prompt: refinedPrompt };
 };
 
-type JsonObject = Readonly<Record<string, unknown>>;
+type DocumentObject = Readonly<Record<string, unknown>>;
 
-const DOCUMENT_TEXT_KEYS = ["result", "text", "content", "message", "output", "response"];
-const EVENT_TEXT_KEYS = ["result", "text", "content", "message", "output"];
+const DOCUMENT_STRING_KEYS = ["result", "text", "content", "message", "output", "response"];
+const EVENT_STRING_KEYS = ["result", "text", "content", "message", "output"];
 
-const isJsonObject = (value: unknown): value is JsonObject =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const isDocumentObject = (field: unknown): field is DocumentObject =>
+  typeof field === "object" && field !== null && !Array.isArray(field);
 
-const isTextPresent = (text: string | null): text is string => text !== null;
+const isNonNullPiece = (string: string | null): string is string => string != null;
 
 // The trimmed text, or null when the value is not a string or is blank.
-const readNonBlankText = (value: unknown): string | null => {
-  const isString = typeof value === "string";
+const readNonBlankField = (field: unknown): string | null => {
+  const isStringField = typeof field === "string";
 
-  const isNotString = !isString;
-  if (isNotString) {
+  const isNotStringField = !isStringField;
+  if (isNotStringField) {
     return null;
   }
 
-  const trimmed = value.trim();
+  const trimmed = field.trim();
   const isBlank = trimmed === "";
   return isBlank ? null : trimmed;
 };
 
-const readStringOrEmpty = (value: unknown): string => {
-  const isString = typeof value === "string";
+const readFieldOrEmpty = (field: unknown): string => {
+  const isStringField = typeof field === "string";
 
-  const isNotString = !isString;
-  if (isNotString) {
+  const isNotStringField = !isStringField;
+  if (isNotStringField) {
     return "";
   }
 
-  return value;
+  return field;
 };
 
 // A block keeps its text as sent, blank included, so the joined reply keeps its line breaks.
-const blockText = (block: unknown): string | null => {
-  const text = isJsonObject(block) ? block.text : undefined;
+const readBlockReply = (block: unknown): string | null => {
+  const blockField = isDocumentObject(block) ? block.text : null;
 
-  const isNotTextString = typeof text !== "string";
-  if (isNotTextString) {
+  const isNotStringField = typeof blockField !== "string";
+  if (isNotStringField) {
     return null;
   }
 
-  return text;
+  return blockField;
 };
 
-const readJoinedBlocks = (value: unknown): string | null => {
-  const isNotBlockList = !Array.isArray(value);
+const readJoinedBlocks = (field: unknown): string | null => {
+  const isNotBlockList = !Array.isArray(field);
   if (isNotBlockList) {
     return null;
   }
 
-  const joined = value.map(blockText).filter(isTextPresent).join("\n");
-  return readNonBlankText(joined);
+  const joined = field.map(readBlockReply).filter(isNonNullPiece).join("\n");
+  return readNonBlankField(joined);
 };
 
 // OpenCode streams {type, part: {type, text}} events; only text parts hold the reply.
-const isTextPart = (event: JsonObject, part: JsonObject): boolean => {
-  const partType = readStringOrEmpty(part.type);
-  const eventType = readStringOrEmpty(event.type);
+const isReplyPart = (event: DocumentObject, part: DocumentObject): boolean => {
+  const partType = readFieldOrEmpty(part.type);
+  const eventType = readFieldOrEmpty(event.type);
   return partType === "" || partType === "text" || eventType === "text";
 };
 
-const readPartText = (event: JsonObject): string | null => {
+const readPartReply = (event: DocumentObject): string | null => {
   const part = event.part;
 
-  const isNotTextPart = !isJsonObject(part) || !isTextPart(event, part);
-  if (isNotTextPart) {
+  const isNotReplyPart = !isDocumentObject(part) || !isReplyPart(event, part);
+  if (isNotReplyPart) {
     return null;
   }
 
-  return readNonBlankText(part.text);
+  return readNonBlankField(part.text);
 };
 
-const readNestedText = (value: unknown): string | null => {
-  const isNotObject = !isJsonObject(value);
+const readNestedReply = (field: unknown): string | null => {
+  const isNotObject = !isDocumentObject(field);
   if (isNotObject) {
     return null;
   }
 
-  return readNonBlankText(value.text) ?? readNonBlankText(value.content);
+  return readNonBlankField(field.text) ?? readNonBlankField(field.content);
 };
 
-const readFieldText = (document: JsonObject, key: string): string | null =>
-  readNonBlankText(document[key]) ?? readNestedText(document[key]);
+const readFieldReply = (document: DocumentObject, key: string): string | null =>
+  readNonBlankField(document[key]) ?? readNestedReply(document[key]);
 
-const readDocumentText = (document: JsonObject): string | null => {
-  const keyTexts = DOCUMENT_TEXT_KEYS.map((key) => readFieldText(document, key));
-  const firstKeyText = keyTexts.find(isTextPresent) ?? null;
-  return firstKeyText ?? readPartText(document) ?? readJoinedBlocks(document.content);
+const readDocumentReply = (document: DocumentObject): string | null => {
+  const keyReplies = DOCUMENT_STRING_KEYS.map((key) => readFieldReply(document, key));
+  const firstKeyReply = keyReplies.find(isNonNullPiece) ?? null;
+  return firstKeyReply ?? readPartReply(document) ?? readJoinedBlocks(document.content);
 };
 
-const readMessageText = (event: JsonObject): string | null => {
+const readMessageReply = (event: DocumentObject): string | null => {
   const message = event.message;
 
-  const isNotObjectMessage = !isJsonObject(message);
+  const isNotObjectMessage = !isDocumentObject(message);
   if (isNotObjectMessage) {
     return null;
   }
 
-  return readNonBlankText(message.content) ?? readJoinedBlocks(message.content);
+  return readNonBlankField(message.content) ?? readJoinedBlocks(message.content);
 };
 
-const readEventText = (event: JsonObject): string | null => {
-  const directTexts = EVENT_TEXT_KEYS.map((key) => readNonBlankText(event[key])).filter(isTextPresent);
-  const lastDirectText = directTexts.at(-1) ?? null;
-  return readMessageText(event) ?? readPartText(event) ?? lastDirectText;
+const readEventReply = (event: DocumentObject): string | null => {
+  const directFields = EVENT_STRING_KEYS.map((key) => readNonBlankField(event[key])).filter(isNonNullPiece);
+  const lastDirectReply = directFields.at(-1) ?? null;
+  return readMessageReply(event) ?? readPartReply(event) ?? lastDirectReply;
 };
 
 // A whole reply that is one JSON string or one JSON document with text in it.
-const readWholeReplyText = (output: string): string | null => {
-  const whole = parseJsonOrNull(output);
-  const wholeString = readNonBlankText(whole);
+const readWholeReply = (printout: string): string | null => {
+  const whole = parseDocumentOrNull(printout);
+  const wholeReply = readNonBlankField(whole);
 
-  const hasWholeString = wholeString !== null;
-  if (hasWholeString) {
-    return wholeString;
+  const hasWholeReply = wholeReply != null;
+  if (hasWholeReply) {
+    return wholeReply;
   }
 
-  return isJsonObject(whole) ? readDocumentText(whole) : null;
+  return isDocumentObject(whole) ? readDocumentReply(whole) : null;
 };
 
-const listJsonLineEvents = (output: string): ReadonlyArray<JsonObject> =>
-  listNonBlankLines(output)
+const listDocumentLineEvents = (printout: string): ReadonlyArray<DocumentObject> =>
+  listNonBlankLines(printout)
     .filter((line) => line.startsWith("{"))
-    .map(parseJsonOrNull)
-    .filter(isJsonObject);
+    .map(parseDocumentOrNull)
+    .filter(isDocumentObject);
 
-const readLongerText = (best: string, part: string): string => {
+const pickLongerReply = (best: string, part: string): string => {
   const isPartLengthAboveBestLength = part.length > best.length;
   if (isPartLengthAboveBestLength) {
     return part;
@@ -357,7 +357,7 @@ const readLongerText = (best: string, part: string): string => {
 
 // Streamed parts are often cumulative: the longest wins when it already holds the rest.
 const readJoinedParts = (parts: ReadonlyArray<string>): string => {
-  const longest = parts.reduce(readLongerText, "");
+  const longest = parts.reduce(pickLongerReply, "");
 
   const holdsEveryPart = parts.every((part) => longest.includes(part));
   if (holdsEveryPart) {
@@ -367,29 +367,29 @@ const readJoinedParts = (parts: ReadonlyArray<string>): string => {
   return parts.join("\n").trim();
 };
 
-export const replyTextFromJson = (output: string): string => {
-  const trimmed = output.trim();
+export const readReplyFromDocument = (printout: string): string => {
+  const trimmed = printout.trim();
 
   const isTrimmedEmpty = trimmed === "";
   if (isTrimmedEmpty) {
     return "";
   }
 
-  const wholeText = readWholeReplyText(trimmed);
+  const wholeReply = readWholeReply(trimmed);
 
-  const hasWholeText = wholeText !== null;
-  if (hasWholeText) {
-    return wholeText;
+  const hasWholeReply = wholeReply != null;
+  if (hasWholeReply) {
+    return wholeReply;
   }
 
-  const events = listJsonLineEvents(trimmed);
-  const parts = events.map(readPartText).filter(isTextPresent);
+  const events = listDocumentLineEvents(trimmed);
+  const parts = events.map(readPartReply).filter(isNonNullPiece);
 
   const hasParts = parts.length > 0;
   if (hasParts) {
     return readJoinedParts(parts);
   }
 
-  const eventTexts = events.map(readEventText).filter(isTextPresent);
-  return eventTexts.at(-1) ?? "";
+  const eventFields = events.map(readEventReply).filter(isNonNullPiece);
+  return eventFields.at(-1) ?? "";
 };

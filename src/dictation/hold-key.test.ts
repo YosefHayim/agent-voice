@@ -5,7 +5,7 @@ import {
   debounceHold,
   type HoldAction,
   type HoldEvent,
-  type HoldState,
+  type HoldStatus,
   holdTransition,
   initialHoldDebounce,
   initialHoldTracker,
@@ -15,12 +15,15 @@ import {
 } from "./hold-key.js";
 
 const replay = (events: ReadonlyArray<HoldEvent>) =>
-  events.reduce<readonly [HoldState, HoldAction]>(([state], event) => holdTransition(state, event), ["idle", "none"]);
+  events.reduce<readonly [HoldStatus, HoldAction]>(
+    ([status], event) => holdTransition(status, event),
+    ["idle", "none"],
+  );
 
 type HoldCase = {
   readonly name: string;
   readonly events: ReadonlyArray<HoldEvent>;
-  readonly state: HoldState;
+  readonly state: HoldStatus;
   readonly action: HoldAction;
 };
 
@@ -51,8 +54,8 @@ const holdCases: ReadonlyArray<HoldCase> = [
 ];
 
 describe("holdTransition", () => {
-  it.each(holdCases)("$name", ({ events, state, action }) => {
-    expect(replay(events)).toEqual([state, action]);
+  it.each(holdCases)("$name", ({ events, state: status, action }) => {
+    expect(replay(events)).toEqual([status, action]);
   });
 });
 

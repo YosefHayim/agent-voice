@@ -3,9 +3,14 @@ import { existsSync, readdirSync, renameSync } from "node:fs";
 import path from "node:path";
 
 import { z } from "zod";
-import { readStateFile, readStateFolder } from "#src/settings/agent-voice-home.js";
-import type { Config } from "#src/settings/config-schema.js";
-import { makePrivateFolder, readJsonFile, removeIfPresent, writeJsonAtomically } from "#src/storage/state-files.js";
+import { readStatusFile, readStatusFolder } from "#src/settings/agent-voice-home.js";
+import type { Settings } from "#src/settings/config-schema.js";
+import {
+  makePrivateFolder,
+  readDocumentFile,
+  removeFileIfExists,
+  writeDocumentAtomically,
+} from "#src/storage/state-files.js";
 import { type CmuxFocus, readCmuxFocus } from "./cmux-focus.js";
 
 const terminalOriginSchema = z.object({ kind: z.literal("terminal") });
@@ -41,12 +46,12 @@ const seenKeysSchema = z.record(z.string(), z.number());
 
 const readNowSeconds = () => Date.now() / 1_000;
 
-const readInboxFolder = () => readStateFolder("inbox");
+const readInboxFolder = () => readStatusFolder("inbox");
 
-const readSeenFile = () => readStateFile("seen.json");
+const readSeenFile = () => readStatusFile("seen.json");
 
 // FNV-1a 64-bit plus the byte length, so the same text gets the same token in every process.
-export const readContentToken = (markdown: string): string => {
+export const readMessageToken = (markdown: string): string => {
   const bytes = Buffer.from(markdown, "utf8");
   const hash = bytes.reduce((current, byte) => {
     const mixed = (current ^ BigInt(byte)) * 0x100000001b3n;
@@ -74,9 +79,9 @@ const replyPlace = (reply: QueuedReply): string => {
 };
 
 // The same text from the same place is one reply, whatever its ID.
-export const readContentIdentity = (reply: QueuedReply): string => {
+export const readMessageIdentity = (reply: QueuedReply): string => {
   const place = replyPlace(reply);
-  const token = readContentToken(reply.markdown);
+  const token = readMessageToken(reply.markdown);
   return `${place}:${token}`;
 };
 
@@ -86,11 +91,11 @@ export const replyIdentity = (reply: QueuedReply): string => {
 
   const isReplyIdEmpty = replyId === "";
   if (isReplyIdEmpty) {
-    return readContentIdentity(reply);
+    return readMessageIdentity(reply);
   }
 
   const place = replyPlace(reply);
-  const token = readContentToken(reply.markdown);
+  const token = readMessageToken(reply.markdown);
   return `${place}:${replyId}:${token}`;
 };
 
@@ -123,7 +128,7 @@ const listInboxFiles = (extension: ".json" | ".speaking"): ReadonlyArray<string>
 export const removeInboxFiles = (extensions: ReadonlyArray<".json" | ".speaking">): void => {
   const files = extensions.flatMap(listInboxFiles);
   for (const file of files) {
-    removeIfPresent(file);
+    removeFileIfExists(file);
   }
 };
 
@@ -132,9 +137,9 @@ export const isSpeaking = (): boolean => listInboxFiles(".speaking").length > 0;
 
 const readSeenKeys = (): ReadonlyMap<string, number> => {
   const now = readNowSeconds();
-  const savedStamps = readJsonFile({ path: readSeenFile(), schema: seenKeysSchema });
+  const savedStamps = readDocumentFile({ path: readSeenFile(), schema: seenKeysSchema });
 
-  const isThereNoSavedStamp = savedStamps === null;
+  const isThereNoSavedStamp = savedStamps == null;
   if (isThereNoSavedStamp) {
     return new Map();
   }
@@ -146,19 +151,19 @@ const readSeenKeys = (): ReadonlyMap<string, number> => {
 
 const hasBeenSpoken = (seen: ReadonlyMap<string, number>, reply: QueuedReply): boolean => {
   const replyKey = replyIdentity(reply);
-  const contentKey = readContentIdentity(reply);
-  return seen.has(replyKey) || seen.has(contentKey);
+  const messageKey = readMessageIdentity(reply);
+  return seen.has(replyKey) || seen.has(messageKey);
 };
 
 // Both keys, so a later hook with a different reply ID cannot re-speak the same text.
 const rememberSpoken = (reply: QueuedReply): void => {
   const now = readNowSeconds();
   const replyKey = replyIdentity(reply);
-  const contentKey = readContentIdentity(reply);
+  const messageKey = readMessageIdentity(reply);
   const previous = readSeenKeys();
-  const seen = new Map(previous).set(replyKey, now).set(contentKey, now);
+  const seen = new Map(previous).set(replyKey, now).set(messageKey, now);
   const stamps = Object.fromEntries(seen);
-  writeJsonAtomically({ path: readSeenFile(), value: stamps });
+  writeDocumentAtomically({ path: readSeenFile(), value: stamps });
 };
 
 export const queueReply = (request: {
@@ -171,7 +176,7 @@ export const queueReply = (request: {
     markdown: request.markdown,
     origin: request.origin,
     receivedAt: readNowSeconds(),
-    agentReplyId: request.agentReplyId.trim() || readContentToken(request.markdown),
+    agentReplyId: request.agentReplyId.trim() || readMessageToken(request.markdown),
     source: request.source,
   };
 
@@ -189,7 +194,7 @@ export const queueReply = (request: {
   const milliseconds = Date.now().toString().padStart(15, "0");
   const counter = process.hrtime.bigint().toString().padStart(20, "0");
   const replyFile = path.join(folder, `${milliseconds}-${counter}-${randomUUID()}.json`);
-  writeJsonAtomically({ path: replyFile, value: reply });
+  writeDocumentAtomically({ path: replyFile, value: reply });
 };
 
 interface PendingReply {
@@ -208,11 +213,11 @@ const isSpeakable = (reply: QueuedReply): boolean => {
 const listPendingReplies = (): ReadonlyArray<PendingReply> => {
   const files = listInboxFiles(".json");
   return files.flatMap((file) => {
-    const storedReply = readJsonFile({ path: file, schema: queuedReplySchema });
+    const storedReply = readDocumentFile({ path: file, schema: queuedReplySchema });
 
-    const isThereNoReply = storedReply === null || !isSpeakable(storedReply);
+    const isThereNoReply = storedReply == null || !isSpeakable(storedReply);
     if (isThereNoReply) {
-      removeIfPresent(file);
+      removeFileIfExists(file);
       return [];
     }
 
@@ -242,7 +247,7 @@ const isSuperseded = (pending: ReadonlyArray<PendingReply>, candidate: PendingRe
 };
 
 const isSpeaksNow = async (request: {
-  readonly mode: Config["speechMode"];
+  readonly mode: Settings["speechMode"];
   readonly reply: QueuedReply;
 }): Promise<boolean> => {
   const { origin } = request.reply;
@@ -269,7 +274,7 @@ const claimFile = (file: string): string | null => {
 };
 
 // The rename to `.speaking` stops a reply from being picked twice; one waiting for its Cmux surface stays queued.
-export const claimNextReply = async (mode: Config["speechMode"]): Promise<PendingReply | null> => {
+export const claimNextReply = async (mode: Settings["speechMode"]): Promise<PendingReply | null> => {
   const pending = listPendingReplies();
 
   const isModeOff = mode === "off";
@@ -282,7 +287,7 @@ export const claimNextReply = async (mode: Config["speechMode"]): Promise<Pendin
   for (const candidate of pending) {
     const isStale = isSuperseded(pending, candidate) || hasBeenSpoken(seen, candidate.reply);
     if (isStale) {
-      removeIfPresent(candidate.file);
+      removeFileIfExists(candidate.file);
       continue;
     }
 
@@ -293,7 +298,7 @@ export const claimNextReply = async (mode: Config["speechMode"]): Promise<Pendin
 
     const claimed = claimFile(candidate.file);
 
-    const isClaimLost = claimed === null;
+    const isClaimLost = claimed == null;
     if (isClaimLost) {
       continue;
     }
@@ -306,10 +311,10 @@ export const claimNextReply = async (mode: Config["speechMode"]): Promise<Pendin
   return null;
 };
 
-export const completeReply = (claimedFile: string): void => removeIfPresent(claimedFile);
+export const completeReply = (claimedFile: string): void => removeFileIfExists(claimedFile);
 
 export const failReply = (claimedFile: string): void => {
-  const failedFolder = readStateFolder("failed");
+  const failedFolder = readStatusFolder("failed");
   makePrivateFolder(failedFolder);
   const fileName = path.basename(claimedFile);
   const failedFile = path.join(failedFolder, fileName);

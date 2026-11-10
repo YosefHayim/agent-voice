@@ -3,12 +3,12 @@ import { listRegisteredSettingsFiles } from "#src/agents/hook-registration.js";
 import { listHookSettingsFiles } from "#src/agents/hook-settings-files.js";
 import { type Keyboard, loadKeyboard } from "#src/dictation/keyboard.js";
 import { WHISPER_PACKAGE } from "#src/dictation/transcriber.js";
-import { isWhisperModelPresent, readWhisperModelPath, selectWhisperModel } from "#src/dictation/whisper-models.js";
+import { isWhisperModelDownloaded, readWhisperModelPath, selectWhisperModel } from "#src/dictation/whisper-models.js";
 import { describeError } from "#src/error-message.js";
 import { findCli, runCli } from "#src/refine/agent-cli.js";
 import { type DiscoveredProvider, discoverProviders } from "#src/refine/provider-models.js";
-import { readConfig } from "#src/settings/config-file.js";
-import type { Config } from "#src/settings/config-schema.js";
+import { readSettings } from "#src/settings/config-file.js";
+import type { Settings } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { listMissingSupertonicFiles, readSupertonicFolder } from "#src/speech/supertonic-models.js";
 import { type CommandSpec, type ExitCode, isFlagOn } from "./command-spec.js";
@@ -204,12 +204,12 @@ const checkHooks = (): ReadonlyArray<DoctorCheck> => {
   });
 };
 
-const checkWhisperModel = (settings: Config): DoctorCheck => {
+const checkWhisperModel = (settings: Settings): DoctorCheck => {
   const environment = readEnvironment();
   const model = selectWhisperModel({ environment, config: settings });
 
-  const isModelMissing = !isWhisperModelPresent(model);
-  if (isModelMissing) {
+  const isModelAbsent = !isWhisperModelDownloaded(model);
+  if (isModelAbsent) {
     return {
       name: "Whisper model",
       status: "warn",
@@ -222,7 +222,7 @@ const checkWhisperModel = (settings: Config): DoctorCheck => {
   return createOkCheck("Whisper model", modelPath);
 };
 
-const checkSupertonicVoices = (settings: Config): DoctorCheck => {
+const checkSupertonicVoices = (settings: Settings): DoctorCheck => {
   const missingFiles = listMissingSupertonicFiles();
 
   const isEverythingPresent = missingFiles.length === 0;
@@ -251,7 +251,7 @@ const checkRefineProviders = (providers: ReadonlyArray<DiscoveredProvider>): Doc
   return createOkCheck("Refine providers", names);
 };
 
-const checkCmux = (settings: Config): DoctorCheck => {
+const checkCmux = (settings: Settings): DoctorCheck => {
   const isSentToCaret = settings.refineSendTo === "caret";
   if (isSentToCaret) {
     return createOkCheck("cmux", "not needed (refine sends to the caret)");
@@ -272,7 +272,7 @@ const checkCmux = (settings: Config): DoctorCheck => {
   return createOkCheck("cmux", cmuxPath);
 };
 
-const checkRefine = async (settings: Config): Promise<ReadonlyArray<DoctorCheck>> => {
+const checkRefine = async (settings: Settings): Promise<ReadonlyArray<DoctorCheck>> => {
   const isRefineOff = settings.refineMode === "off";
   if (isRefineOff) {
     return [createOkCheck("Refine", "off")];
@@ -282,7 +282,7 @@ const checkRefine = async (settings: Config): Promise<ReadonlyArray<DoctorCheck>
   return [checkRefineProviders(providers), checkCmux(settings)];
 };
 
-const checkSettings = async (settings: Config): Promise<ReadonlyArray<DoctorCheck>> => {
+const checkSettings = async (settings: Settings): Promise<ReadonlyArray<DoctorCheck>> => {
   const refineChecks = await checkRefine(settings);
   return [
     createOkCheck("Config", "valid"),
@@ -292,7 +292,7 @@ const checkSettings = async (settings: Config): Promise<ReadonlyArray<DoctorChec
   ];
 };
 
-const createConfigFailedCheck = (error: unknown): DoctorCheck => ({
+const createSettingsFailedCheck = (error: unknown): DoctorCheck => ({
   name: "Config",
   status: "fail",
   detail: describeError(error),
@@ -301,11 +301,11 @@ const createConfigFailedCheck = (error: unknown): DoctorCheck => ({
 
 // Only reading the file can fail here, so only that call is guarded.
 const runSettingChecks = async (): Promise<ReadonlyArray<DoctorCheck>> => {
-  let settings: Config;
+  let settings: Settings;
   try {
-    settings = readConfig();
+    settings = readSettings();
   } catch (error) {
-    return [createConfigFailedCheck(error)];
+    return [createSettingsFailedCheck(error)];
   }
 
   return checkSettings(settings);
@@ -365,8 +365,8 @@ export const doctorCommand: CommandSpec = {
   run: async (parsedCommand): Promise<ExitCode> => {
     const checks = await runDoctorChecks();
 
-    const isJsonWanted = isFlagOn(parsedCommand, "json");
-    if (isJsonWanted) {
+    const isDocumentWanted = isFlagOn(parsedCommand, "json");
+    if (isDocumentWanted) {
       TerminalUI.printDocument(checks);
     } else {
       printChecks(checks);

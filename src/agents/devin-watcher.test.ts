@@ -48,14 +48,14 @@ describe("watchDevinSession", () => {
   const exportFile = () => path.join(home, "session.atif.json");
 
   const writeTurn = (turnId: string, message: string) => {
-    const atifText = JSON.stringify({
+    const atifTranscript = JSON.stringify({
       steps: [
         { step_id: `${turnId}-user`, source: "user", message: "Question" },
         { step_id: turnId, source: "agent", message },
       ],
     });
     const atifPath = exportFile();
-    writeFileSync(atifPath, atifText);
+    writeFileSync(atifPath, atifTranscript);
   };
 
   const listQueuedMarkdown = (): ReadonlyArray<string> => {
@@ -68,8 +68,8 @@ describe("watchDevinSession", () => {
 
     return readdirSync(inbox).map((name) => {
       const replyPath = path.join(inbox, name);
-      const replyText = readFileSync(replyPath, "utf8");
-      return JSON.parse(replyText).markdown;
+      const replyFileReading = readFileSync(replyPath, "utf8");
+      return JSON.parse(replyFileReading).markdown;
     });
   };
 

@@ -154,8 +154,8 @@ describe("refine rotation", () => {
 
     expect(refined).toBe("finish-and-push: run `pnpm verify` then open a PR");
     const choiceFile = path.join(home, ".agent-voice", "refine-choice.json");
-    const choiceText = readFileSync(choiceFile, "utf8");
-    const choice = JSON.parse(choiceText);
+    const savedChoiceFile = readFileSync(choiceFile, "utf8");
+    const choice = JSON.parse(savedChoiceFile);
     expect(choice).toMatchObject({ provider: "codex", model: "gpt-5.3-codex-spark", effort: "low" });
   });
 

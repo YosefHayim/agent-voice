@@ -1,12 +1,12 @@
 export const holdKeyLabels = { shift: "Shift", "right-option": "Right Option" } as const;
 
-export type HoldState = "idle" | "waiting" | "shortcut" | "listening";
+export type HoldStatus = "idle" | "waiting" | "shortcut" | "listening";
 
 export type HoldEvent = "holdDown" | "holdUp" | "otherDown" | "holdElapsed";
 
 export type HoldAction = "none" | "schedule" | "cancel" | "tap" | "start" | "stop";
 
-type HoldStep = readonly [HoldState, HoldAction];
+type HoldStep = readonly [HoldStatus, HoldAction];
 
 type HoldSample = "down" | "up";
 
@@ -19,7 +19,7 @@ const DOUBLE_TAP_MS = 400;
 
 export const HOLD_POLL_MS = 8;
 
-const holdSteps: Record<HoldState, Record<HoldEvent, HoldStep>> = {
+const holdSteps: Record<HoldStatus, Record<HoldEvent, HoldStep>> = {
   idle: {
     holdDown: ["waiting", "schedule"],
     holdUp: ["idle", "none"],
@@ -47,7 +47,7 @@ const holdSteps: Record<HoldState, Record<HoldEvent, HoldStep>> = {
   },
 };
 
-export const holdTransition = (state: HoldState, event: HoldEvent): HoldStep => holdSteps[state][event];
+export const holdTransition = (status: HoldStatus, event: HoldEvent): HoldStep => holdSteps[status][event];
 
 // Keys already held when a hold begins never count: macOS can report a key as held forever (seen with key code 0),
 // which would cancel every hold.
@@ -155,7 +155,7 @@ export const classifyTap = (request: {
   readonly lastTapAt: number | undefined;
   readonly now: number;
 }): { readonly double: boolean; readonly rememberedTapAt: number | undefined } => {
-  const double = request.lastTapAt !== undefined && request.now - request.lastTapAt <= DOUBLE_TAP_MS;
+  const double = request.lastTapAt != null && request.now - request.lastTapAt <= DOUBLE_TAP_MS;
   if (double) {
     return { double, rememberedTapAt: undefined };
   }

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { describeError } from "#src/error-message.js";
 import { sleep } from "#src/sleep.js";
 import { queueReply } from "#src/speech/inbox.js";
-import { readJsonFile } from "#src/storage/state-files.js";
+import { readDocumentFile } from "#src/storage/state-files.js";
 import { appendSpeechLog } from "#src/workers/worker-log.js";
 
 const atifExportSchema = z.object({
@@ -22,7 +22,7 @@ interface DevinTurn {
   readonly turnId: string;
 }
 
-interface WatchState {
+interface WatchStatus {
   readonly spokenTurn: string;
   readonly pendingTurn: string;
   readonly changedAt: number;
@@ -46,8 +46,8 @@ export const readLatestDevinTurn = (atif: AtifExport): DevinTurn => {
     .filter((step) => step.source === "agent")
     .flatMap((step) => {
       const stepMessage = step.message;
-      const isMessageText = typeof stepMessage === "string";
-      const message = isMessageText ? stepMessage.trim() : "";
+      const isStepMessageGiven = typeof stepMessage === "string";
+      const message = isStepMessageGiven ? stepMessage.trim() : "";
 
       const isMessageEmpty = message === "";
       if (isMessageEmpty) {
@@ -64,9 +64,9 @@ export const readLatestDevinTurn = (atif: AtifExport): DevinTurn => {
 };
 
 const readTurn = (exportFile: string): DevinTurn => {
-  const savedExport = readJsonFile({ path: exportFile, schema: atifExportSchema });
+  const savedExport = readDocumentFile({ path: exportFile, schema: atifExportSchema });
 
-  const isThereNoSavedExport = savedExport === null;
+  const isThereNoSavedExport = savedExport == null;
   if (isThereNoSavedExport) {
     return noTurn;
   }
@@ -101,28 +101,32 @@ const confirmTurn = (request: {
   return confirmed.turnId;
 };
 
-const trackTurn = (state: WatchState, turnId: string): WatchState => {
-  const isNotNewTurn = turnId === "" || turnId === state.spokenTurn || turnId === state.pendingTurn;
+const trackTurn = (watchStatus: WatchStatus, turnId: string): WatchStatus => {
+  const isNotNewTurn = turnId === "" || turnId === watchStatus.spokenTurn || turnId === watchStatus.pendingTurn;
   if (isNotNewTurn) {
-    return state;
+    return watchStatus;
   }
 
-  return { ...state, pendingTurn: turnId, changedAt: Date.now() };
+  return { ...watchStatus, pendingTurn: turnId, changedAt: Date.now() };
 };
 
-const settleTurn = (exportFile: string, state: WatchState): WatchState => {
-  const isNotSettled = state.pendingTurn === "" || Date.now() - state.changedAt < TURN_SETTLE_MS;
+const settleTurn = (exportFile: string, watchStatus: WatchStatus): WatchStatus => {
+  const isNotSettled = watchStatus.pendingTurn === "" || Date.now() - watchStatus.changedAt < TURN_SETTLE_MS;
   if (isNotSettled) {
-    return state;
+    return watchStatus;
   }
 
-  const spokenTurn = confirmTurn({ exportFile, pendingTurn: state.pendingTurn, spokenTurn: state.spokenTurn });
-  return { ...state, spokenTurn, pendingTurn: "" };
+  const spokenTurn = confirmTurn({
+    exportFile,
+    pendingTurn: watchStatus.pendingTurn,
+    spokenTurn: watchStatus.spokenTurn,
+  });
+  return { ...watchStatus, spokenTurn, pendingTurn: "" };
 };
 
-const pollTurn = (exportFile: string, state: WatchState): WatchState => {
+const pollTurn = (exportFile: string, watchStatus: WatchStatus): WatchStatus => {
   const latest = readTurn(exportFile);
-  const tracked = trackTurn(state, latest.turnId);
+  const tracked = trackTurn(watchStatus, latest.turnId);
   return settleTurn(exportFile, tracked);
 };
 
@@ -130,9 +134,9 @@ const pollTurn = (exportFile: string, state: WatchState): WatchState => {
 const watchDevinExport = async (exportFile: string, shutdown: AbortSignal): Promise<void> => {
   try {
     const firstTurn = readTurn(exportFile);
-    let state: WatchState = { spokenTurn: firstTurn.turnId, pendingTurn: "", changedAt: Date.now() };
+    let watchStatus: WatchStatus = { spokenTurn: firstTurn.turnId, pendingTurn: "", changedAt: Date.now() };
     while (!shutdown.aborted) {
-      state = pollTurn(exportFile, state);
+      watchStatus = pollTurn(exportFile, watchStatus);
       await sleep(POLL_INTERVAL_MS);
     }
   } catch (error) {
@@ -141,16 +145,16 @@ const watchDevinExport = async (exportFile: string, shutdown: AbortSignal): Prom
 };
 
 // The watcher stops with the session however it ends, a Devin that never started included.
-export const watchDevinSession = async <SessionResult>(request: {
+export const watchDevinSession = async <SessionReport>(request: {
   readonly exportFile: string;
-  readonly readSession: () => Promise<SessionResult>;
-}): Promise<SessionResult> => {
+  readonly readSession: () => Promise<SessionReport>;
+}): Promise<SessionReport> => {
   const shutdown = new AbortController();
   const watcher = watchDevinExport(request.exportFile, shutdown.signal);
   try {
-    const sessionResult = await request.readSession();
+    const sessionReport = await request.readSession();
     await sleep(exitGraceMilliseconds);
-    return sessionResult;
+    return sessionReport;
   } finally {
     shutdown.abort();
     await watcher;

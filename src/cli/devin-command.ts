@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 
 import { watchDevinSession } from "#src/agents/devin-watcher.js";
-import { readStateFolder } from "#src/settings/agent-voice-home.js";
+import { readStatusFolder } from "#src/settings/agent-voice-home.js";
 import { makePrivateFolder } from "#src/storage/state-files.js";
 import { startWorkers } from "#src/workers/worker-processes.js";
 import type { CommandSpec } from "./command-spec.js";
@@ -20,7 +20,7 @@ const runDevin = (devinArguments: ReadonlyArray<string>): Promise<number> =>
 
 const readSessionFolder = (): string => {
   const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
-  const devinFolder = readStateFolder("devin");
+  const devinFolder = readStatusFolder("devin");
   return path.join(devinFolder, stamp);
 };
 

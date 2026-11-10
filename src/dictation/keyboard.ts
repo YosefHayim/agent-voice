@@ -1,15 +1,15 @@
 // Reads keys from HID state, which works without an event tap, and posts key events through CoreGraphics.
 
-import { readConfigOrDefaults } from "#src/settings/config-file.js";
-import type { Config } from "#src/settings/config-schema.js";
+import { readSettingsOrDefaults } from "#src/settings/config-file.js";
+import type { Settings } from "#src/settings/config-schema.js";
 
 export interface Keyboard {
-  readonly holdKey: Config["dictationHoldKey"];
+  readonly holdKey: Settings["dictationHoldKey"];
   readonly holdDown: () => boolean;
   readonly otherModifiersDown: () => boolean;
   // Bit n is set while key code n is held.
   readonly otherKeysDown: () => bigint;
-  readonly typeUnicode: (text: string) => void;
+  readonly typeUnicode: (string: string) => void;
   readonly pressReturn: () => void;
   readonly pressCommandV: () => void;
   readonly releaseHoldKey: () => void;
@@ -52,12 +52,12 @@ const COMMAND_FLAG = 0x0010_0000n;
 const UNICODE_CHUNK_UNITS = 20;
 
 // Iterating by character keeps a surrogate pair inside one chunk.
-export const listUnicodeChunks = (text: string): ReadonlyArray<string> => {
+export const listUnicodeChunks = (characters: string): ReadonlyArray<string> => {
   const chunks: Array<string> = [];
-  for (const character of text) {
+  for (const character of characters) {
     const last = chunks.at(-1);
 
-    const isFull = last === undefined || last.length + character.length > UNICODE_CHUNK_UNITS;
+    const isFull = last == null || last.length + character.length > UNICODE_CHUNK_UNITS;
     if (isFull) {
       chunks.push(character);
       continue;
@@ -94,8 +94,8 @@ const importKoffi = async () => {
 };
 
 export const loadKeyboard = async (): Promise<Keyboard> => {
-  const config = readConfigOrDefaults();
-  const holdKeys = { shift: SHIFT_KEYS, "right-option": [RIGHT_OPTION_KEY] }[config.dictationHoldKey];
+  const settings = readSettingsOrDefaults();
+  const holdKeys = { shift: SHIFT_KEYS, "right-option": [RIGHT_OPTION_KEY] }[settings.dictationHoldKey];
   const otherKeys = Array.from({ length: 0x80 }, (_unused, key) => key).filter(
     (key) => !holdKeys.includes(key) && key !== CAPS_LOCK_KEY,
   );
@@ -107,9 +107,9 @@ export const loadKeyboard = async (): Promise<Keyboard> => {
   const applicationServices = koffi.load(
     "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices",
   );
-  const keyState = coreGraphics.func("bool CGEventSourceKeyState(int32_t state, uint16_t key)");
-  const flagsState = coreGraphics.func("uint64_t CGEventSourceFlagsState(int32_t state)");
-  const createSource = coreGraphics.func("void* CGEventSourceCreate(int32_t state)");
+  const keyStatus = coreGraphics.func("bool CGEventSourceKeyState(int32_t state, uint16_t key)");
+  const flagsStatus = coreGraphics.func("uint64_t CGEventSourceFlagsState(int32_t state)");
+  const createOrigin = coreGraphics.func("void* CGEventSourceCreate(int32_t state)");
   const createKeyEvent = coreGraphics.func("void* CGEventCreateKeyboardEvent(void* source, uint16_t key, bool down)");
   const setUnicode = coreGraphics.func(
     "void CGEventKeyboardSetUnicodeString(void* event, unsigned long length, const uint16_t* text)",
@@ -120,24 +120,24 @@ export const loadKeyboard = async (): Promise<Keyboard> => {
   const postAllowed = coreGraphics.func("bool CGPreflightPostEventAccess()");
   const release = coreFoundation.func("void CFRelease(void* object)");
   const trusted = applicationServices.func("bool AXIsProcessTrusted()");
-  const source = createSource(COMBINED_SESSION_STATE);
+  const code = createOrigin(COMBINED_SESSION_STATE);
 
   const isKeyDown = (key: number): boolean => {
     const optionFlags = OPTION_KEY_FLAGS.get(key);
 
-    const isOptionFlagsMissing = optionFlags === undefined;
+    const isOptionFlagsMissing = optionFlags == null;
     if (isOptionFlagsMissing) {
-      return keyState(HID_SYSTEM_STATE, key) === true;
+      return keyStatus(HID_SYSTEM_STATE, key) === true;
     }
 
     // Key state can alias Right Option to Left Option; device flags retain the physical side.
-    const nativeFlags = flagsState(HID_SYSTEM_STATE);
+    const nativeFlags = flagsStatus(HID_SYSTEM_STATE);
     const flags = BigInt(nativeFlags);
     return (flags & optionFlags) === optionFlags;
   };
 
   const postKey = (request: { readonly key: number; readonly down: boolean; readonly flags: bigint }) => {
-    const event = createKeyEvent(source, request.key, request.down);
+    const event = createKeyEvent(code, request.key, request.down);
     setFlags(event, request.flags);
     postEvent(HID_EVENT_TAP, event);
     release(event);
@@ -150,7 +150,7 @@ export const loadKeyboard = async (): Promise<Keyboard> => {
 
   // Flags are cleared, so a modifier still held by the hand cannot alter the typed text.
   const postUnicode = (chunk: string) => {
-    const event = createKeyEvent(source, 0, true);
+    const event = createKeyEvent(code, 0, true);
     const units = readUtf16Units(chunk);
     setUnicode(event, units.length, units);
     setFlags(event, 0n);
@@ -158,8 +158,8 @@ export const loadKeyboard = async (): Promise<Keyboard> => {
     release(event);
   };
 
-  const typeUnicode = (text: string) => {
-    for (const chunk of listUnicodeChunks(text)) {
+  const typeUnicode = (characters: string) => {
+    for (const chunk of listUnicodeChunks(characters)) {
       const isChunkTabIndented = chunk.startsWith("\t");
       if (isChunkTabIndented) {
         pressKey(TAB_KEY, 0n);
@@ -172,7 +172,7 @@ export const loadKeyboard = async (): Promise<Keyboard> => {
   };
 
   return {
-    holdKey: config.dictationHoldKey,
+    holdKey: settings.dictationHoldKey,
     holdDown: (): boolean => holdKeys.some(isKeyDown),
     otherModifiersDown: (): boolean => otherModifiers.some(isKeyDown),
     // Bit n is set while key code n is held.

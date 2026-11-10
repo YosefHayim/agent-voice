@@ -36,10 +36,10 @@ const listWavChunks = (bytes: Buffer): ReadonlyArray<WavChunk> => {
 };
 
 // Keeps only the first channel: every reader wants mono.
-export const decodeWav = (bytes: Buffer): { readonly sampleRate: number; readonly pcm: Int16Array } | undefined => {
+export const decodeWav = (bytes: Buffer): { readonly sampleRate: number; readonly pcm: Int16Array } | null => {
   const isNotWave = bytes.toString("ascii", 0, 4) !== "RIFF" || bytes.toString("ascii", 8, 12) !== "WAVE";
   if (isNotWave) {
-    return undefined;
+    return null;
   }
 
   const chunks = listWavChunks(bytes);
@@ -47,10 +47,9 @@ export const decodeWav = (bytes: Buffer): { readonly sampleRate: number; readonl
 
   const samples = chunks.find((chunk) => chunk.id === "data");
 
-  const isUnsupportedWave =
-    format === undefined || samples === undefined || bytes.readUInt16LE(format.start + 14) !== 16;
+  const isUnsupportedWave = format == null || samples == null || bytes.readUInt16LE(format.start + 14) !== 16;
   if (isUnsupportedWave) {
-    return undefined;
+    return null;
   }
 
   const channels = bytes.readUInt16LE(format.start + 2);

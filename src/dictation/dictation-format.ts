@@ -18,7 +18,7 @@ type Spoken = {
   readonly phrases: ReadonlyArray<Phrase>;
 };
 
-type FormatState = {
+type FormatStatus = {
   readonly text: string;
   readonly atLineStart: boolean;
   readonly capitalizeNext: boolean;
@@ -56,7 +56,7 @@ const SPOKEN_COMMANDS: ReadonlyArray<SpokenCommand> = [
 
 const SENTENCE_ENDS = [".", "!", "?"];
 
-const initialFormat: FormatState = {
+const initialFormat: FormatStatus = {
   text: "",
   atLineStart: true,
   capitalizeNext: true,
@@ -64,17 +64,17 @@ const initialFormat: FormatState = {
   nextNumber: 0,
 };
 
-const listReplacementPair = (entry: string): ReadonlyArray<readonly [string, string]> => {
-  const separator = entry.indexOf("=");
+const listReplacementPair = (line: string): ReadonlyArray<readonly [string, string]> => {
+  const separator = line.indexOf("=");
 
   const isSeparatorNotFound = separator < 0;
   if (isSeparatorNotFound) {
     return [];
   }
 
-  const heard = entry.slice(0, separator).trim();
+  const heard = line.slice(0, separator).trim();
 
-  const written = entry.slice(separator + 1).trim();
+  const written = line.slice(separator + 1).trim();
 
   const hasEmptySide = heard === "" || written === "";
   if (hasEmptySide) {
@@ -85,8 +85,8 @@ const listReplacementPair = (entry: string): ReadonlyArray<readonly [string, str
 };
 
 // A blank or one-sided pair is skipped, and a later pair for the same heard words wins.
-export const parseReplacements = (replacementText: string): ReadonlyMap<string, string> => {
-  const pairs = replacementText.split(";").flatMap(listReplacementPair);
+export const parseReplacements = (replacementWords: string): ReadonlyMap<string, string> => {
+  const pairs = replacementWords.split(";").flatMap(listReplacementPair);
   return new Map(pairs);
 };
 
@@ -99,8 +99,8 @@ export const readPromptBoost = (replacements: ReadonlyMap<string, string>): stri
 
 const readCanonicalWord = (word: string): string => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").toLowerCase();
 
-const listCanonicalWords = (text: string): ReadonlyArray<string> =>
-  text
+const listCanonicalWords = (string: string): ReadonlyArray<string> =>
+  string
     .split(/\s+/u)
     .map(readCanonicalWord)
     .filter((word) => word !== "");
@@ -114,7 +114,7 @@ const listReplacementPhrases = (replacements: ReadonlyMap<string, string>): Read
     .filter((phrase) => phrase.words.length > 0 && phrase.written !== "")
     .sort((left, right) => right.words.length - left.words.length);
 
-const hasMatchAt = (request: {
+const hasPhraseAt = (request: {
   readonly words: ReadonlyArray<string>;
   readonly index: number;
   readonly phrase: ReadonlyArray<string>;
@@ -123,23 +123,25 @@ const hasMatchAt = (request: {
   request.phrase.every((word, offset) => request.words[request.index + offset] === word);
 
 const readCommandAt = (spoken: Spoken, index: number): SpokenCommand | undefined =>
-  SPOKEN_COMMANDS.find((spokenCommand) => hasMatchAt({ words: spoken.canonical, index, phrase: spokenCommand.phrase }));
+  SPOKEN_COMMANDS.find((spokenCommand) =>
+    hasPhraseAt({ words: spoken.canonical, index, phrase: spokenCommand.phrase }),
+  );
 
 const readReplacementAt = (spoken: Spoken, index: number): Phrase | undefined =>
-  spoken.phrases.find((phrase) => hasMatchAt({ words: spoken.canonical, index, phrase: phrase.words }));
+  spoken.phrases.find((phrase) => hasPhraseAt({ words: spoken.canonical, index, phrase: phrase.words }));
 
 // "literal" types the next command or replacement phrase, or one word, as plain words.
 const readLiteralLength = (spoken: Spoken, index: number): number => {
   const command = readCommandAt(spoken, index);
 
-  const hasCommand = command !== undefined;
+  const hasCommand = command != null;
   if (hasCommand) {
     return command.phrase.length;
   }
 
   const replacement = readReplacementAt(spoken, index);
 
-  const hasReplacement = replacement !== undefined;
+  const hasReplacement = replacement != null;
   if (hasReplacement) {
     return replacement.words.length;
   }
@@ -157,14 +159,14 @@ const readPieceAt = (spoken: Spoken, index: number): { readonly piece: Piece; re
 
   const command = readCommandAt(spoken, index);
 
-  const hasCommand = command !== undefined;
+  const hasCommand = command != null;
   if (hasCommand) {
     return { piece: command.command, length: command.phrase.length };
   }
 
   const replacement = readReplacementAt(spoken, index);
 
-  const hasReplacement = replacement !== undefined;
+  const hasReplacement = replacement != null;
   if (hasReplacement) {
     // The heard words' closing punctuation stays: "my name is Joseph." types "My name is Yosef."
     const lastHeard = spoken.words[index + replacement.words.length - 1];
@@ -185,10 +187,10 @@ const listPiecesFrom = (spoken: Spoken, index: number): ReadonlyArray<Piece> => 
   return [piece, ...listPiecesFrom(spoken, index + length)];
 };
 
-const capitalizeFirstLetter = (text: string): string => text.replace(/[A-Za-z]/u, (letter) => letter.toUpperCase());
+const capitalizeFirstLetter = (string: string): string => string.replace(/[A-Za-z]/u, (letter) => letter.toUpperCase());
 
-const readRenderedWords = (state: FormatState, words: string): string => {
-  const isNotCapitalizeNext = !state.capitalizeNext;
+const readRenderedWords = (formatStatus: FormatStatus, words: string): string => {
+  const isNotCapitalizeNext = !formatStatus.capitalizeNext;
   if (isNotCapitalizeNext) {
     return words;
   }
@@ -196,96 +198,96 @@ const readRenderedWords = (state: FormatState, words: string): string => {
   return capitalizeFirstLetter(words);
 };
 
-const appendWords = (state: FormatState, words: string): string => {
-  const isNotNeedsSpace = !state.needsSpace;
+const appendWords = (formatStatus: FormatStatus, words: string): string => {
+  const isNotNeedsSpace = !formatStatus.needsSpace;
   if (isNotNeedsSpace) {
-    return `${state.text}${words}`;
+    return `${formatStatus.text}${words}`;
   }
 
-  return `${state.text} ${words}`;
+  return `${formatStatus.text} ${words}`;
 };
 
-const pushWords = (state: FormatState, words: string): FormatState => {
-  const rendered = readRenderedWords(state, words);
-  const text = appendWords(state, rendered);
+const pushWords = (formatStatus: FormatStatus, words: string): FormatStatus => {
+  const rendered = readRenderedWords(formatStatus, words);
+  const string = appendWords(formatStatus, rendered);
   // A sentence end, ignoring closing quotes, capitalizes the next word.
   const endsSentence = /[.!?]["']*$/u.test(rendered);
-  return { ...state, text, atLineStart: false, capitalizeNext: endsSentence, needsSpace: true };
+  return { ...formatStatus, text: string, atLineStart: false, capitalizeNext: endsSentence, needsSpace: true };
 };
 
-const readBreakLine = (state: FormatState, lineBreak: string): FormatState => ({
-  ...state,
-  text: `${state.text}${lineBreak}`,
+const readBreakLine = (formatStatus: FormatStatus, lineBreak: string): FormatStatus => ({
+  ...formatStatus,
+  text: `${formatStatus.text}${lineBreak}`,
   atLineStart: true,
   capitalizeNext: true,
   needsSpace: false,
 });
 
-const readTextOnFreshLine = (state: FormatState): string => {
-  if (state.atLineStart) {
-    return state.text;
+const readFreshLineDictation = (formatStatus: FormatStatus): string => {
+  if (formatStatus.atLineStart) {
+    return formatStatus.text;
   }
 
-  return `${state.text}\n`;
+  return `${formatStatus.text}\n`;
 };
 
-const startListItem = (state: FormatState, marker: string): FormatState => {
-  const text = readTextOnFreshLine(state);
-  return { ...state, text: `${text}${marker}`, atLineStart: false, capitalizeNext: true, needsSpace: false };
+const startListLine = (formatStatus: FormatStatus, marker: string): FormatStatus => {
+  const string = readFreshLineDictation(formatStatus);
+  return { ...formatStatus, text: `${string}${marker}`, atLineStart: false, capitalizeNext: true, needsSpace: false };
 };
 
-const listNumber = (state: FormatState, kind: "numberedList" | "nextItem"): number => {
-  const isNewList = kind === "numberedList" || state.nextNumber < 1;
+const listNumber = (formatStatus: FormatStatus, kind: "numberedList" | "nextItem"): number => {
+  const isNewList = kind === "numberedList" || formatStatus.nextNumber < 1;
   if (isNewList) {
     return 1;
   }
 
-  return state.nextNumber;
+  return formatStatus.nextNumber;
 };
 
-const pushPiece = (state: FormatState, piece: Piece): FormatState => {
+const pushPiece = (formatStatus: FormatStatus, piece: Piece): FormatStatus => {
   switch (piece.kind) {
     case "words":
-      return pushWords(state, piece.text);
+      return pushWords(formatStatus, piece.text);
     case "punctuation": {
       const endsSentence = SENTENCE_ENDS.includes(piece.mark);
-      const text = `${state.text}${piece.mark}`;
-      return { ...state, text, atLineStart: false, capitalizeNext: endsSentence, needsSpace: true };
+      const string = `${formatStatus.text}${piece.mark}`;
+      return { ...formatStatus, text: string, atLineStart: false, capitalizeNext: endsSentence, needsSpace: true };
     }
     case "newLine":
-      return readBreakLine(state, "\n");
+      return readBreakLine(formatStatus, "\n");
     case "newParagraph":
-      return readBreakLine(state, "\n\n");
+      return readBreakLine(formatStatus, "\n\n");
     case "bullet": {
-      const item = startListItem(state, "- ");
-      return { ...item, nextNumber: 0 };
+      const element = startListLine(formatStatus, "- ");
+      return { ...element, nextNumber: 0 };
     }
     case "numberedList":
     case "nextItem": {
-      const number = listNumber(state, piece.kind);
-      const item = startListItem(state, `${String(number)}. `);
-      return { ...item, nextNumber: number + 1 };
+      const number = listNumber(formatStatus, piece.kind);
+      const listLine = startListLine(formatStatus, `${String(number)}. `);
+      return { ...listLine, nextNumber: number + 1 };
     }
   }
 };
 
 // Ends with a space when the next utterance should start a new word, and is empty when nothing should be typed.
-const readFinishedText = (state: FormatState): string => {
-  const endsWithWord = state.text !== "" && state.needsSpace;
+const readFinishedDictation = (formatStatus: FormatStatus): string => {
+  const endsWithWord = formatStatus.text !== "" && formatStatus.needsSpace;
 
   const isNotEndingWithWord = !endsWithWord;
   if (isNotEndingWithWord) {
-    return state.text;
+    return formatStatus.text;
   }
 
-  return `${state.text} `;
+  return `${formatStatus.text} `;
 };
 
-export const createDictationText = (transcript: string, replacements: ReadonlyMap<string, string>): string => {
+export const createDictationTranscript = (transcript: string, replacements: ReadonlyMap<string, string>): string => {
   const words = transcript.split(/\s+/u).filter((word) => word !== "");
   const canonical = words.map(readCanonicalWord);
   const phrases = listReplacementPhrases(replacements);
   const pieces = listPiecesFrom({ words, canonical, phrases }, 0);
-  const state = pieces.reduce(pushPiece, initialFormat);
-  return readFinishedText(state);
+  const formatStatus = pieces.reduce(pushPiece, initialFormat);
+  return readFinishedDictation(formatStatus);
 };

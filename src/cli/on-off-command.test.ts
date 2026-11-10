@@ -32,9 +32,9 @@ const read = (relative: string) => {
   return readFileSync(file, "utf8");
 };
 
-const write = (relative: string, contents: string) => {
+const write = (relative: string, messages: string) => {
   const file = createHomePath(relative);
-  writeFileSync(file, contents);
+  writeFileSync(file, messages);
 };
 
 const hasFile = (relative: string) => {
@@ -72,14 +72,14 @@ afterEach(() => {
 });
 
 // CLAUDE_CONFIG_DIR is cleared unless a test sets it, so a run inside Claude Code never edits the developer's own settings.
-const readAgentVoice = (args: ReadonlyArray<string>, claudeConfigFolder = "") =>
+const readAgentVoice = (argumentList: ReadonlyArray<string>, claudeSettingsFolder = "") =>
   runAgentVoice({
-    args,
+    args: argumentList,
     environment: {
       ...process.env,
       HOME: home,
       AGENT_VOICE_HOME: createHomePath(".agent-voice"),
-      CLAUDE_CONFIG_DIR: claudeConfigFolder,
+      CLAUDE_CONFIG_DIR: claudeSettingsFolder,
       PATH: `${createHomePath("bin")}:${process.env.PATH || ""}`,
     },
   });

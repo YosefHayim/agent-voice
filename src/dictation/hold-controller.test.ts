@@ -2,7 +2,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readConfig } from "#src/settings/config-file.js";
+import { readSettings } from "#src/settings/config-file.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
 import { stopSpeech } from "#src/workers/worker-processes.js";
 import { makeStatusWriter } from "#src/workers/worker-status.js";
@@ -20,10 +20,10 @@ vi.mock("#src/workers/worker-processes.js", async (importOriginal) => {
 
 let home = "";
 
-const writeConfig = (config: { readonly speechMuted: boolean }) => {
-  const configPath = path.join(home, "config.json");
-  const configText = JSON.stringify(config);
-  writeFileSync(configPath, configText);
+const writeSettings = (settings: { readonly speechMuted: boolean }) => {
+  const settingsPath = path.join(home, "config.json");
+  const serializedSettings = JSON.stringify(settings);
+  writeFileSync(settingsPath, serializedSettings);
 };
 
 beforeEach(() => {
@@ -80,13 +80,13 @@ const doubleTapShift = () => {
 };
 
 const isMuteSaved = (): boolean => {
-  const savedSettings = readConfig();
+  const savedSettings = readSettings();
   return savedSettings.speechMuted;
 };
 
 describe("double-tap Shift", () => {
   it("mutes speech and stops speech that is about to start", () => {
-    writeConfig({ speechMuted: false });
+    writeSettings({ speechMuted: false });
 
     doubleTapShift();
 
@@ -96,7 +96,7 @@ describe("double-tap Shift", () => {
   });
 
   it("unmutes speech without a second stop", () => {
-    writeConfig({ speechMuted: true });
+    writeSettings({ speechMuted: true });
 
     doubleTapShift();
 
@@ -128,7 +128,7 @@ const createRightOptionController = () => {
 
 describe("Right Option hold-only dictation", () => {
   it("ignores taps and double taps without changing speech mute", () => {
-    writeConfig({ speechMuted: true });
+    writeSettings({ speechMuted: true });
     const hold = createRightOptionController();
     for (const down of [true, false, true, false]) {
       hold.pressed.down = down;

@@ -4,13 +4,13 @@ import { type HookChange, registerReplyHooks } from "#src/agents/hook-registrati
 import { holdKeyLabels } from "#src/dictation/hold-key.js";
 import {
   ensureWhisperModel,
-  isWhisperModelPresent,
+  isWhisperModelDownloaded,
   readWhisperModelPath,
   selectWhisperModel,
 } from "#src/dictation/whisper-models.js";
 import { describeError } from "#src/error-message.js";
-import { readConfig } from "#src/settings/config-file.js";
-import type { Config } from "#src/settings/config-schema.js";
+import { readSettings } from "#src/settings/config-file.js";
+import type { Settings } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { sleep } from "#src/sleep.js";
 import { ensureSupertonicModels, listMissingSupertonicFiles } from "#src/speech/supertonic-models.js";
@@ -19,7 +19,7 @@ import { type CommandSpec, type ExitCode, isFlagOn } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 const readBackupNote = (change: HookChange): string => {
-  const isChangeBackupMissing = change.backup === undefined;
+  const isChangeBackupMissing = change.backup == null;
   if (isChangeBackupMissing) {
     return "";
   }
@@ -94,12 +94,12 @@ const waitForDownload = async (download: ModelDownload): Promise<void> => {
   await settledDownload;
 };
 
-export const prepareModels = async (settings: Config): Promise<void> => {
+export const prepareModels = async (settings: Settings): Promise<void> => {
   const environment = readEnvironment();
   const model = selectWhisperModel({ environment, config: settings });
 
-  const isModelMissing = !isWhisperModelPresent(model);
-  if (isModelMissing) {
+  const isModelAbsent = !isWhisperModelDownloaded(model);
+  if (isModelAbsent) {
     TerminalUI.printStep(`Downloading ${model.label} (~${readMegabytes(model.approximateBytes)})`);
     const modelDownloading = ensureWhisperModel({ model, onProgress: () => undefined });
     await waitForDownload({
@@ -116,10 +116,10 @@ export const prepareModels = async (settings: Config): Promise<void> => {
   }
 };
 
-const readRefineTarget = (settings: Config): string => {
+const readRefineTarget = (settings: Settings): string => {
   const model = settings.refineModel || "default model";
 
-  const isSettingsRefineEffortMissing = settings.refineEffort === undefined;
+  const isSettingsRefineEffortMissing = settings.refineEffort == null;
   if (isSettingsRefineEffortMissing) {
     return `${settings.refineProvider}/${model}`;
   }
@@ -127,7 +127,7 @@ const readRefineTarget = (settings: Config): string => {
   return `${settings.refineProvider}/${model} effort ${settings.refineEffort}`;
 };
 
-const describeRefine = (settings: Config): string => {
+const describeRefine = (settings: Settings): string => {
   const target = readRefineTarget(settings);
 
   if (settings.refinePressEnter) {
@@ -137,7 +137,7 @@ const describeRefine = (settings: Config): string => {
   return `${target} → ${settings.refineSendTo}`;
 };
 
-export const describeSpeech = (settings: Config): string => {
+export const describeSpeech = (settings: Settings): string => {
   const isSettingsSpeechModeOff = settings.speechMode === "off";
   if (isSettingsSpeechModeOff) {
     return "Speech: off (turn on with `agent-voice config set speech-mode auto`).";
@@ -152,7 +152,7 @@ export const describeSpeech = (settings: Config): string => {
   return `${speech}.`;
 };
 
-const printOnSummary = (settings: Config): void => {
+const printOnSummary = (settings: Settings): void => {
   const isClipboardRefineOn = settings.refineMode === "clipboard" || settings.refineMode === "both";
   const isDictationRefineOn = settings.refineMode === "dictation" || settings.refineMode === "both";
   const holdLabel = holdKeyLabels[settings.dictationHoldKey];
@@ -226,7 +226,7 @@ export const onCommand: CommandSpec = {
       return 0;
     }
 
-    const settings = readConfig();
+    const settings = readSettings();
     await prepareModels(settings);
     await restartWorkersWithRetry();
     TerminalUI.printSuccess("agent-voice is on.");

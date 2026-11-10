@@ -27,7 +27,7 @@ const findWhisperModel = (): string | undefined => {
 
   const modelName = readdirSync(modelsFolder).find((name) => name.startsWith("ggml-") && name.endsWith(".bin"));
 
-  const isModelNameMissing = modelName === undefined;
+  const isModelNameMissing = modelName == null;
   if (isModelNameMissing) {
     return undefined;
   }
@@ -49,27 +49,27 @@ describe.skipIf(!hasSupertonic)("Supertonic speech (smoke)", () => {
   });
 
   it("renders a Markdown reply to a 44.1 kHz WAV file, and Whisper hears the same words", async () => {
-    const outputFile = path.join(folder, "reply.wav");
+    const printoutFile = path.join(folder, "reply.wav");
     const engine = await loadSupertonic(supertonicModelFolder);
     const seconds = await writeMarkdownWav({
       engine,
       markdown: "# Release\n\nThe voice worker is **ready**.",
       voice: { voice: "F4", wordsPerMinute: 230 },
-      outputFile,
+      outputFile: printoutFile,
     });
-    const renderedBytes = readFileSync(outputFile);
+    const renderedBytes = readFileSync(printoutFile);
     const rendered = decodeWav(renderedBytes);
 
     expect(seconds).toBeGreaterThan(1);
     expect(rendered?.sampleRate).toBe(44_100);
 
-    const isWhisperModelMissing = whisperModel === undefined;
+    const isWhisperModelMissing = whisperModel == null;
     if (isWhisperModelMissing) {
       return;
     }
 
     const resampledFile = path.join(folder, "reply-16k.wav");
-    execFileSync("afconvert", ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", outputFile, resampledFile]);
+    execFileSync("afconvert", ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", printoutFile, resampledFile]);
     const resampledBytes = readFileSync(resampledFile);
     const resampled = decodeWav(resampledBytes);
     const samples = readSamplesFromPcm(resampled?.pcm || new Int16Array());

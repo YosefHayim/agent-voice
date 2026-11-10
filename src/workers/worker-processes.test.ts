@@ -45,7 +45,7 @@ const startSleeper = async (trailing: ReadonlyArray<string>): Promise<number> =>
     detached: true,
   });
   started.push(child);
-  await new Promise((resolve) => child.once("spawn", resolve));
+  await new Promise((fulfill) => child.once("spawn", fulfill));
   return child.pid || 0;
 };
 
@@ -57,7 +57,7 @@ const writePidFile = (name: string, pid: number) => {
 const waitUntilTrue = async (check: () => boolean, timeoutMs = 3_000): Promise<boolean> => {
   const deadline = Date.now() + timeoutMs;
   while (!check() && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((fulfill) => setTimeout(fulfill, 50));
   }
   return check();
 };
@@ -125,7 +125,7 @@ const startStarter = (request: { readonly go: string; readonly holdMs: number })
   child.stdout?.on("data", (chunk: Buffer) => {
     stdout += chunk.toString();
   });
-  const exited = new Promise((resolve) => child.once("exit", resolve));
+  const exited = new Promise((fulfill) => child.once("exit", fulfill));
   return { pid: child.pid || 0, stdoutSoFar: () => stdout, exited };
 };
 

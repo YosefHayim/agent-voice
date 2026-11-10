@@ -58,7 +58,7 @@ export const findFirstCli = (names: ReadonlyArray<string>): FoundCli | null => {
   for (const name of names) {
     const cliPath = findCli(name);
 
-    const isCliFound = cliPath !== null;
+    const isCliFound = cliPath != null;
     if (isCliFound) {
       return { name, path: cliPath };
     }
@@ -110,19 +110,19 @@ export const runCli = (request: {
     });
   });
 
-export const readCliOutputText = (run: CliRun): string => run.stdout.trim() || run.stderr.trim();
+export const readCliReply = (run: CliRun): string => run.stdout.trim() || run.stderr.trim();
 
 // stderr comes first: partial stdout must never hide the error that explains the exit.
-export const readCliFailureText = (run: CliRun): string =>
-  [run.stderr.trim(), run.stdout.trim()].filter((text) => text !== "").join("\n");
+export const readCliFailureReason = (run: CliRun): string =>
+  [run.stderr.trim(), run.stdout.trim()].filter((string) => string !== "").join("\n");
 
-export const containsAny = (text: string, markers: ReadonlyArray<string>): boolean => {
-  const lowercase = text.toLowerCase();
+export const containsAny = (string: string, markers: ReadonlyArray<string>): boolean => {
+  const lowercase = string.toLowerCase();
   return markers.some((marker) => lowercase.includes(marker));
 };
 
-export const listNonBlankLines = (text: string): ReadonlyArray<string> =>
-  text
+export const listNonBlankLines = (string: string): ReadonlyArray<string> =>
+  string
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line !== "");
@@ -144,9 +144,9 @@ export const runCliLines = async (request: {
 };
 
 // Not JSON gives null, the same as JSON null.
-export const parseJsonOrNull = (text: string): unknown => {
+export const parseDocumentOrNull = (string: string): unknown => {
   try {
-    return JSON.parse(text);
+    return JSON.parse(string);
   } catch {
     return null;
   }

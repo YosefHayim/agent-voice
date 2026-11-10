@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { readStateFile } from "#src/settings/agent-voice-home.js";
-import { readJsonFile, writeJsonAtomically } from "#src/storage/state-files.js";
+import { readStatusFile } from "#src/settings/agent-voice-home.js";
+import { readDocumentFile, writeDocumentAtomically } from "#src/storage/state-files.js";
 
 const dictationStages = ["starting", "inactive", "listening", "finishing", "refining", "done", "unavailable"] as const;
 
@@ -24,10 +24,10 @@ const workerStatusSchema = z.object({
 type WorkerStatus = z.infer<typeof workerStatusSchema>;
 
 export const readWorkerStatus = (): WorkerStatus | null =>
-  readJsonFile({ path: readStateFile("status.json"), schema: workerStatusSchema });
+  readDocumentFile({ path: readStatusFile("status.json"), schema: workerStatusSchema });
 
 export const writeWorkerStatus = (status: Omit<WorkerStatus, "updatedAt">): void =>
-  writeJsonAtomically({ path: readStateFile("status.json"), value: { ...status, updatedAt: Date.now() / 1_000 } });
+  writeDocumentAtomically({ path: readStatusFile("status.json"), value: { ...status, updatedAt: Date.now() / 1_000 } });
 
 // Every write records whether the mic is capturing a hold, so a queued clip's "finishing" or "refining" never lets
 // speech into a newer hold.
@@ -52,7 +52,7 @@ export type StatusWriter = ReturnType<typeof makeStatusWriter>;
 export const isAudioOwnedByDictation = (): boolean => {
   const status = readWorkerStatus();
 
-  const isThereNoStatus = status === null;
+  const isThereNoStatus = status == null;
   if (isThereNoStatus) {
     return false;
   }

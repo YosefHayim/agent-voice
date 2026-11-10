@@ -2,19 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import {
   checkRefinedPrompt,
-  isAuthFailureText,
-  isCliHelpText,
-  isFailedModelOutputText,
+  isAuthFailureMessage,
+  isCliHelpScreen,
+  isFailedModelReply,
   isModelUnavailableError,
   isQuotaOrLimitError,
   listPromptLiterals,
-  replyTextFromJson,
+  readReplyFromDocument,
 } from "./refine-reply.js";
 
 const openCodeHelpDump =
   "opencode run [message..]\n\nrun opencode with a message\n\nPositionals:\n  message  message to send\n\nOptions:\n  -h, --help  show help  [boolean]";
 
-const verdictRows: ReadonlyArray<readonly [string, (text: string) => boolean, string, boolean]> = [
+const storedVerdictList: ReadonlyArray<readonly [string, (string: string) => boolean, string, boolean]> = [
   [
     "model unavailable",
     isModelUnavailableError,
@@ -35,23 +35,18 @@ const verdictRows: ReadonlyArray<readonly [string, (text: string) => boolean, st
     "Set the monthly budget, fix the billing page, and show the disk quota on the RPM and TPM charts.",
     false,
   ],
-  ["auth", isAuthFailureText, "No API key found for the selected model.\nUse /login", true],
-  [
-    "failed output",
-    isFailedModelOutputText,
-    "Not signed in. To authenticate without a browser, run:\n  grok login",
-    true,
-  ],
-  ["auth", isAuthFailureText, "Ship the fix for STT refine", false],
-  ["failed output", isFailedModelOutputText, '402: {"message":"requires more credits","code":402}', true],
-  ["failed output", isFailedModelOutputText, '{"error":{"message":"bad"}}', true],
-  ["failed output", isFailedModelOutputText, "", true],
-  ["failed output", isFailedModelOutputText, "Fix the STT refine help paste bug.", false],
-  ["CLI help", isCliHelpText, openCodeHelpDump, true],
-  ["CLI help", isCliHelpText, "Ship the fix for STT refine", false],
+  ["auth", isAuthFailureMessage, "No API key found for the selected model.\nUse /login", true],
+  ["failed output", isFailedModelReply, "Not signed in. To authenticate without a browser, run:\n  grok login", true],
+  ["auth", isAuthFailureMessage, "Ship the fix for STT refine", false],
+  ["failed output", isFailedModelReply, '402: {"message":"requires more credits","code":402}', true],
+  ["failed output", isFailedModelReply, '{"error":{"message":"bad"}}', true],
+  ["failed output", isFailedModelReply, "", true],
+  ["failed output", isFailedModelReply, "Fix the STT refine help paste bug.", false],
+  ["CLI help", isCliHelpScreen, openCodeHelpDump, true],
+  ["CLI help", isCliHelpScreen, "Ship the fix for STT refine", false],
 ];
 
-const verdicts = verdictRows.map(([kind, judge, text, expected]) => ({ kind, judge, text, expected }));
+const verdicts = storedVerdictList.map(([kind, judge, text, expected]) => ({ kind, judge, text, expected }));
 
 describe("refine reply checks", () => {
   it.each(verdicts)("$kind: $text → $expected", ({ judge, text, expected }) => {
@@ -108,21 +103,21 @@ describe("replyTextFromJson", () => {
       '{"type":"text","part":{"type":"text","text":"Ship the fix for STT refine"}}',
       '{"type":"step_finish","part":{"type":"step-finish","reason":"stop"}}',
     ].join("\n");
-    expect(replyTextFromJson(jsonl)).toBe("Ship the fix for STT refine");
+    expect(readReplyFromDocument(jsonl)).toBe("Ship the fix for STT refine");
   });
 
   it("prefers the longest cumulative streamed part", () => {
     const jsonl = ['{"part":{"text":"Ship"}}', '{"part":{"text":"Ship the fix"}}'].join("\n");
-    expect(replyTextFromJson(jsonl)).toBe("Ship the fix");
+    expect(readReplyFromDocument(jsonl)).toBe("Ship the fix");
   });
 
   it("reads one whole JSON document, a JSON string, Claude content blocks, and the last JSONL message", () => {
-    expect(replyTextFromJson('{"result":"  Done.  "}')).toBe("Done.");
-    expect(replyTextFromJson('"plain"')).toBe("plain");
-    expect(replyTextFromJson('{"content":[{"type":"text","text":"A"},{"type":"text","text":"B"}]}')).toBe("A\nB");
-    expect(replyTextFromJson('{"response":{"text":"nested"}}')).toBe("nested");
+    expect(readReplyFromDocument('{"result":"  Done.  "}')).toBe("Done.");
+    expect(readReplyFromDocument('"plain"')).toBe("plain");
+    expect(readReplyFromDocument('{"content":[{"type":"text","text":"A"},{"type":"text","text":"B"}]}')).toBe("A\nB");
+    expect(readReplyFromDocument('{"response":{"text":"nested"}}')).toBe("nested");
     const messageLines = ['{"message":{"content":"first"}}', '{"message":{"content":[{"text":"second"}]}}'].join("\n");
-    expect(replyTextFromJson(messageLines)).toBe("second");
-    expect(replyTextFromJson("not json")).toBe("");
+    expect(readReplyFromDocument(messageLines)).toBe("second");
+    expect(readReplyFromDocument("not json")).toBe("");
   });
 });

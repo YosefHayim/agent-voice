@@ -32,11 +32,11 @@ const readFlagType = (flag: FlagSpec): "boolean" | "string" => {
   return "string";
 };
 
-const createParseOptions = (flags: Readonly<Record<string, FlagSpec>>) => {
-  const optionEntries = Object.entries(flags).map(
+const createParseSettings = (flags: Readonly<Record<string, FlagSpec>>) => {
+  const optionLines = Object.entries(flags).map(
     ([flagName, flag]) => [flagName, { type: readFlagType(flag) }] as const,
   );
-  return Object.fromEntries(optionEntries);
+  return Object.fromEntries(optionLines);
 };
 
 const checkFlagWord = (flagName: string, flag: FlagSpec, flagWord: string): void => {
@@ -131,7 +131,7 @@ const routeLeaf = (request: {
 
   const parsedArguments = parseArgs({
     args: [...restWords],
-    options: createParseOptions(command.flags),
+    options: createParseSettings(command.flags),
     allowPositionals: true,
     strict: true,
   });
