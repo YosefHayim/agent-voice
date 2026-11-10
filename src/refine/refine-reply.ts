@@ -254,14 +254,14 @@ const readFieldOrEmpty = (field: unknown): string => {
 
 // A block keeps its text as sent, blank included, so the joined reply keeps its line breaks.
 const readBlockReply = (block: unknown): string | null => {
-  const string = isDocumentObject(block) ? block.text : undefined;
+  const blockField = isDocumentObject(block) ? block.text : null;
 
-  const isNotStringField = typeof string !== "string";
+  const isNotStringField = typeof blockField !== "string";
   if (isNotStringField) {
     return null;
   }
 
-  return string;
+  return blockField;
 };
 
 const readJoinedBlocks = (field: unknown): string | null => {
