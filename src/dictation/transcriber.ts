@@ -7,7 +7,7 @@ import { prepareForWhisper, readPcmFromSamples, readRootMeanSquare, readSyntheti
 import { tidyWhisperTranscript } from "./transcript-text.js";
 import type { TranscribeOptions, WhisperModule } from "./whisper-node.js";
 
-export interface Transcription {
+interface Transcription {
   readonly text: string;
   readonly decodeMs: number;
   // RMS of the capture before normalizing, for the log.

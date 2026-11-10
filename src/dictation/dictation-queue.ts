@@ -14,7 +14,7 @@ import { cleanTranscript, isShortPhrase } from "./transcript-text.js";
 
 const INACTIVE_STAGE = "inactive";
 
-export interface DictationJob {
+interface DictationJob {
   readonly samples: Float32Array;
   // Typed when the final decode hears nothing, which happens on short clips.
   readonly fallbackCaption: string;

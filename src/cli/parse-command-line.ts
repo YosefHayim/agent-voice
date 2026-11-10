@@ -70,7 +70,7 @@ const checkFlagWords = (flags: Readonly<Record<string, FlagSpec>>, parsedFlags: 
   for (const [flagName, flag] of Object.entries(flags)) {
     const flagWord = parsedFlags[flagName];
 
-    const isWordGiven = typeof flagWord === STRING_KIND;
+    const isWordGiven = typeof flagWord === "string";
     if (isWordGiven) {
       checkFlagWord(flagName, flag, flagWord);
     }

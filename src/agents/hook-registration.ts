@@ -20,7 +20,7 @@ const ABSENT_CHANGE_KIND = "absent";
 
 const CREATED_HOOK_FILES_STATUS_FILE = "created-hook-files.json";
 
-export type HookChangeKind = "added" | "unchanged" | "removed" | "absent" | "not installed" | "failed";
+type HookChangeKind = "added" | "unchanged" | "removed" | "absent" | "not installed" | "failed";
 
 export interface HookChange {
   readonly agent: AgentId;

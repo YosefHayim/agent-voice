@@ -171,9 +171,9 @@ describe("sampleHold", () => {
 
 describe("taps", () => {
   it("treats a second tap within 400 ms as a double tap", () => {
-    expect(classifyTap({ lastTapAt: 1_000, now: 1_300 })).toEqual({ double: true, rememberedTapAt: undefined });
+    expect(classifyTap({ lastTapAt: 1_000, now: 1_300 })).toEqual({ double: true, rememberedTapAt: null });
     expect(classifyTap({ lastTapAt: 1_000, now: 1_500 })).toEqual({ double: false, rememberedTapAt: 1_500 });
-    expect(classifyTap({ lastTapAt: undefined, now: 10 })).toEqual({ double: false, rememberedTapAt: 10 });
+    expect(classifyTap({ lastTapAt: null, now: 10 })).toEqual({ double: false, rememberedTapAt: 10 });
   });
 
   it("stops speech first, then refines the clipboard, else toggles the mute", () => {

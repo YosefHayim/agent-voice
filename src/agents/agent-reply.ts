@@ -103,12 +103,13 @@ const listTranscriptMessage = (line: string): ReadonlyArray<ChatMessage> => {
 };
 
 const listMessageBlocks = (message: ChatMessage): ReadonlyArray<MessageBlock> => {
-  const isPlainMessage = typeof message.content === "string";
+  const { content } = message;
+  const isPlainMessage = typeof content === "string";
   if (isPlainMessage) {
-    return [{ type: PROSE_BLOCK_TYPE, text: message.content }];
+    return [{ type: PROSE_BLOCK_TYPE, text: content }];
   }
 
-  return message.content;
+  return content;
 };
 
 // Claude Code feeds tool results back as user messages; only a prompt the user typed starts a new reply.

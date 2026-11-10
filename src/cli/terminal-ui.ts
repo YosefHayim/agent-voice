@@ -75,21 +75,24 @@ export const askChoice = async <Picked>(request: {
   readonly choices: ReadonlyArray<ChoiceOption<Picked>>;
   readonly initial?: Picked;
 }): Promise<Picked | null> => {
-  const selectChoiceList = request.choices.map((choice) => ({
-    value: choice.pick,
+  const selectChoiceList = request.choices.map((choice, index) => ({
+    value: index,
     label: choice.title,
     hint: choice.description,
   }));
-  const pickedChoice = await select({
+  const initialIndex = request.choices.findIndex((choice) => choice.pick === request.initial);
+  const isInitialMissing = initialIndex === -1;
+  const pickedIndex = await select({
     message: request.message,
     options: selectChoiceList,
-    initialValue: request.initial,
+    initialValue: isInitialMissing ? undefined : initialIndex,
   });
 
-  const isPickCancelled = isCancel(pickedChoice);
+  const isPickCancelled = isCancel(pickedIndex);
   if (isPickCancelled) {
     return null;
   }
 
-  return pickedChoice;
+  const pickedChoice = request.choices[pickedIndex];
+  return pickedChoice.pick;
 };

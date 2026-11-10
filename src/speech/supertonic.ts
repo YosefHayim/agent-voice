@@ -8,7 +8,7 @@ import { describeError } from "#src/error-message.js";
 import type { Settings } from "#src/settings/config-schema.js";
 import { listCharacterIds, readSupertonicSpeech } from "./speech-chunks.js";
 
-export interface SynthesizeRequest {
+interface SynthesizeRequest {
   readonly text: string;
   readonly voice: Settings["speechVoice"];
   readonly speed: number;
