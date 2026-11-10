@@ -21,7 +21,7 @@ const loadEngine = async () => {
     TerminalUI.printStep("Downloading the Supertonic voices (~400 MB, once)");
   }
 
-  const modelFolder = await ensureSupertonicModels(() => undefined);
+  const modelFolder = await ensureSupertonicModels(() => {});
   return loadSupertonic(modelFolder);
 };
 
@@ -52,7 +52,8 @@ export const speakCommand: CommandSpec = {
 
     const engine = await loadEngine();
     const printoutPath = path.resolve(printoutFile);
-    const seconds = await writeMarkdownWav({ engine, markdown, voice: readVoice(settings), outputFile: printoutPath });
+    const voiceName = readVoice(settings);
+    const seconds = await writeMarkdownWav({ engine, markdown, voice: voiceName, outputFile: printoutPath });
     TerminalUI.printSuccess(`Wrote ${seconds.toFixed(1)} s of speech to ${printoutPath}`);
     return 0;
   },

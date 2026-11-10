@@ -180,7 +180,8 @@ export const makeHoldController = (request: {
       return;
     }
 
-    const tap = classifyTap({ lastTapAt, now: Date.now() });
+    const nowMilliseconds = Date.now();
+    const tap = classifyTap({ lastTapAt, now: nowMilliseconds });
     lastTapAt = tap.rememberedTapAt;
 
     const isSingleTap = !tap.double;
@@ -191,7 +192,8 @@ export const makeHoldController = (request: {
 
     const settings = readSettingsOrDefaults();
     const isClipboardRefineOn = settings.refineMode === "clipboard" || settings.refineMode === "both";
-    const action = readDoubleTapAction({ isSpeaking: isSpeaking(), clipboardRefine: isClipboardRefineOn });
+    const isSpeakingNow = isSpeaking();
+    const action = readDoubleTapAction({ isSpeaking: isSpeakingNow, clipboardRefine: isClipboardRefineOn });
     switch (action) {
       case "stopSpeaking":
         stopSpeech();

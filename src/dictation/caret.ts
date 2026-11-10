@@ -32,7 +32,8 @@ export const writeClipboard = (string: string): Promise<void> =>
         return;
       }
 
-      failWrite(new Error(`pbcopy exited ${String(code)}`));
+      const pbcopyExitError = new Error(`pbcopy exited ${String(code)}`);
+      failWrite(pbcopyExitError);
     });
     child.stdin.end(string);
   });

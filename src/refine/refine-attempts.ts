@@ -216,7 +216,8 @@ const pickStartingModel = (request: RefineRequest): string => {
     return configuredModel;
   }
 
-  const savedModel = pickSavedModel(readSavedChoice(), request.provider);
+  const savedChoice = readSavedChoice();
+  const savedModel = pickSavedModel(savedChoice, request.provider);
 
   const hasSavedModel = savedModel !== "";
   if (hasSavedModel) {

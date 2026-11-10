@@ -44,7 +44,8 @@ export const printLine = (message: string): void => {
 };
 
 export const printDocument = (document: unknown): void => {
-  console.log(JSON.stringify(document));
+  const documentLine = JSON.stringify(document);
+  console.log(documentLine);
 };
 
 const readUnderline = (title: string): string => {

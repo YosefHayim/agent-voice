@@ -42,15 +42,18 @@ const wrapSupertonicErrors = async <Field>(work: () => Promise<Field>): Promise<
   try {
     return await work();
   } catch (error) {
-    throw createSupertonicError(describeError(error), error);
+    const errorDescription = describeError(error);
+    throw createSupertonicError(errorDescription, error);
   }
 };
 
 const readSupertonicDocument = <Printout>(schema: z.ZodType<Printout>, file: string): Printout => {
   try {
-    return schema.parse(JSON.parse(readFileSync(file, "utf8")));
+    const parsedFile = JSON.parse(readFileSync(file, "utf8"));
+    return schema.parse(parsedFile);
   } catch (error) {
-    throw createSupertonicError(describeError(error), error);
+    const errorDescription = describeError(error);
+    throw createSupertonicError(errorDescription, error);
   }
 };
 

@@ -114,13 +114,15 @@ export const runCli = (request: {
     const stderrChunks: Array<Buffer> = [];
     const timer = setTimeout(() => {
       child.kill(KILL_SIGNAL);
-      failRun(createCliRunError(request.executable, "timed out"));
+      const timeoutError = createCliRunError(request.executable, "timed out");
+      failRun(timeoutError);
     }, request.timeoutMs);
     child.stdout.on(STREAM_CHUNK_EVENT, (chunk: Buffer) => stdoutChunks.push(chunk));
     child.stderr.on(STREAM_CHUNK_EVENT, (chunk: Buffer) => stderrChunks.push(chunk));
     child.on("error", (error) => {
       clearTimeout(timer);
-      failRun(createCliRunError(request.executable, error.message));
+      const runError = createCliRunError(request.executable, error.message);
+      failRun(runError);
     });
     child.on("close", (code) => {
       clearTimeout(timer);

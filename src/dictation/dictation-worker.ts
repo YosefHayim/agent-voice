@@ -121,7 +121,8 @@ const loadModelAndRun = async (): Promise<void> => {
   const settings = readSettingsOrDefaults();
   const environment = readEnvironment();
   const model = selectWhisperModel({ environment, config: settings });
-  const loading = makeStatusWriter({ model: model.file, backend: readWhisperBackend(), recording: () => false });
+  const whisperBackend = readWhisperBackend();
+  const loading = makeStatusWriter({ model: model.file, backend: whisperBackend, recording: () => false });
   loading.write(STARTING_STAGE, `Loading ${model.label}`);
 
   const modelPath = await ensureWhisperModel({
@@ -166,7 +167,8 @@ export const runDictationWorker = async (): Promise<void> => {
   } catch (error) {
     const detail = describeError(error);
     appendDictationLog(`worker failed: ${detail}`);
-    const failed = makeStatusWriter({ model: "", backend: readWhisperBackend(), recording: () => false });
+    const whisperBackend = readWhisperBackend();
+    const failed = makeStatusWriter({ model: "", backend: whisperBackend, recording: () => false });
     failed.write("unavailable", detail);
     throw error;
   } finally {

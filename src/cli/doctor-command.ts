@@ -347,8 +347,9 @@ const runSettingChecks = async (): Promise<ReadonlyArray<DoctorCheck>> => {
 };
 
 const runDoctorChecks = async (): Promise<ReadonlyArray<DoctorCheck>> => {
+  const nativeModuleChecks = NATIVE_MODULES.map(checkNativeModule);
   const [nativeChecks, keyboardChecks, microphoneCheck, settingChecks] = await Promise.all([
-    Promise.all(NATIVE_MODULES.map(checkNativeModule)),
+    Promise.all(nativeModuleChecks),
     checkKeyboard(),
     checkMicrophone(),
     runSettingChecks(),

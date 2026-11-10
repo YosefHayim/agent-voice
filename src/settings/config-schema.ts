@@ -171,7 +171,8 @@ export const decodeSettings = (storedSettings: unknown): Settings => {
 
   const isReplyInvalid = !checkedReply.success;
   if (isReplyInvalid) {
-    throw new Error(describeSettingsIssues(checkedReply.error));
+    const settingsIssueSummary = describeSettingsIssues(checkedReply.error);
+    throw new Error(settingsIssueSummary);
   }
 
   return checkedReply.data;

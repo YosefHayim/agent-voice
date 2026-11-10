@@ -129,7 +129,8 @@ const readRefinedOrDictated = async (request: {
     return { promptText: refinedTranscript, isRefined: true };
   } catch (error) {
     const elapsed = (performance.now() - started).toFixed(0);
-    return keepDictation({ dictatedText: request.dictated, generation, elapsed, why: describeError(error) });
+    const failureReason = describeError(error);
+    return keepDictation({ dictatedText: request.dictated, generation, elapsed, why: failureReason });
   }
 };
 

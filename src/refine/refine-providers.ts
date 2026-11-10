@@ -77,7 +77,8 @@ const OLLAMA_EMPTY_DETAIL = "ollama returned empty refine output";
 const failAttempt = (detail: string): never => {
   const errorDetailCharacters = 2_000;
 
-  throw new Error(detail.slice(0, errorDetailCharacters));
+  const shortDetail = detail.slice(0, errorDetailCharacters);
+  throw new Error(shortDetail);
 };
 
 const requireCli = (names: ReadonlyArray<string>): string => {
@@ -266,10 +267,11 @@ const readGeneratedReply = (ollamaLine: string): string => {
 
 const askOllamaOverHttp = async (attempt: RefineAttempt, model: string): Promise<string> => {
   try {
+    const refinePrompt = createRefinePrompt(attempt.draft);
     const httpReply = await fetch("http://127.0.0.1:11434/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, prompt: createRefinePrompt(attempt.draft), stream: false }),
+      body: JSON.stringify({ model, prompt: refinePrompt, stream: false }),
       signal: AbortSignal.timeout(AGENT_TIMEOUT_MS),
     });
     const ollamaLine = await httpReply.text();
@@ -483,7 +485,8 @@ const readCheckedReply = (attempt: RefineAttempt, reply: string): string => {
 
   const isRejected = checked.status === "rejected";
   if (isRejected) {
-    return failAttempt(describeRefineReplyRejection(checked.rejection));
+    const rejectionReason = describeRefineReplyRejection(checked.rejection);
+    return failAttempt(rejectionReason);
   }
 
   return checked.prompt;

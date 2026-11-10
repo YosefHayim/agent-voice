@@ -84,14 +84,16 @@ const isUsablePid = (pid: number): boolean => Number.isInteger(pid) && pid > 1;
 
 // The pid file's text as a pid, or null when the file is missing, empty, or not a number.
 export const readPid = (name: PidFileName): number | null => {
-  const pidFileReading = readFileIfReadable(readStatusFile(name));
+  const statusFilePath = readStatusFile(name);
+  const pidFileReading = readFileIfReadable(statusFilePath);
 
   const isPidFileMissing = pidFileReading == null;
   if (isPidFileMissing) {
     return null;
   }
 
-  const pid = Number(pidFileReading.trim());
+  const trimmedPidReading = pidFileReading.trim();
+  const pid = Number(trimmedPidReading);
   return isUsablePid(pid) ? pid : null;
 };
 
@@ -209,7 +211,8 @@ const removeOwnPidFile = (kind: WorkerKind): void => {
 export const claimWorkerLock = (kind: WorkerKind): ReleaseLock | null => {
   const home = readAgentVoiceHome();
   makePrivateFolder(home);
-  const releaseLock = holdLock(readWorkerLockPath(kind));
+  const lockPath = readWorkerLockPath(kind);
+  const releaseLock = holdLock(lockPath);
 
   const isLockHeldByAnother = releaseLock == null;
   if (isLockHeldByAnother) {
@@ -225,14 +228,16 @@ export const claimWorkerLock = (kind: WorkerKind): ReleaseLock | null => {
 
 // From source there is no built main.js next to this file, so tsx runs main.ts.
 const readLineScript = (): string => {
-  const builtLine = fileURLToPath(new URL("../cli/main.js", import.meta.url));
+  const compiledMainUrl = new URL("../cli/main.js", import.meta.url);
+  const builtLine = fileURLToPath(compiledMainUrl);
 
   const hasBuiltLine = existsSync(builtLine);
   if (hasBuiltLine) {
     return builtLine;
   }
 
-  return fileURLToPath(new URL("../cli/main.ts", import.meta.url));
+  const sourceMainUrl = new URL("../cli/main.ts", import.meta.url);
+  return fileURLToPath(sourceMainUrl);
 };
 
 // This Node with its loader flags, so a worker or a hook runs the same agent-voice as the command that started it.
@@ -383,7 +388,8 @@ export const startWorkers = async (): Promise<"started" | "already running"> => 
 
   const statusDetail = status?.detail ?? "";
   const lastLines = statusDetail || readLastLogLines(DICTATION_WORKER_NAME);
-  throw new Error(readDictationStartFailureMessage(lastLines));
+  const startFailureMessage = readDictationStartFailureMessage(lastLines);
+  throw new Error(startFailureMessage);
 };
 
 export const startSpeechWorker = (): void => {

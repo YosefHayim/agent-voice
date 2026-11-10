@@ -74,7 +74,8 @@ const listModelLines = (selectedKey: string): ReadonlyArray<ModelLine> =>
   }));
 
 const readDictationStatus = (settings: Settings): DictationStatus => {
-  const selected = selectWhisperModel({ environment: readEnvironment(), config: settings });
+  const currentEnvironment = readEnvironment();
+  const selected = selectWhisperModel({ environment: currentEnvironment, config: settings });
   const isRunning = isWorkerRunning("dictation");
   const pid = readPid("dictation.pid");
   const saved = readWorkerStatus() ?? { stage: "starting", detail: "", model: "", backend: "" };
@@ -205,7 +206,8 @@ export const statusCommand: CommandSpec = {
       return 0;
     }
 
-    TerminalUI.printNote("agent-voice status", readStatusMessage(status));
+    const statusMessage = readStatusMessage(status);
+    TerminalUI.printNote("agent-voice status", statusMessage);
     return 0;
   },
 };

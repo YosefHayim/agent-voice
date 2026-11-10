@@ -127,12 +127,14 @@ const getCommand: CommandSpec = {
 
     const isSettingUnknown = setting == null;
     if (isSettingUnknown) {
-      TerminalUI.printError(describeUnknownSetting(settingName));
+      const unknownSettingMessage = describeUnknownSetting(settingName);
+      TerminalUI.printError(unknownSettingMessage);
       return BAD_USAGE_EXIT_CODE;
     }
 
     const settings = readSettings();
-    TerminalUI.printLine(describeSettingField(settings, setting));
+    const settingFieldLine = describeSettingField(settings, setting);
+    TerminalUI.printLine(settingFieldLine);
     return 0;
   },
 };
@@ -205,7 +207,8 @@ const setCommand: CommandSpec = {
 
     const isSettingUnknown = setting == null;
     if (isSettingUnknown) {
-      TerminalUI.printError(describeUnknownSetting(settingName));
+      const unknownSettingMessage = describeUnknownSetting(settingName);
+      TerminalUI.printError(unknownSettingMessage);
       return BAD_USAGE_EXIT_CODE;
     }
 
@@ -227,7 +230,8 @@ const unsetCommand: CommandSpec = {
 
     const isSettingUnknown = setting == null;
     if (isSettingUnknown) {
-      TerminalUI.printError(describeUnknownSetting(settingName));
+      const unknownSettingMessage = describeUnknownSetting(settingName);
+      TerminalUI.printError(unknownSettingMessage);
       return BAD_USAGE_EXIT_CODE;
     }
 
@@ -339,7 +343,8 @@ const pickRefineCommand: CommandSpec = {
   positionals: [],
   run: async (parsedCommand) => {
     const settings = readSettings();
-    const picked = await pickRefineTarget({ settings, isGuiWanted: isFlagOn(parsedCommand, "gui") });
+    const guiFlagOn = isFlagOn(parsedCommand, "gui");
+    const picked = await pickRefineTarget({ settings, isGuiWanted: guiFlagOn });
 
     const isNothingPicked = picked == null;
     if (isNothingPicked) {
@@ -352,7 +357,8 @@ const pickRefineCommand: CommandSpec = {
     const next = setSettingField({ config: pickedSettings, key: "refineEffort", value: effort ?? null });
     saveSettings(next);
     saveRefineChoice(picked);
-    TerminalUI.printSuccess(describePickedTarget(picked, effort));
+    const pickedTargetMessage = describePickedTarget(picked, effort);
+    TerminalUI.printSuccess(pickedTargetMessage);
     return 0;
   },
 };

@@ -76,7 +76,7 @@ const readBenchModel = async (request: {
     return { model: request.key, issue: "unknown model key" };
   }
 
-  const modelPath = await ensureWhisperModel({ model, onProgress: () => undefined });
+  const modelPath = await ensureWhisperModel({ model, onProgress: () => {} });
 
   const loadStarted = performance.now();
   const transcriber = await loadTranscriber(modelPath);

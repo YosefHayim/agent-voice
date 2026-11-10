@@ -156,7 +156,8 @@ const isVisibleModel = (model: CodexCachedModel): boolean => {
 const readModelSlug = (model: CodexCachedModel): string => (model.slug || model.id || "").trim();
 
 export const listCodexCachedModels = (): ReadonlyArray<string> => {
-  const modelsCache = readDocumentFile({ path: readCodexFile("models_cache.json"), schema: codexModelsCacheSchema });
+  const modelsCachePath = readCodexFile("models_cache.json");
+  const modelsCache = readDocumentFile({ path: modelsCachePath, schema: codexModelsCacheSchema });
 
   const isCacheMissing = modelsCache == null;
   if (isCacheMissing) {
@@ -173,7 +174,8 @@ const isModelSetting = (line: string): boolean =>
   line.startsWith(MODEL_WORD) && !line.startsWith("model_") && line.includes(KEY_PAIR_SEPARATOR);
 
 const listCodexConfiguredModel = (): ReadonlyArray<string> => {
-  const settingsToml = readFileIfReadable(readCodexFile("config.toml")) ?? "";
+  const codexTomlPath = readCodexFile("config.toml");
+  const settingsToml = readFileIfReadable(codexTomlPath) ?? "";
   const modelLine = listNonBlankLines(settingsToml).find(isModelSetting);
   const model = (modelLine || "")
     .split(KEY_PAIR_SEPARATOR)
@@ -352,7 +354,8 @@ const listGrokModels = async (): Promise<ReadonlyArray<string>> => {
   }
 
   const help = await listHelpLines(GROK_PROVIDER_ID);
-  const helpModels = dedupe(listGrokMentionedModels(help));
+  const grokMentionedModels = listGrokMentionedModels(help);
+  const helpModels = dedupe(grokMentionedModels);
 
   const isHelpEmpty = helpModels.length === 0;
   if (isHelpEmpty) {
@@ -572,7 +575,8 @@ export const discoverProviders = async (request: {
     return discoveryCache.providers;
   }
 
-  const described = await Promise.all(PROVIDERS.map(describeProvider));
+  const providerDescriptions = PROVIDERS.map(describeProvider);
+  const described = await Promise.all(providerDescriptions);
   const providers = described.filter((provider): provider is DiscoveredProvider => provider != null);
   discoveryCache.at = Date.now();
   discoveryCache.providers = providers;

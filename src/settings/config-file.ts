@@ -14,7 +14,8 @@ const readSavedFile = (filePath: string): string | null => {
 
 const decodeSavedSettings = (request: { readonly filePath: string; readonly text: string }): Settings => {
   try {
-    return decodeSettings(JSON.parse(request.text));
+    const parsedSettingsFile = JSON.parse(request.text);
+    return decodeSettings(parsedSettingsFile);
   } catch (error) {
     const isErrorInstanceError = error instanceof Error;
     const issue = isErrorInstanceError ? error.message : String(error);
@@ -76,5 +77,6 @@ export const saveSettings = (settings: Settings): void => {
   const indentSpaceCount = 2;
 
   const savedFileMessages = JSON.stringify(settings, null, indentSpaceCount);
-  writeFileAtomically({ path: readSettingsFilePath(), contents: `${savedFileMessages}\n` });
+  const settingsFilePath = readSettingsFilePath();
+  writeFileAtomically({ path: settingsFilePath, contents: `${savedFileMessages}\n` });
 };

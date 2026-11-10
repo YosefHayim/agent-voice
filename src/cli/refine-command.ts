@@ -86,7 +86,7 @@ export const refineCommand: CommandSpec = {
       effort: effortWord ?? (settings.refineEffort || ""),
       allowPicker: true,
       signal: new AbortController().signal,
-      log: () => undefined,
+      log: () => {},
     });
     TerminalUI.printLine(refinedPrompt);
 

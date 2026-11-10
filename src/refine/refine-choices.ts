@@ -44,7 +44,8 @@ const readModelSet = (modelListFileReading: string | null): ReadonlySet<string> 
 const readCodexFailedModelsOrNull = (): ReadonlySet<string> | null => {
   const failedFile = readStatusFile(CODEX_FAILED_FILE);
   try {
-    return readModelSet(readFileIfExists(failedFile));
+    const failedFileReading = readFileIfExists(failedFile);
+    return readModelSet(failedFileReading);
   } catch {
     return null;
   }
@@ -54,7 +55,8 @@ export const readCodexFailedModels = (): ReadonlySet<string> => readCodexFailedM
 
 const writeCodexFailedModels = (failed: ReadonlySet<string>): void => {
   const lines = [...failed].sort().map((model) => `${model}\n`);
-  writeFileAtomically({ path: readStatusFile(CODEX_FAILED_FILE), contents: lines.join("") });
+  const codexFailedPath = readStatusFile(CODEX_FAILED_FILE);
+  writeFileAtomically({ path: codexFailedPath, contents: lines.join("") });
 };
 
 export const markCodexModelFailed = (model: string): void => {
@@ -102,7 +104,8 @@ export const saveRefineChoice = (request: {
     return;
   }
 
-  writeFileAtomically({ path: readStatusFile(CODEX_LAST_GOOD_FILE), contents: `${model}\n` });
+  const codexLastGoodPath = readStatusFile(CODEX_LAST_GOOD_FILE);
+  writeFileAtomically({ path: codexLastGoodPath, contents: `${model}\n` });
   const failed = readCodexFailedModelsOrNull();
 
   const isModelNotMarkedFailed = failed == null || !failed.has(model);

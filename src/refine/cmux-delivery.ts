@@ -97,7 +97,8 @@ const readFirstFilledField = (field: unknown, keys: ReadonlyArray<string>): stri
 const readCmuxReply = (stdout: string): unknown => {
   const documentLines = listNonBlankLines(stdout).filter((line) => line.startsWith("{"));
   const lastDocumentLine = documentLines.at(-1) ?? "";
-  const wholeReply = parseDocumentOrNull(stdout.trim());
+  const trimmedStdout = stdout.trim();
+  const wholeReply = parseDocumentOrNull(trimmedStdout);
 
   const isWholeReplyDocument = wholeReply !== null;
   if (isWholeReplyDocument) {
