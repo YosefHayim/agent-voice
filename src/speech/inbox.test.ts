@@ -47,7 +47,7 @@ const claimNext = (mode: Settings["speechMode"]) => claimNextReply(mode);
 const claimReply = async () => {
   const claimed = await claimNext("auto");
 
-  const isThereNoClaim = claimed === null;
+  const isThereNoClaim = claimed == null;
   if (isThereNoClaim) {
     throw new Error("no reply was claimed");
   }

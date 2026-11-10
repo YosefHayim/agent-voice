@@ -147,7 +147,7 @@ const registerInstalled = (settings: HookSettingsFile): HookChange => {
 
   const added = readHookChange(settings, "added");
 
-  const isNewSettingsFile = current === null;
+  const isNewSettingsFile = current == null;
   if (isNewSettingsFile) {
     writeSettings(settings, edit.source);
     saveCreated({ file: added.file, created: true });
@@ -175,7 +175,7 @@ const registerOne = (settings: HookSettingsFile): HookChange => {
 const unregisterInstalled = (settings: HookSettingsFile): HookChange => {
   const current = readSettings(settings);
 
-  const isSettingsFileMissing = current === null;
+  const isSettingsFileMissing = current == null;
   if (isSettingsFileMissing) {
     return readHookChange(settings, "absent");
   }
@@ -214,7 +214,7 @@ const hasReplyHook = (settings: HookSettingsFile): boolean => {
   try {
     const current = readSettings(settings);
 
-    const isSettingsFileMissing = current === null;
+    const isSettingsFileMissing = current == null;
     if (isSettingsFileMissing) {
       return false;
     }

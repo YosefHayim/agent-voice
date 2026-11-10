@@ -155,7 +155,7 @@ export const classifyTap = (request: {
   readonly lastTapAt: number | undefined;
   readonly now: number;
 }): { readonly double: boolean; readonly rememberedTapAt: number | undefined } => {
-  const double = request.lastTapAt !== undefined && request.now - request.lastTapAt <= DOUBLE_TAP_MS;
+  const double = request.lastTapAt != null && request.now - request.lastTapAt <= DOUBLE_TAP_MS;
   if (double) {
     return { double, rememberedTapAt: undefined };
   }

@@ -63,7 +63,7 @@ const isUsablePid = (pid: number): boolean => Number.isInteger(pid) && pid > 1;
 export const readPid = (name: PidFileName): number | null => {
   const pidFileReading = readFileIfReadable(readStatusFile(name));
 
-  const isPidFileMissing = pidFileReading === null;
+  const isPidFileMissing = pidFileReading == null;
   if (isPidFileMissing) {
     return null;
   }
@@ -97,7 +97,7 @@ const isRunningAs = (name: PidFileName, pid: number): boolean => {
 
   const parsedPsLine = PS_LINE_PATTERN.exec(psLine);
 
-  const isProcessMissing = parsedPsLine === null;
+  const isProcessMissing = parsedPsLine == null;
   if (isProcessMissing) {
     return false;
   }
@@ -111,7 +111,7 @@ const isRunningAs = (name: PidFileName, pid: number): boolean => {
 export const readRunningPid = (name: PidFileName): number | null => {
   const savedPid = readPid(name);
 
-  const isThereNoSavedPid = savedPid === null;
+  const isThereNoSavedPid = savedPid == null;
   if (isThereNoSavedPid) {
     return null;
   }
@@ -122,7 +122,7 @@ export const readRunningPid = (name: PidFileName): number | null => {
 const listRunningPidList = (name: PidFileName): ReadonlyArray<number> => {
   const workerPid = readRunningPid(name);
 
-  const isThereNoRunningPid = workerPid === null;
+  const isThereNoRunningPid = workerPid == null;
   if (isThereNoRunningPid) {
     return [];
   }
@@ -132,14 +132,14 @@ const listRunningPidList = (name: PidFileName): ReadonlyArray<number> => {
 
 export const isWorkerRunning = (kind: WorkerKind): boolean => {
   const workerPid = readRunningPid(WORKER_FILES[kind].pid);
-  return workerPid !== null;
+  return workerPid != null;
 };
 
 // The speech worker drops the reply it is reading on SIGUSR2.
 export const stopSpeech = (): void => {
   const speechPid = readRunningPid("speech.pid");
 
-  const isSpeechRunning = speechPid !== null;
+  const isSpeechRunning = speechPid != null;
   if (isSpeechRunning) {
     sendSignal(speechPid, "SIGUSR2");
   }
@@ -188,7 +188,7 @@ export const claimWorkerLock = (kind: WorkerKind): ReleaseLock | null => {
   makePrivateFolder(home);
   const releaseLock = holdLock(readWorkerLockPath(kind));
 
-  const isLockHeldByAnother = releaseLock === null;
+  const isLockHeldByAnother = releaseLock == null;
   if (isLockHeldByAnother) {
     return null;
   }
@@ -342,7 +342,7 @@ export const startWorkers = async (): Promise<"started" | "already running"> => 
   // Ready once the worker leaves "starting"; failed once it is gone after having had time to start.
   const isSettled = () => {
     const currentStatus = readWorkerStatus();
-    const hasLeftStarting = currentStatus !== null && currentStatus.stage !== "starting";
+    const hasLeftStarting = currentStatus != null && currentStatus.stage !== "starting";
     const startupGraceMilliseconds = 3_000;
     const hasDied = Date.now() - spawnedAt > startupGraceMilliseconds && !isWorkerRunning("dictation");
     return hasLeftStarting || hasDied;
@@ -351,7 +351,7 @@ export const startWorkers = async (): Promise<"started" | "already running"> => 
   await waitUntil({ done: isSettled, timeoutMs: startTimeoutMilliseconds });
 
   const status = readWorkerStatus();
-  const isAvailable = status !== null && status.stage !== "unavailable";
+  const isAvailable = status != null && status.stage !== "unavailable";
 
   const isDictationStarted = isAvailable && isWorkerRunning("dictation");
   if (isDictationStarted) {

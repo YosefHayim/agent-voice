@@ -134,14 +134,14 @@ const readReplacementAt = (spoken: Spoken, index: number): Phrase | undefined =>
 const readLiteralLength = (spoken: Spoken, index: number): number => {
   const command = readCommandAt(spoken, index);
 
-  const hasCommand = command !== undefined;
+  const hasCommand = command != null;
   if (hasCommand) {
     return command.phrase.length;
   }
 
   const replacement = readReplacementAt(spoken, index);
 
-  const hasReplacement = replacement !== undefined;
+  const hasReplacement = replacement != null;
   if (hasReplacement) {
     return replacement.words.length;
   }
@@ -159,14 +159,14 @@ const readPieceAt = (spoken: Spoken, index: number): { readonly piece: Piece; re
 
   const command = readCommandAt(spoken, index);
 
-  const hasCommand = command !== undefined;
+  const hasCommand = command != null;
   if (hasCommand) {
     return { piece: command.command, length: command.phrase.length };
   }
 
   const replacement = readReplacementAt(spoken, index);
 
-  const hasReplacement = replacement !== undefined;
+  const hasReplacement = replacement != null;
   if (hasReplacement) {
     // The heard words' closing punctuation stays: "my name is Joseph." types "My name is Yosef."
     const lastHeard = spoken.words[index + replacement.words.length - 1];

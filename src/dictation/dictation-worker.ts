@@ -154,7 +154,7 @@ const loadModelAndRun = async (): Promise<void> => {
 export const runDictationWorker = async (): Promise<void> => {
   const releaseWorkerLock = claimWorkerLock("dictation");
 
-  const isLockTaken = releaseWorkerLock === null;
+  const isLockTaken = releaseWorkerLock == null;
   if (isLockTaken) {
     return;
   }

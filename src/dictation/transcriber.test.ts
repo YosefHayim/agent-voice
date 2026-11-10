@@ -22,7 +22,7 @@ const readInstalledModel = (): string | undefined => {
 
   const modelName = readdirSync(modelsFolder).find((file) => /^ggml-.*\.bin$/u.test(file));
 
-  const isModelNameMissing = modelName === undefined;
+  const isModelNameMissing = modelName == null;
   if (isModelNameMissing) {
     return undefined;
   }
@@ -32,7 +32,7 @@ const readInstalledModel = (): string | undefined => {
 
 const modelFile = readInstalledModel();
 
-describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisper transcription (smoke)", () => {
+describe.skipIf(modelFile == null || process.platform !== "darwin")("Whisper transcription (smoke)", () => {
   const modelPath = modelFile || "";
   let folder = "";
 

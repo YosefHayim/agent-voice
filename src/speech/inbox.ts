@@ -139,7 +139,7 @@ const readSeenKeys = (): ReadonlyMap<string, number> => {
   const now = readNowSeconds();
   const savedStamps = readDocumentFile({ path: readSeenFile(), schema: seenKeysSchema });
 
-  const isThereNoSavedStamp = savedStamps === null;
+  const isThereNoSavedStamp = savedStamps == null;
   if (isThereNoSavedStamp) {
     return new Map();
   }
@@ -215,7 +215,7 @@ const listPendingReplies = (): ReadonlyArray<PendingReply> => {
   return files.flatMap((file) => {
     const storedReply = readDocumentFile({ path: file, schema: queuedReplySchema });
 
-    const isThereNoReply = storedReply === null || !isSpeakable(storedReply);
+    const isThereNoReply = storedReply == null || !isSpeakable(storedReply);
     if (isThereNoReply) {
       removeFileIfExists(file);
       return [];
@@ -298,7 +298,7 @@ export const claimNextReply = async (mode: Settings["speechMode"]): Promise<Pend
 
     const claimed = claimFile(candidate.file);
 
-    const isClaimLost = claimed === null;
+    const isClaimLost = claimed == null;
     if (isClaimLost) {
       continue;
     }

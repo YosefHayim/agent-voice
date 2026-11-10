@@ -56,7 +56,7 @@ const queueAgentReply = async (agent: AgentId): Promise<void> => {
   const hookStdin = await text(process.stdin);
   const stopReply = readStopReply(hookStdin);
 
-  const isThereNoStopReply = stopReply === null;
+  const isThereNoStopReply = stopReply == null;
   if (isThereNoStopReply) {
     return;
   }
@@ -101,7 +101,7 @@ const parseAgentId = (agentName: string | undefined): AgentId | null => {
 const readAgentFromArguments = (argumentList: ReadonlyArray<string>): AgentId | null => {
   const inlineFlag = argumentList.find((argument) => argument.startsWith("--agent="));
 
-  const hasInlineFlag = inlineFlag !== undefined;
+  const hasInlineFlag = inlineFlag != null;
   if (hasInlineFlag) {
     const agentName = inlineFlag.slice("--agent=".length);
     return parseAgentId(agentName);
@@ -122,7 +122,7 @@ const readAgentFromArguments = (argumentList: ReadonlyArray<string>): AgentId | 
 export const runReplyHookFromArguments = async (argumentList: ReadonlyArray<string>): Promise<void> => {
   const agent = readAgentFromArguments(argumentList);
 
-  const isThereNoAgent = agent === null;
+  const isThereNoAgent = agent == null;
   if (isThereNoAgent) {
     return;
   }

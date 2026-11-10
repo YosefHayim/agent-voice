@@ -57,7 +57,7 @@ export const listUnicodeChunks = (characters: string): ReadonlyArray<string> => 
   for (const character of characters) {
     const last = chunks.at(-1);
 
-    const isFull = last === undefined || last.length + character.length > UNICODE_CHUNK_UNITS;
+    const isFull = last == null || last.length + character.length > UNICODE_CHUNK_UNITS;
     if (isFull) {
       chunks.push(character);
       continue;
@@ -125,7 +125,7 @@ export const loadKeyboard = async (): Promise<Keyboard> => {
   const isKeyDown = (key: number): boolean => {
     const optionFlags = OPTION_KEY_FLAGS.get(key);
 
-    const isOptionFlagsMissing = optionFlags === undefined;
+    const isOptionFlagsMissing = optionFlags == null;
     if (isOptionFlagsMissing) {
       return keyStatus(HID_SYSTEM_STATE, key) === true;
     }

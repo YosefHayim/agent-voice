@@ -25,7 +25,7 @@ export const readSettings = (): Settings => {
   const filePath = readSettingsFilePath();
   const savedFileMessages = readSavedFile(filePath);
 
-  const isThereNoSavedFile = savedFileMessages === null;
+  const isThereNoSavedFile = savedFileMessages == null;
   if (isThereNoSavedFile) {
     return defaultSettings;
   }

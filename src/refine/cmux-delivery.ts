@@ -58,7 +58,7 @@ const readNonEmptyField = (field: unknown): string | null => {
 const readFirstFilledField = (field: unknown, keys: ReadonlyArray<string>): string | null => {
   const stored = readPlainObject(field);
 
-  const isNotPlainObject = stored === null;
+  const isNotPlainObject = stored == null;
   if (isNotPlainObject) {
     return null;
   }
@@ -66,7 +66,7 @@ const readFirstFilledField = (field: unknown, keys: ReadonlyArray<string>): stri
   for (const key of keys) {
     const found = readNonEmptyField(stored[key]);
 
-    const isFound = found !== null;
+    const isFound = found != null;
     if (isFound) {
       return found;
     }
@@ -180,7 +180,7 @@ const sendMessageToSurface = async (request: {
 const readFocusedOrCaller = (identity: unknown): unknown => {
   const stored = readPlainObject(identity);
 
-  const isNotPlainObject = stored === null;
+  const isNotPlainObject = stored == null;
   if (isNotPlainObject) {
     return identity;
   }
@@ -246,7 +246,7 @@ const readFirstWorkspaceDirectory = (workspaces: ReadonlyArray<unknown>): string
   for (const workspace of workspaces) {
     const directory = readWorkspaceDirectory(workspace);
 
-    const isFound = directory !== null;
+    const isFound = directory != null;
     if (isFound) {
       return directory;
     }
@@ -260,17 +260,17 @@ const readDeliveryFolder = async (): Promise<string> => {
   const workspaces = await listWorkspaces();
   const focusId = await readFocusedWorkspaceId();
   const focused = workspaces.find((workspace) => isFocusedWorkspace(workspace, focusId));
-  const isFocusedMissing = focused === undefined;
+  const isFocusedMissing = focused == null;
   const focusedDirectory = isFocusedMissing ? null : readWorkspaceDirectory(focused);
 
-  const isFocusedFolderFound = focusedDirectory !== null;
+  const isFocusedFolderFound = focusedDirectory != null;
   if (isFocusedFolderFound) {
     return focusedDirectory;
   }
 
   const firstDirectory = readFirstWorkspaceDirectory(workspaces);
 
-  const isFirstFolderFound = firstDirectory !== null;
+  const isFirstFolderFound = firstDirectory != null;
   if (isFirstFolderFound) {
     return firstDirectory;
   }
@@ -359,7 +359,7 @@ const pasteInNewWorkspace = async (request: {
   const created = await runCmuxDocument({ args: [...createArgumentList, "--json"], step: "workspace create" });
   const surface = readFirstFilledField(created, ["surface_id", "surface_ref"]);
 
-  const hasNoSurface = surface === null;
+  const hasNoSurface = surface == null;
   if (hasNoSurface) {
     throw createCmuxError("workspace create", "no surface id in the reply");
   }
@@ -395,7 +395,7 @@ const deliverToFocusedSurface = async (request: {
   const focus = await identifyFocus();
   const surface = readFirstFilledField(focus, ["surface_id", "surface_ref"]);
 
-  const hasNoSurface = surface === null;
+  const hasNoSurface = surface == null;
   if (hasNoSurface) {
     throw createCmuxError("identify", "no focused surface");
   }

@@ -32,7 +32,7 @@ const describeUnknownSetting = (settingName: string): string =>
 const describeSettingField = (settings: Settings, setting: SettingDefinition): string => {
   const savedField: unknown = settings[setting.key];
 
-  const isSavedMissing = savedField === undefined;
+  const isSavedMissing = savedField == null;
   if (isSavedMissing) {
     return "(not set)";
   }
@@ -83,7 +83,7 @@ const describeSettingLine = (settings: Settings, setting: SettingDefinition) => 
   const savedField: unknown = settings[setting.key];
   const { key: _key, ...described } = setting;
 
-  const isSavedMissing = savedField === undefined;
+  const isSavedMissing = savedField == null;
   if (isSavedMissing) {
     return { ...described, value: null };
   }
@@ -310,7 +310,7 @@ const pickRefineTarget = async (request: {
 const describePickedTarget = (pick: RefinePick, effort: string | undefined): string => {
   const target = `refine → ${pick.provider}/${pick.model}`;
 
-  const isEffortMissing = effort === undefined;
+  const isEffortMissing = effort == null;
   if (isEffortMissing) {
     return target;
   }

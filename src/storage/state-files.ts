@@ -129,7 +129,7 @@ export const readDocumentFile = <Value>(request: {
 }): Value | null => {
   const fileMessages = readFileIfReadable(request.path);
 
-  const isThereNoFileMessages = fileMessages === null;
+  const isThereNoFileMessages = fileMessages == null;
   if (isThereNoFileMessages) {
     return null;
   }

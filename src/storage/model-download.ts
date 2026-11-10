@@ -37,7 +37,7 @@ const fetchIntoPlace = async (request: DownloadRequest): Promise<void> => {
   const partial = `${request.destination}.partial`;
   const reply = await fetch(request.url, { redirect: "follow" });
 
-  const isReplyFailed = !reply.ok || reply.body === null;
+  const isReplyFailed = !reply.ok || reply.body == null;
   if (isReplyFailed) {
     throw new Error(`HTTP ${String(reply.status)}`);
   }
@@ -61,7 +61,7 @@ const fetchIntoPlace = async (request: DownloadRequest): Promise<void> => {
 const readFileIdentity = (filePath: string): string => {
   const stats = statSync(filePath, { throwIfNoEntry: false });
 
-  const isStatsMissing = stats === undefined;
+  const isStatsMissing = stats == null;
   if (isStatsMissing) {
     return "";
   }

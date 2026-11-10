@@ -27,7 +27,7 @@ const findWhisperModel = (): string | undefined => {
 
   const modelName = readdirSync(modelsFolder).find((name) => name.startsWith("ggml-") && name.endsWith(".bin"));
 
-  const isModelNameMissing = modelName === undefined;
+  const isModelNameMissing = modelName == null;
   if (isModelNameMissing) {
     return undefined;
   }
@@ -63,7 +63,7 @@ describe.skipIf(!hasSupertonic)("Supertonic speech (smoke)", () => {
     expect(seconds).toBeGreaterThan(1);
     expect(rendered?.sampleRate).toBe(44_100);
 
-    const isWhisperModelMissing = whisperModel === undefined;
+    const isWhisperModelMissing = whisperModel == null;
     if (isWhisperModelMissing) {
       return;
     }

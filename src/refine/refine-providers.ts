@@ -47,7 +47,7 @@ const failAttempt = (detail: string): never => {
 const requireCli = (names: ReadonlyArray<string>): string => {
   const installed = findFirstCli(names);
 
-  const isNotInstalled = installed === null;
+  const isNotInstalled = installed == null;
   if (isNotInstalled) {
     return failAttempt(`${names.join(" or ")} not found on PATH`);
   }

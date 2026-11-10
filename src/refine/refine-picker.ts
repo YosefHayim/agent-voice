@@ -119,7 +119,7 @@ const showAlert = async (request: { readonly title: string; readonly message: st
 const readListedModels = (providers: ReadonlyArray<DiscoveredProvider>, id: ProviderId): ReadonlyArray<string> => {
   const listed = providers.find((provider) => provider.id === id);
 
-  const isListedMissing = listed === undefined;
+  const isListedMissing = listed == null;
   if (isListedMissing) {
     return [];
   }
@@ -143,7 +143,7 @@ const pickPreferredModel = (
 const readSavedCodexModel = (): string => {
   const saved = readSavedChoice();
 
-  const isSavedMissing = saved === null;
+  const isSavedMissing = saved == null;
   if (isSavedMissing) {
     return "";
   }
@@ -182,7 +182,7 @@ const createProviderLabel = (provider: DiscoveredProvider): string =>
 const pickDefaultProviderLabel = (providers: ReadonlyArray<DiscoveredProvider>, preferredProvider: string): string => {
   const preferred = providers.find((provider) => provider.id === preferredProvider) ?? providers[0];
 
-  const isPreferredMissing = preferred === undefined;
+  const isPreferredMissing = preferred == null;
   if (isPreferredMissing) {
     return "";
   }
@@ -234,14 +234,14 @@ export const pickRefineTargetWithDialogs = async (request: {
     defaultLabel: pickDefaultProviderLabel(providers, request.preferredProvider),
   });
 
-  const isProviderDismissed = chosenLabel === null;
+  const isProviderDismissed = chosenLabel == null;
   if (isProviderDismissed) {
     return null;
   }
 
   const provider = findProviderWithLabel(providers, chosenLabel);
 
-  const isProviderUnknown = provider === null;
+  const isProviderUnknown = provider == null;
   if (isProviderUnknown) {
     return null;
   }
@@ -258,7 +258,7 @@ export const pickRefineTargetWithDialogs = async (request: {
     defaultLabel: models[0] || "",
   });
 
-  const isModelDismissed = chosenModel === null;
+  const isModelDismissed = chosenModel == null;
   if (isModelDismissed) {
     return null;
   }
@@ -279,7 +279,7 @@ export const pickRefineTargetWithDialogs = async (request: {
     defaultLabel: effortDefault,
   });
 
-  const isEffortDismissed = chosenEffort === null;
+  const isEffortDismissed = chosenEffort == null;
   if (isEffortDismissed) {
     return null;
   }

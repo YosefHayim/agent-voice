@@ -34,7 +34,7 @@ const openLocked = (filePath: string): number | null => {
 const isFileAtPath = (lock: HeldLock): boolean => {
   const locked = fstatSync(lock.descriptor);
   const current = statSync(lock.filePath, { throwIfNoEntry: false });
-  return current !== undefined && current.ino === locked.ino && current.dev === locked.dev;
+  return current != null && current.ino === locked.ino && current.dev === locked.dev;
 };
 
 // A holder deletes the file just before letting go, so a lock that landed on that deleted file guards nothing:
@@ -42,7 +42,7 @@ const isFileAtPath = (lock: HeldLock): boolean => {
 const takeLock = (filePath: string): number | null => {
   const descriptor = openLocked(filePath);
 
-  const isHeldElsewhere = descriptor === null;
+  const isHeldElsewhere = descriptor == null;
   if (isHeldElsewhere) {
     return null;
   }
@@ -74,7 +74,7 @@ const takeLockOrReport = (filePath: string): number | null => {
 export const holdLock = (filePath: string): ReleaseLock | null => {
   const descriptor = takeLockOrReport(filePath);
 
-  const isHeldElsewhere = descriptor === null;
+  const isHeldElsewhere = descriptor == null;
   if (isHeldElsewhere) {
     return null;
   }
@@ -86,7 +86,7 @@ export const holdLock = (filePath: string): ReleaseLock | null => {
 export const waitForLock = async (filePath: string): Promise<ReleaseLock> => {
   const release = holdLock(filePath);
 
-  const isHeld = release !== null;
+  const isHeld = release != null;
   if (isHeld) {
     return release;
   }
@@ -104,7 +104,7 @@ export const removeFreeLock = (filePath: string): void => {
 
   const descriptor = takeLock(filePath);
 
-  const isHeldElsewhere = descriptor === null;
+  const isHeldElsewhere = descriptor == null;
   if (isHeldElsewhere) {
     return;
   }

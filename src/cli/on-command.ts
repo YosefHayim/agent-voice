@@ -19,7 +19,7 @@ import { type CommandSpec, type ExitCode, isFlagOn } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 const readBackupNote = (change: HookChange): string => {
-  const isChangeBackupMissing = change.backup === undefined;
+  const isChangeBackupMissing = change.backup == null;
   if (isChangeBackupMissing) {
     return "";
   }
@@ -119,7 +119,7 @@ export const prepareModels = async (settings: Settings): Promise<void> => {
 const readRefineTarget = (settings: Settings): string => {
   const model = settings.refineModel || "default model";
 
-  const isSettingsRefineEffortMissing = settings.refineEffort === undefined;
+  const isSettingsRefineEffortMissing = settings.refineEffort == null;
   if (isSettingsRefineEffortMissing) {
     return `${settings.refineProvider}/${model}`;
   }

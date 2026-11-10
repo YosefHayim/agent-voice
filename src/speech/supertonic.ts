@@ -77,7 +77,7 @@ const runModel = async (request: {
   const firstName = request.model.outputNames[0] || "";
   const tensor = printouts[firstName];
 
-  const isNoPrintout = tensor === undefined;
+  const isNoPrintout = tensor == null;
   if (isNoPrintout) {
     throw createSupertonicError("a model returned no output");
   }

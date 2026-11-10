@@ -124,7 +124,7 @@ const listTableCells = (line: string): ReadonlyArray<string> =>
     });
 
 const isTableStart = (line: string, nextLine: string | undefined): boolean =>
-  line.includes("|") && nextLine !== undefined && TABLE_SEPARATOR.test(nextLine);
+  line.includes("|") && nextLine != null && TABLE_SEPARATOR.test(nextLine);
 
 // One sentence per row: "Row 1. Item: Voice. State: Ready."
 const listTableSpeech = (header: string, storedList: ReadonlyArray<string>): ReadonlyArray<string> => {
@@ -160,21 +160,21 @@ const readLineSpeech = (line: string): string => {
 
   const heading = HEADING.exec(line) || UNORDERED.exec(line);
 
-  const hasHeading = heading !== null;
+  const hasHeading = heading != null;
   if (hasHeading) {
     return readProseSentence("", heading[1] || "");
   }
 
   const ordered = ORDERED.exec(line);
 
-  const hasOrdered = ordered !== null;
+  const hasOrdered = ordered != null;
   if (hasOrdered) {
     return readProseSentence(`${ordered[1] || ""}. `, ordered[2] || "");
   }
 
   const quote = QUOTE.exec(line);
 
-  const hasQuote = quote !== null;
+  const hasQuote = quote != null;
   if (hasQuote) {
     return readProseSentence("Quote. ", quote[1] || "");
   }
@@ -192,7 +192,7 @@ export const convertMarkdownToSpeech = (markdown: string): string => {
     const line = lines[index] || "";
     const fence = FENCE.exec(line);
 
-    const isTable = fence === null && !inCode && isTableStart(line, lines[index + 1]);
+    const isTable = fence == null && !inCode && isTableStart(line, lines[index + 1]);
     if (isTable) {
       const storedFirst = index + 2;
       const end = readTableEnd(lines, storedFirst);
@@ -205,14 +205,14 @@ export const convertMarkdownToSpeech = (markdown: string): string => {
 
     index += 1;
 
-    const isInsideCodeFence = fence !== null && inCode;
+    const isInsideCodeFence = fence != null && inCode;
     if (isInsideCodeFence) {
       spoken.push(CODE_END);
       inCode = false;
       continue;
     }
 
-    const hasFence = fence !== null;
+    const hasFence = fence != null;
     if (hasFence) {
       const opening = readCodeStart(fence[1] || "");
       spoken.push(opening);

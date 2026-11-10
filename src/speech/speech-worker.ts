@@ -35,7 +35,7 @@ export const speakNextReply = async (engine: SupertonicEngine, player: SpeechPla
 
   const nextReply = await claimNextReply(settings.speechMode);
 
-  const isThereNoNext = nextReply === null;
+  const isThereNoNext = nextReply == null;
   if (isThereNoNext) {
     return "idle";
   }
@@ -111,7 +111,7 @@ export const runSpeechWorker = async (): Promise<void> => {
   process.on("SIGUSR2", player.stop);
   const releaseWorkerLock = claimWorkerLock("speech");
 
-  const isLockTaken = releaseWorkerLock === null;
+  const isLockTaken = releaseWorkerLock == null;
   if (isLockTaken) {
     return;
   }

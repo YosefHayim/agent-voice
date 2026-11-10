@@ -56,7 +56,7 @@ export const listCodexModelCandidates = (request: {
 };
 
 const pickSavedModel = (saved: SavedChoice | null, provider: ProviderId): string => {
-  const isSavedMissing = saved === null;
+  const isSavedMissing = saved == null;
   if (isSavedMissing) {
     return "";
   }
@@ -150,7 +150,7 @@ const listAutoAttempts = async (requestedModel: string): Promise<ReadonlyArray<A
   const installed = savedFirst.filter(isProviderInstalled).slice(0, 1 + MAX_CROSS_PROVIDER_ATTEMPTS);
   const [leadProvider, ...fallbackProviders] = installed;
 
-  const hasNoProvider = leadProvider === undefined;
+  const hasNoProvider = leadProvider == null;
   if (hasNoProvider) {
     return [];
   }
@@ -294,7 +294,7 @@ export const refinePrompt = async (request: RefineRequest): Promise<string> => {
   const tried = await tryAttempts({ ...request, draft, attempts, effort });
   const refinedPrompt = tried.refined;
 
-  const hasRefined = refinedPrompt !== null;
+  const hasRefined = refinedPrompt != null;
   if (hasRefined) {
     return refinedPrompt;
   }
@@ -314,7 +314,7 @@ export const refinePrompt = async (request: RefineRequest): Promise<string> => {
     offerSkip: true,
   });
 
-  const isPickCancelled = picked === null;
+  const isPickCancelled = picked == null;
   if (isPickCancelled) {
     throw new Error(`refine cancelled at the picker: ${joined}`);
   }

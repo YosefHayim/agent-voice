@@ -52,7 +52,7 @@ export type StatusWriter = ReturnType<typeof makeStatusWriter>;
 export const isAudioOwnedByDictation = (): boolean => {
   const status = readWorkerStatus();
 
-  const isThereNoStatus = status === null;
+  const isThereNoStatus = status == null;
   if (isThereNoStatus) {
     return false;
   }

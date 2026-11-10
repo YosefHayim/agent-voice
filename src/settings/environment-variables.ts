@@ -15,7 +15,7 @@ interface AgentVoiceVariable {
 
 // "off", "0", "false", and "no" switch a feature off; anything else (or unset) leaves it on.
 const isSwitchOn = (string: string | undefined): boolean => {
-  const isUnset = string === undefined;
+  const isUnset = string == null;
   if (isUnset) {
     return true;
   }

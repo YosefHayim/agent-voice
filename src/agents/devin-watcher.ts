@@ -66,7 +66,7 @@ export const readLatestDevinTurn = (atif: AtifExport): DevinTurn => {
 const readTurn = (exportFile: string): DevinTurn => {
   const savedExport = readDocumentFile({ path: exportFile, schema: atifExportSchema });
 
-  const isThereNoSavedExport = savedExport === null;
+  const isThereNoSavedExport = savedExport == null;
   if (isThereNoSavedExport) {
     return noTurn;
   }

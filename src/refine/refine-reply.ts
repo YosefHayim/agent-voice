@@ -209,7 +209,7 @@ export const checkRefinedPrompt = (request: {
   const literals = listPromptLiterals(request.draft);
   const droppedLiteral = literals.find((literal) => !refinedPrompt.includes(literal));
 
-  const hasDroppedLiteral = droppedLiteral !== undefined;
+  const hasDroppedLiteral = droppedLiteral != null;
   if (hasDroppedLiteral) {
     return { status: "rejected", rejection: { reason: "droppedLiteral", literal: droppedLiteral } };
   }
@@ -225,7 +225,7 @@ const EVENT_STRING_KEYS = ["result", "text", "content", "message", "output"];
 const isDocumentObject = (field: unknown): field is DocumentObject =>
   typeof field === "object" && field !== null && !Array.isArray(field);
 
-const isNonNullPiece = (string: string | null): string is string => string !== null;
+const isNonNullPiece = (string: string | null): string is string => string != null;
 
 // The trimmed text, or null when the value is not a string or is blank.
 const readNonBlankField = (field: unknown): string | null => {
@@ -332,7 +332,7 @@ const readWholeReply = (printout: string): string | null => {
   const whole = parseDocumentOrNull(printout);
   const wholeReply = readNonBlankField(whole);
 
-  const hasWholeReply = wholeReply !== null;
+  const hasWholeReply = wholeReply != null;
   if (hasWholeReply) {
     return wholeReply;
   }
@@ -377,7 +377,7 @@ export const readReplyFromDocument = (printout: string): string => {
 
   const wholeReply = readWholeReply(trimmed);
 
-  const hasWholeReply = wholeReply !== null;
+  const hasWholeReply = wholeReply != null;
   if (hasWholeReply) {
     return wholeReply;
   }

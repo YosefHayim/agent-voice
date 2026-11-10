@@ -106,7 +106,7 @@ describe("configSchema", () => {
 
     const refineModel = settingDefinitions.find((setting) => setting.key === "refineModel");
 
-    const isSettingsIncomplete = keepListening === undefined || refineModel === undefined;
+    const isSettingsIncomplete = keepListening == null || refineModel == null;
     if (isSettingsIncomplete) {
       throw new Error("missing settings");
     }

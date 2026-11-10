@@ -92,7 +92,7 @@ const appendMember = (request: {
   const children = request.container.children || [];
   const last = children.at(-1);
 
-  const hasLast = last !== undefined;
+  const hasLast = last != null;
   if (hasLast) {
     const indent = readLineIndent(request.source, last.offset);
     return splice(request.source, {
@@ -122,7 +122,7 @@ const removeMember = (request: {
   const previous = children[index - 1];
   const next = children[index + 1];
 
-  const hasPrevious = previous !== undefined;
+  const hasPrevious = previous != null;
   if (hasPrevious) {
     return splice(request.source, {
       offset: previous.offset + previous.length,
@@ -131,7 +131,7 @@ const removeMember = (request: {
     });
   }
 
-  const hasNext = next !== undefined;
+  const hasNext = next != null;
   if (hasNext) {
     return splice(request.source, {
       offset: request.member.offset,
@@ -150,7 +150,7 @@ const removeMember = (request: {
 const readHookCommand = (hook: Node): string => {
   const commandNode = findNodeAtLocation(hook, ["command"]);
 
-  const isThereNoCommandNode = commandNode === undefined;
+  const isThereNoCommandNode = commandNode == null;
   if (isThereNoCommandNode) {
     return "";
   }
@@ -198,7 +198,7 @@ const pruneIfEmpty = (request: { readonly source: string; readonly path: Readonl
 
   const hasEmptyField = isEmptyContainer(property?.children?.[1]);
 
-  const isNothingToRemove = parent === undefined || property === undefined || !hasEmptyField;
+  const isNothingToRemove = parent == null || property == null || !hasEmptyField;
   if (isNothingToRemove) {
     return request.source;
   }
@@ -221,7 +221,7 @@ export const removeReplyHook = (request: { readonly source: string; readonly age
   const root = parseSettings(request.source);
   const location = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
 
-  const isThereNoReplyHook = location === null;
+  const isThereNoReplyHook = location == null;
   if (isThereNoReplyHook) {
     return { source: request.source, changed: false };
   }
@@ -238,22 +238,22 @@ const readHookInsertion = (root: Node, command: string): HookInsertion => {
   const hooks = findNodeAtLocation(root, ["hooks"]);
   const stopArray = findNodeAtLocation(root, ["hooks", "Stop"]);
 
-  const isHooksWrongType = hooks !== undefined && hooks.type !== "object";
+  const isHooksWrongType = hooks != null && hooks.type !== "object";
   if (isHooksWrongType) {
     throw new Error("hooks is not an object");
   }
 
-  const isStopArrayWrongType = stopArray !== undefined && stopArray.type !== "array";
+  const isStopArrayWrongType = stopArray != null && stopArray.type !== "array";
   if (isStopArrayWrongType) {
     throw new Error("hooks.Stop is not an array");
   }
 
-  const hasStopArray = stopArray !== undefined;
+  const hasStopArray = stopArray != null;
   if (hasStopArray) {
     return { container: stopArray, keyPrefix: "", value: hookGroup };
   }
 
-  const hasHooks = hooks !== undefined;
+  const hasHooks = hooks != null;
   if (hasHooks) {
     return { container: hooks, keyPrefix: '"Stop": ', value: [hookGroup] };
   }
@@ -286,7 +286,7 @@ const confirmAdded = (edited: string, command: string): SettingsEdit => {
   const root = parseSettings(edited);
   const addedLocation = findReplyHook(root, (found) => found === command);
 
-  const isAddedLost = addedLocation === null;
+  const isAddedLost = addedLocation == null;
   if (isAddedLost) {
     throw new Error("the edited settings lost agent-voice's entry");
   }
@@ -314,7 +314,7 @@ export const addReplyHook = (request: {
   const root = parseSettings(code);
   const existing = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
 
-  const isCurrent = existing !== null && readHookCommand(existing.hook) === request.command;
+  const isCurrent = existing != null && readHookCommand(existing.hook) === request.command;
   if (isCurrent) {
     return { source: request.source, changed: false };
   }

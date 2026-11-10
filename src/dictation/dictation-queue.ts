@@ -47,7 +47,7 @@ const isDictationRefine = (settings: Settings): boolean =>
 const describeRefineLabel = (settings: Settings): string => {
   const model = settings.refineModel || "default model";
 
-  const isRefineEffortMissing = settings.refineEffort === undefined;
+  const isRefineEffortMissing = settings.refineEffort == null;
   if (isRefineEffortMissing) {
     return `${settings.refineProvider}/${model}`;
   }
@@ -109,7 +109,7 @@ const readRefinedOrDictated = async (request: {
     const refinedTranscript = await waitForRefine(refining);
     const elapsed = (performance.now() - started).toFixed(0);
 
-    const isWaitElapsed = refinedTranscript === null;
+    const isWaitElapsed = refinedTranscript == null;
     if (isWaitElapsed) {
       return keepDictation({
         dictatedText: request.dictated,
@@ -241,7 +241,7 @@ export const startDictationQueue = (pipeline: DictationPipeline): DictationQueue
     setTimeout(() => {
       const stage = pipeline.status.stage();
 
-      const showsDetail = stage !== null && stage !== "listening";
+      const showsDetail = stage != null && stage !== "listening";
 
       const isIdleShowingDetail = isIdle() && showsDetail;
       if (isIdleShowingDetail) {

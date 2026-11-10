@@ -97,7 +97,7 @@ const readModelSlug = (model: CodexCachedModel): string => (model.slug || model.
 export const listCodexCachedModels = (): ReadonlyArray<string> => {
   const modelsCache = readDocumentFile({ path: readCodexFile("models_cache.json"), schema: codexModelsCacheSchema });
 
-  const isCacheMissing = modelsCache === null;
+  const isCacheMissing = modelsCache == null;
   if (isCacheMissing) {
     return [];
   }
@@ -216,7 +216,7 @@ const listAgyModels = async (cli: { readonly name: string; readonly path: string
 const listGeminiModels = async (): Promise<ReadonlyArray<string>> => {
   const cli = findFirstCli(["gemini", "agy"]);
 
-  const isNoCliInstalled = cli === null;
+  const isNoCliInstalled = cli == null;
   if (isNoCliInstalled) {
     return GEMINI_FALLBACK;
   }
@@ -441,19 +441,19 @@ const findProviderSpec = (provider: ProviderId): ProviderSpec | null =>
 export const isProviderInstalled = (provider: ProviderId): boolean => {
   const spec = findProviderSpec(provider);
 
-  const isUnknownProvider = spec === null;
+  const isUnknownProvider = spec == null;
   if (isUnknownProvider) {
     return false;
   }
 
   const cli = findFirstCli(spec.binaries);
-  return cli !== null;
+  return cli != null;
 };
 
 export const listProviderModels = async (provider: ProviderId): Promise<ReadonlyArray<string>> => {
   const spec = findProviderSpec(provider);
 
-  const isUnknownProvider = spec === null;
+  const isUnknownProvider = spec == null;
   if (isUnknownProvider) {
     return [];
   }
@@ -473,7 +473,7 @@ const readModelsOrDefault = (models: ReadonlyArray<string>): ReadonlyArray<strin
 const describeProvider = async (spec: ProviderSpec): Promise<DiscoveredProvider | null> => {
   const cli = findFirstCli(spec.binaries);
 
-  const isNotInstalled = cli === null;
+  const isNotInstalled = cli == null;
   if (isNotInstalled) {
     return null;
   }
@@ -505,7 +505,7 @@ export const discoverProviders = async (request: {
   }
 
   const described = await Promise.all(PROVIDERS.map(describeProvider));
-  const providers = described.filter((provider): provider is DiscoveredProvider => provider !== null);
+  const providers = described.filter((provider): provider is DiscoveredProvider => provider != null);
   discoveryCache.at = Date.now();
   discoveryCache.providers = providers;
   return providers;

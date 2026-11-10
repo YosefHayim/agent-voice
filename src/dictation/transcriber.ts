@@ -112,7 +112,7 @@ const createDecodeLane = (): DecodeLane => {
   const passTurn = (): void => {
     const nextTurn = waitingTurns.shift();
 
-    const isNobodyWaiting = nextTurn === undefined;
+    const isNobodyWaiting = nextTurn == null;
     if (isNobodyWaiting) {
       isBusy = false;
       return;
@@ -186,7 +186,7 @@ export const loadTranscriber = async (modelPath: string): Promise<Transcriber> =
   const readCaption = async (request: CaptionRequest): Promise<string | null> => {
     const heard = await lane.runIfFree(() => decode({ ...request, prompt: "", threads: CAPTION_THREADS }));
 
-    const isModelBusy = heard === null;
+    const isModelBusy = heard == null;
     if (isModelBusy) {
       return null;
     }

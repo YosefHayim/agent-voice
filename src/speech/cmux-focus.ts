@@ -137,7 +137,7 @@ export const readCmuxFocus = async (socketPath: string): Promise<CmuxFocus> => {
   const windowsReply = await askCmux({ socketPath, method: "window.list" });
   const identityReply = await askCmux({ socketPath, method: "system.identify" });
 
-  const isThereNoAnswer = windowsReply === null || identityReply === null;
+  const isThereNoAnswer = windowsReply == null || identityReply == null;
   if (isThereNoAnswer) {
     return { kind: "unknown" };
   }

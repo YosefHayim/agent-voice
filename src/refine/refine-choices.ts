@@ -61,7 +61,7 @@ export const markCodexModelFailed = (model: string): void => {
   const trimmed = model.trim();
   const failed = readCodexFailedModelsOrNull();
 
-  const isUnreadable = failed === null;
+  const isUnreadable = failed == null;
 
   const isChoiceUnusable = isUnreadable || trimmed === "" || failed.has(trimmed);
   if (isChoiceUnusable) {
@@ -103,7 +103,7 @@ export const saveRefineChoice = (request: {
   writeFileAtomically({ path: readStatusFile(CODEX_LAST_GOOD_FILE), contents: `${model}\n` });
   const failed = readCodexFailedModelsOrNull();
 
-  const isModelNotMarkedFailed = failed === null || !failed.has(model);
+  const isModelNotMarkedFailed = failed == null || !failed.has(model);
   if (isModelNotMarkedFailed) {
     return;
   }

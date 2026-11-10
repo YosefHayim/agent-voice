@@ -204,7 +204,7 @@ export const startPill = (workerPid: number): ChildProcess => {
   });
   child.stdin?.end(PILL_SCRIPT);
 
-  const hasChildPid = child.pid !== undefined;
+  const hasChildPid = child.pid != null;
   if (hasChildPid) {
     writePid("pill.pid", child.pid);
   }
@@ -215,7 +215,7 @@ export const startPill = (workerPid: number): ChildProcess => {
 export const stopPill = (): void => {
   const pillPid = readRunningPid("pill.pid");
 
-  const isPillRunning = pillPid !== null;
+  const isPillRunning = pillPid != null;
   if (isPillRunning) {
     sendSignalToGroup(pillPid, "SIGKILL");
   }

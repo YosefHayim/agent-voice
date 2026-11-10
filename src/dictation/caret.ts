@@ -90,7 +90,7 @@ const pasteThroughClipboard = async (keyboard: Keyboard, string: string): Promis
 
   await pressCommandV(keyboard);
 
-  const isPreviousClipboardUnknown = previous === null;
+  const isPreviousClipboardUnknown = previous == null;
   if (isPreviousClipboardUnknown) {
     return;
   }

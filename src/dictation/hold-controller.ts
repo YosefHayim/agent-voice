@@ -215,7 +215,7 @@ export const makeHoldController = (request: {
   const scheduleHold = (): void => {
     const pendingGeneration = finishingGeneration;
 
-    const hasPendingClip = pendingGeneration !== undefined;
+    const hasPendingClip = pendingGeneration != null;
     if (hasPendingClip) {
       endClip(pendingGeneration);
     }
@@ -281,7 +281,7 @@ export const makeHoldController = (request: {
   };
 
   const listTimerEvents = (): ReadonlyArray<HoldEvent> => {
-    const isNotHoldElapsed = deadline === undefined || holdStatus !== "waiting" || Date.now() < deadline;
+    const isNotHoldElapsed = deadline == null || holdStatus !== "waiting" || Date.now() < deadline;
     if (isNotHoldElapsed) {
       return [];
     }
@@ -293,7 +293,7 @@ export const makeHoldController = (request: {
   const stopLostRecording = (): void => {
     const isHeld = holdStatus === "waiting" || holdStatus === "listening";
 
-    const isNotLost = !clip.isRecording() || finishingGeneration !== undefined || isHeld;
+    const isNotLost = !clip.isRecording() || finishingGeneration != null || isHeld;
     if (isNotLost) {
       return;
     }

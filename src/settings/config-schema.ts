@@ -345,7 +345,7 @@ export const setSettingField = (request: {
   readonly key: SettingsKey;
   readonly value: SettingsField | null;
 }): Settings => {
-  const isCleared = request.value === null;
+  const isCleared = request.value == null;
   const changedSettings = isCleared
     ? Object.fromEntries(Object.entries(request.config).filter(([key]) => key !== request.key))
     : { ...request.config, [request.key]: request.value };
