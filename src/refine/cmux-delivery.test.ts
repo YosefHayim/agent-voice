@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
 
-import { expandCommandTemplate, quoteShellWord, readSurfaceParams, readWorkspaceTitle } from "./cmux-delivery.js";
+import { expandCommandTemplate, quoteShellWord, readSurfaceParameters, readWorkspaceTitle } from "./cmux-delivery.js";
 
 describe("cmux delivery", () => {
   it("quotes apostrophes for a single-quoted shell string", () => {
@@ -33,8 +33,8 @@ describe("cmux delivery", () => {
   });
 
   it("addresses a surface by ref or by ID", () => {
-    expect(readSurfaceParams("surface:3", { key: "enter" })).toEqual({ surface_ref: "surface:3", key: "enter" });
-    expect(readSurfaceParams("ab-12", {})).toEqual({ surface_id: "ab-12" });
+    expect(readSurfaceParameters("surface:3", { key: "enter" })).toEqual({ surface_ref: "surface:3", key: "enter" });
+    expect(readSurfaceParameters("ab-12", {})).toEqual({ surface_id: "ab-12" });
   });
 
   it("titles a new workspace with the first line of the prompt", () => {

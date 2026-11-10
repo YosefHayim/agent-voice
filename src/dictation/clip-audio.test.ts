@@ -20,7 +20,7 @@ describe("clip audio", () => {
 
     expect(readRootMeanSquare(new Float32Array(1_600))).toBeLessThan(0.003);
     expect(readRootMeanSquare(tone)).toBeGreaterThan(0.003);
-    expect(prepareForWhisper(new Float32Array(SAMPLE_RATE))).toBeUndefined();
+    expect(prepareForWhisper(new Float32Array(SAMPLE_RATE))).toBeNull();
   });
 
   it("lifts a quiet laptop mic into Whisper's range", () => {
@@ -54,6 +54,6 @@ describe("clip audio", () => {
     const speech = readSyntheticSpeech(1);
 
     expect(Array.from(roundTrip)).toEqual([0, 16_384, -16_383, 32_766]);
-    expect(prepareForWhisper(speech)).toBeDefined();
+    expect(prepareForWhisper(speech)).not.toBeNull();
   });
 });

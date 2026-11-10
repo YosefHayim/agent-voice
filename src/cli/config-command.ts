@@ -2,14 +2,14 @@ import { selectWhisperModel } from "#src/dictation/whisper-models.js";
 import { type DiscoveredProvider, discoverProviders, REASONING_EFFORTS } from "#src/refine/provider-models.js";
 import { saveRefineChoice } from "#src/refine/refine-choices.js";
 import { listPickerModels, pickRefineTargetWithDialogs, type RefinePick } from "#src/refine/refine-picker.js";
-import { readConfig, saveConfig } from "#src/settings/config-file.js";
+import { readSettings, saveSettings } from "#src/settings/config-file.js";
 import {
-  type Config,
-  type ConfigValue,
-  configSettings,
-  defaultConfig,
-  parseSettingValue,
-  setSettingValue,
+  defaultSettings,
+  parseSettingField,
+  type Settings,
+  type SettingsField,
+  setSettingField,
+  settingDefinitions,
 } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { isWorkerRunning, startSpeechWorker, stopSpeech } from "#src/workers/worker-processes.js";
@@ -17,28 +17,30 @@ import { type CommandSpec, isFlagOn, readRequiredPositional } from "./command-sp
 import { describeSpeech, prepareModels, restartWorkers } from "./on-command.js";
 import * as TerminalUI from "./terminal-ui.js";
 
-type ConfigSetting = (typeof configSettings)[number];
+type SettingDefinition = (typeof settingDefinitions)[number];
 
-const findSetting = (settingName: string): ConfigSetting | null => {
-  const setting = configSettings.find((candidate) => candidate.name === settingName || candidate.key === settingName);
+const findSetting = (settingName: string): SettingDefinition | null => {
+  const setting = settingDefinitions.find(
+    (candidate) => candidate.name === settingName || candidate.key === settingName,
+  );
   return setting ?? null;
 };
 
 const describeUnknownSetting = (settingName: string): string =>
   `Unknown setting "${settingName}". See \`agent-voice config list\`.`;
 
-const describeSettingValue = (settings: Config, setting: ConfigSetting): string => {
-  const savedValue: unknown = settings[setting.key];
+const describeSettingField = (settings: Settings, setting: SettingDefinition): string => {
+  const savedField: unknown = settings[setting.key];
 
-  const isSavedMissing = savedValue === undefined;
+  const isSavedMissing = savedField === undefined;
   if (isSavedMissing) {
     return "(not set)";
   }
 
-  return JSON.stringify(savedValue);
+  return JSON.stringify(savedField);
 };
 
-const describeChoices = (setting: ConfigSetting): string => {
+const describeChoices = (setting: SettingDefinition): string => {
   const isSettingChoicesEmpty = setting.choices.length === 0;
   if (isSettingChoicesEmpty) {
     return "";
@@ -47,8 +49,8 @@ const describeChoices = (setting: ConfigSetting): string => {
   return ` (${setting.choices.join(" | ")})`;
 };
 
-const printSetting = (settings: Config, setting: ConfigSetting): void => {
-  const message = `${describeSettingValue(settings, setting)}${describeChoices(setting)}\n${setting.description}`;
+const printSetting = (settings: Settings, setting: SettingDefinition): void => {
+  const message = `${describeSettingField(settings, setting)}${describeChoices(setting)}\n${setting.description}`;
   TerminalUI.printNote(setting.name, message);
 };
 
@@ -60,7 +62,7 @@ const listCommand: CommandSpec = {
   },
   positionals: [],
   run: async (parsedCommand) => {
-    const settings = readConfig();
+    const settings = readSettings();
 
     const isDocumentWanted = isFlagOn(parsedCommand, "json");
     if (isDocumentWanted) {
@@ -68,7 +70,7 @@ const listCommand: CommandSpec = {
       return 0;
     }
 
-    for (const setting of configSettings) {
+    for (const setting of settings) {
       printSetting(settings, setting);
     }
 
@@ -77,16 +79,16 @@ const listCommand: CommandSpec = {
 };
 
 // An unset optional setting has no value: null, so every entry carries the same fields.
-const describeSettingEntry = (settings: Config, setting: ConfigSetting) => {
-  const savedValue: unknown = settings[setting.key];
+const describeSettingLine = (settings: Settings, setting: SettingDefinition) => {
+  const savedField: unknown = settings[setting.key];
   const { key: _key, ...described } = setting;
 
-  const isSavedMissing = savedValue === undefined;
+  const isSavedMissing = savedField === undefined;
   if (isSavedMissing) {
     return { ...described, value: null };
   }
 
-  return { ...described, value: savedValue };
+  return { ...described, value: savedField };
 };
 
 const describeCommand: CommandSpec = {
@@ -95,8 +97,8 @@ const describeCommand: CommandSpec = {
   flags: {},
   positionals: [],
   run: async () => {
-    const settings = readConfig();
-    const describedSettings = configSettings.map((setting) => describeSettingEntry(settings, setting));
+    const settings = readSettings();
+    const describedSettings = settings.map((setting) => describeSettingLine(settings, setting));
     TerminalUI.printDocument(describedSettings);
     return 0;
   },
@@ -117,13 +119,13 @@ const getCommand: CommandSpec = {
       return 2;
     }
 
-    const settings = readConfig();
-    TerminalUI.printLine(describeSettingValue(settings, setting));
+    const settings = readSettings();
+    TerminalUI.printLine(describeSettingField(settings, setting));
     return 0;
   },
 };
 
-const applyChange = async (previous: Config, next: Config): Promise<void> => {
+const applyChange = async (previous: Settings, next: Settings): Promise<void> => {
   const environment = readEnvironment();
   const previousModel = selectWhisperModel({ environment, config: previous });
   const nextModel = selectWhisperModel({ environment, config: next });
@@ -167,13 +169,13 @@ const applyChange = async (previous: Config, next: Config): Promise<void> => {
 };
 
 const saveSetting = async (request: {
-  readonly setting: ConfigSetting;
-  readonly answer: ConfigValue | null;
+  readonly setting: SettingDefinition;
+  readonly answer: SettingsField | null;
 }): Promise<void> => {
-  const previous = readConfig();
-  const next = setSettingValue({ config: previous, key: request.setting.key, value: request.answer });
-  saveConfig(next);
-  TerminalUI.printSuccess(`${request.setting.name} = ${describeSettingValue(next, request.setting)}`);
+  const previous = readSettings();
+  const next = setSettingField({ config: previous, key: request.setting.key, value: request.answer });
+  saveSettings(next);
+  TerminalUI.printSuccess(`${request.setting.name} = ${describeSettingField(next, request.setting)}`);
   await applyChange(previous, next);
 };
 
@@ -196,7 +198,7 @@ const setCommand: CommandSpec = {
     }
 
     const enteredWords = readRequiredPositional(parsedCommand, "value");
-    const answer = parseSettingValue({ setting, enteredWords });
+    const answer = parseSettingField({ setting, enteredWords });
     await saveSetting({ setting, answer });
     return 0;
   },
@@ -217,14 +219,14 @@ const unsetCommand: CommandSpec = {
       return 2;
     }
 
-    const defaultAnswer = defaultConfig[setting.key] ?? null;
+    const defaultAnswer = defaultSettings[setting.key] ?? null;
     await saveSetting({ setting, answer: defaultAnswer });
     return 0;
   },
 };
 
 // Null when the user cancels; an empty string when the provider has no effort setting.
-const pickEffort = async (provider: DiscoveredProvider, settings: Config): Promise<string | null> => {
+const pickEffort = async (provider: DiscoveredProvider, settings: Settings): Promise<string | null> => {
   const isProviderEffortEmpty = !provider.effort;
   if (isProviderEffortEmpty) {
     return "";
@@ -237,7 +239,7 @@ const pickEffort = async (provider: DiscoveredProvider, settings: Config): Promi
   });
 };
 
-const pickInTerminal = async (settings: Config): Promise<RefinePick | null> => {
+const pickInTerminal = async (settings: Settings): Promise<RefinePick | null> => {
   const providers = await discoverProviders({ refresh: true });
 
   const hasNoProviders = providers.length === 0;
@@ -286,7 +288,7 @@ const pickInTerminal = async (settings: Config): Promise<RefinePick | null> => {
 };
 
 const pickRefineTarget = async (request: {
-  readonly settings: Config;
+  readonly settings: Settings;
   readonly isGuiWanted: boolean;
 }): Promise<RefinePick | null> => {
   const isInteractive = TerminalUI.isInteractiveTerminal();
@@ -324,7 +326,7 @@ const pickRefineCommand: CommandSpec = {
   },
   positionals: [],
   run: async (parsedCommand) => {
-    const settings = readConfig();
+    const settings = readSettings();
     const picked = await pickRefineTarget({ settings, isGuiWanted: isFlagOn(parsedCommand, "gui") });
 
     const isNothingPicked = picked == null;
@@ -335,15 +337,15 @@ const pickRefineCommand: CommandSpec = {
 
     const effort = REASONING_EFFORTS.find((name) => name === picked.effort);
     const pickedSettings = { ...settings, refineProvider: picked.provider, refineModel: picked.model };
-    const next = setSettingValue({ config: pickedSettings, key: "refineEffort", value: effort ?? null });
-    saveConfig(next);
+    const next = setSettingField({ config: pickedSettings, key: "refineEffort", value: effort ?? null });
+    saveSettings(next);
     saveRefineChoice(picked);
     TerminalUI.printSuccess(describePickedTarget(picked, effort));
     return 0;
   },
 };
 
-export const configCommand: CommandSpec = {
+export const settingsCommand: CommandSpec = {
   name: "config",
   description: "Show or change agent-voice's settings",
   flags: {},

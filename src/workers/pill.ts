@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 
-import { readAgentVoiceHome, readStateFile } from "#src/settings/agent-voice-home.js";
+import { readAgentVoiceHome, readStatusFile } from "#src/settings/agent-voice-home.js";
 import { removeIfPresent } from "#src/storage/state-files.js";
 import { readRunningPid, sendSignalToGroup, writePid } from "./worker-processes.js";
 
@@ -220,6 +220,6 @@ export const stopPill = (): void => {
     sendSignalToGroup(pillPid, "SIGKILL");
   }
 
-  const pidPath = readStateFile("pill.pid");
+  const pidPath = readStatusFile("pill.pid");
   removeIfPresent(pidPath);
 };

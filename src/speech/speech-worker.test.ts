@@ -17,8 +17,8 @@ beforeEach(() => {
   home = makeTestFolder("speech-worker");
   vi.stubEnv("AGENT_VOICE_HOME", home);
   const settingsFile = path.join(home, "config.json");
-  const settingsFileContents = JSON.stringify({ speechMode: "auto", speechMuted: false });
-  writeFileSync(settingsFile, settingsFileContents);
+  const settingsFileMessages = JSON.stringify({ speechMode: "auto", speechMuted: false });
+  writeFileSync(settingsFile, settingsFileMessages);
 });
 
 afterEach(async () => {

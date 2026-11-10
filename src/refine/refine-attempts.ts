@@ -1,5 +1,5 @@
 import { describeError } from "#src/error-message.js";
-import type { Config } from "#src/settings/config-schema.js";
+import type { Settings } from "#src/settings/config-schema.js";
 import { containsAny, dedupe } from "./agent-cli.js";
 import { CODEX_MODEL_FALLBACKS, isProviderInstalled, listProviderModels, type ProviderId } from "./provider-models.js";
 import {
@@ -14,7 +14,7 @@ import {
 } from "./refine-choices.js";
 import { isPickerEnabled, pickRefineTargetWithDialogs, SKIP_REFINE_LABEL } from "./refine-picker.js";
 import { readNamedModel, refineWithProvider } from "./refine-providers.js";
-import { isFailedModelOutputText, isModelUnavailableError } from "./refine-reply.js";
+import { isFailedModelPrintoutString, isModelUnavailableError } from "./refine-reply.js";
 
 // Bounds so a dictation release never hangs on rotation.
 const MAX_MODELS_PER_PROVIDER = 6;
@@ -38,7 +38,7 @@ const LAST_RESORT_MODEL: Readonly<Record<ProviderId, string>> = {
 const ROTATE_MARKERS = ["failed", "error", "timeout", "timed out", "connection", "refused", "not found", "empty"];
 
 export const canRotate = (detail: string): boolean =>
-  isFailedModelOutputText(detail) || containsAny(detail, ROTATE_MARKERS);
+  isFailedModelPrintoutString(detail) || containsAny(detail, ROTATE_MARKERS);
 
 // Models that already failed for this account go last, so a ChatGPT-account rejection (~3 s) is not paid every time.
 export const listCodexModelCandidates = (request: {
@@ -164,7 +164,7 @@ const listAutoAttempts = async (requestedModel: string): Promise<ReadonlyArray<A
 
 // The preferred provider's models first, then the first model of each other installed provider.
 export const createAttemptQueue = async (request: {
-  readonly provider: Config["refineProvider"];
+  readonly provider: Settings["refineProvider"];
   readonly model: string;
 }): Promise<ReadonlyArray<AttemptTarget>> => {
   const isAutoProvider = request.provider === "auto";
@@ -184,7 +184,7 @@ export const createAttemptQueue = async (request: {
 
 type RefineRequest = {
   readonly draft: string;
-  readonly provider: Config["refineProvider"];
+  readonly provider: Settings["refineProvider"];
   readonly model: string;
   readonly effort: string;
   readonly allowPicker: boolean;
@@ -218,14 +218,14 @@ const pickStartingModel = (request: RefineRequest): string => {
   return "";
 };
 
-type TargetOutcome =
+type TargetVerdict =
   | { readonly status: "refined"; readonly refined: string }
   | { readonly status: "failed"; readonly detail: string };
 
 const refineWithTarget = async (
   target: AttemptTarget,
   request: { readonly draft: string; readonly effort: string; readonly signal: AbortSignal },
-): Promise<TargetOutcome> => {
+): Promise<TargetVerdict> => {
   try {
     const refined = await refineWithProvider(
       { ...target, effort: request.effort, draft: request.draft },
@@ -237,26 +237,26 @@ const refineWithTarget = async (
   }
 };
 
-interface AttemptsOutcome {
+interface AttemptsVerdict {
   readonly refined: string | null;
   readonly failures: ReadonlyArray<string>;
 }
 
 const tryAttempts = async (
   request: RefineRequest & { readonly attempts: ReadonlyArray<AttemptTarget>; readonly effort: string },
-): Promise<AttemptsOutcome> => {
+): Promise<AttemptsVerdict> => {
   const failures: Array<string> = [];
   for (const target of request.attempts) {
     request.log(`refine try ${target.provider}/${target.model}`);
-    const outcome = await refineWithTarget(target, request);
+    const verdict = await refineWithTarget(target, request);
 
-    const isRefined = outcome.status === "refined";
+    const isRefined = verdict.status === "refined";
     if (isRefined) {
       saveRefineChoice({ provider: target.provider, model: target.model, effort: request.effort });
-      return { refined: outcome.refined, failures };
+      return { refined: verdict.refined, failures };
     }
 
-    const detail = outcome.detail;
+    const detail = verdict.detail;
     failures.push(`${target.provider}/${target.model}: ${detail.slice(0, 400)}`);
 
     const isUnavailableCodexModel = target.provider === "codex" && isModelUnavailableError(detail);

@@ -30,8 +30,8 @@ const identitySchema = z.object({
 // A line that is not JSON is no answer, the same as a socket that closed before replying.
 const parseRpcReply = (line: string): z.infer<typeof rpcReplySchema> | null => {
   try {
-    const replyJson: unknown = JSON.parse(line);
-    const checkedReply = rpcReplySchema.safeParse(replyJson);
+    const replyDocument: unknown = JSON.parse(line);
+    const checkedReply = rpcReplySchema.safeParse(replyDocument);
 
     const isReplyInvalid = !checkedReply.success;
     if (isReplyInvalid) {

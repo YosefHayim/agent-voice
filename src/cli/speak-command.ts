@@ -1,14 +1,14 @@
 import path from "node:path";
 
-import { readConfig } from "#src/settings/config-file.js";
-import type { Config } from "#src/settings/config-schema.js";
+import { readSettings } from "#src/settings/config-file.js";
+import type { Settings } from "#src/settings/config-schema.js";
 import { makeSpeechPlayer, speakMarkdown, writeMarkdownWav } from "#src/speech/speech-player.js";
 import { loadSupertonic } from "#src/speech/supertonic.js";
 import { ensureSupertonicModels, listMissingSupertonicFiles } from "#src/speech/supertonic-models.js";
 import { type CommandSpec, readRequiredPositional, readStringFlag } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
-const readVoice = (settings: Config) => ({
+const readVoice = (settings: Settings) => ({
   voice: settings.speechVoice,
   wordsPerMinute: settings.speechWordsPerMinute,
 });
@@ -23,7 +23,7 @@ const loadEngine = async () => {
   return loadSupertonic(modelFolder);
 };
 
-export const speakAloud = async (markdown: string, settings: Config): Promise<void> => {
+export const speakAloud = async (markdown: string, settings: Settings): Promise<void> => {
   const engine = await loadEngine();
   const player = makeSpeechPlayer();
   const voice = readVoice(settings);
@@ -38,20 +38,20 @@ export const speakCommand: CommandSpec = {
   },
   positionals: [{ name: "markdown", description: "A complete reply, in Markdown", isRequired: true }],
   run: async (parsedCommand) => {
-    const settings = readConfig();
+    const settings = readSettings();
     const markdown = readRequiredPositional(parsedCommand, "markdown");
-    const outputFile = readStringFlag(parsedCommand, "output");
+    const printoutFile = readStringFlag(parsedCommand, "output");
 
-    const isPlaybackOnly = outputFile == null;
+    const isPlaybackOnly = printoutFile == null;
     if (isPlaybackOnly) {
       await speakAloud(markdown, settings);
       return 0;
     }
 
     const engine = await loadEngine();
-    const outputPath = path.resolve(outputFile);
-    const seconds = await writeMarkdownWav({ engine, markdown, voice: readVoice(settings), outputFile: outputPath });
-    TerminalUI.printSuccess(`Wrote ${seconds.toFixed(1)} s of speech to ${outputPath}`);
+    const printoutPath = path.resolve(printoutFile);
+    const seconds = await writeMarkdownWav({ engine, markdown, voice: readVoice(settings), outputFile: printoutPath });
+    TerminalUI.printSuccess(`Wrote ${seconds.toFixed(1)} s of speech to ${printoutPath}`);
     return 0;
   },
 };

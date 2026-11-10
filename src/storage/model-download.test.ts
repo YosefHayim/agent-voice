@@ -64,7 +64,7 @@ beforeEach(async () => {
         sendInHalves(served, 200);
     }
   });
-  await new Promise((resolve) => server?.listen(0, "127.0.0.1", () => resolve(undefined)));
+  await new Promise((fulfill) => server?.listen(0, "127.0.0.1", () => fulfill(undefined)));
   const address = server.address();
   const port = readPort(address);
   origin = `http://127.0.0.1:${String(port)}`;
@@ -72,7 +72,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   server?.closeAllConnections();
-  await new Promise((resolve) => server?.close(resolve));
+  await new Promise((fulfill) => server?.close(fulfill));
   chmodSync(folder, 0o700);
   rmSync(folder, { recursive: true, force: true });
 });
@@ -101,13 +101,13 @@ const startDownloader = (request: { readonly url: string; readonly destination: 
     ],
     { cwd: repositoryRoot, stdio: "ignore" },
   );
-  return { child, exited: new Promise<number | null>((resolve) => child.once("exit", resolve)) };
+  return { child, exited: new Promise<number | null>((fulfill) => child.once("exit", fulfill)) };
 };
 
 const waitUntilTrue = async (check: () => boolean): Promise<boolean> => {
   const deadline = Date.now() + 20_000;
   while (!check() && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise((fulfill) => setTimeout(fulfill, 20));
   }
   return check();
 };

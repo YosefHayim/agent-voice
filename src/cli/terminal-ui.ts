@@ -43,8 +43,8 @@ export const printLine = (message: string): void => {
   console.log(message);
 };
 
-export const printDocument = (jsonDocument: unknown): void => {
-  console.log(JSON.stringify(jsonDocument));
+export const printDocument = (document: unknown): void => {
+  console.log(JSON.stringify(document));
 };
 
 const readUnderline = (title: string): string => {
@@ -61,7 +61,7 @@ export const printNote = (title: string, message: string): void => {
   }
 };
 
-// stderr, so `--json` output on stdout stays one parseable jsonDocument.
+// stderr, so `--json` output on stdout stays one parseable document.
 export const printError = (error: unknown): void => {
   console.error(`  ✗ ${describeError(error)}`);
 };

@@ -1,7 +1,7 @@
 import { deliverToCmux } from "#src/refine/cmux-delivery.js";
 import { discoverProviders, REASONING_EFFORTS } from "#src/refine/provider-models.js";
 import { refinePrompt } from "#src/refine/refine-attempts.js";
-import { readConfig } from "#src/settings/config-file.js";
+import { readSettings } from "#src/settings/config-file.js";
 import { refineProviders } from "#src/settings/config-schema.js";
 import { type CommandSpec, isFlagOn, readOptionalPositional, readStringFlag } from "./command-spec.js";
 import { speakAloud } from "./speak-command.js";
@@ -57,7 +57,7 @@ export const refineCommand: CommandSpec = {
       return 2;
     }
 
-    const savedSettings = readConfig();
+    const savedSettings = readSettings();
     const providerWord = readStringFlag(parsedCommand, "provider");
     const sendToWord = readStringFlag(parsedCommand, "send-to");
     const effortWord = readStringFlag(parsedCommand, "effort");

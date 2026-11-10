@@ -97,8 +97,8 @@ export const waitForLock = async (filePath: string): Promise<ReleaseLock> => {
 
 // A held lock is left alone, since deleting its file would free it.
 export const removeFreeLock = (filePath: string): void => {
-  const isLockFileMissing = !existsSync(filePath);
-  if (isLockFileMissing) {
+  const isLockFileAbsent = !existsSync(filePath);
+  if (isLockFileAbsent) {
     return;
   }
 

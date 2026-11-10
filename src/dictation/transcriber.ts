@@ -4,10 +4,10 @@
 import { availableParallelism } from "node:os";
 import path from "node:path";
 
-import type { Config } from "#src/settings/config-schema.js";
+import type { Settings } from "#src/settings/config-schema.js";
 import { appendDictationLog } from "#src/workers/worker-log.js";
 import { prepareForWhisper, readPcmFromSamples, readRootMeanSquare, readSyntheticSpeech } from "./clip-audio.js";
-import { tidyWhisperText } from "./transcript-text.js";
+import { tidyWhisperString } from "./transcript-text.js";
 import type { TranscribeOptions, WhisperModule } from "./whisper-node.js";
 
 export interface Transcription {
@@ -28,7 +28,7 @@ export interface Transcriber {
   readonly release: () => Promise<void>;
 }
 
-type CaptionRequest = { readonly samples: Float32Array; readonly language: Config["dictationLanguage"] };
+type CaptionRequest = { readonly samples: Float32Array; readonly language: Settings["dictationLanguage"] };
 
 type TranscribeRequest = CaptionRequest & { readonly prompt: string };
 
@@ -41,8 +41,8 @@ const readPcmBuffer = (pcm: Int16Array): ArrayBuffer => {
   return buffer;
 };
 
-const readWhisperOptions = (request: DecodeRequest): TranscribeOptions => {
-  const options = {
+const readWhisperSettings = (request: DecodeRequest): TranscribeOptions => {
+  const settings = {
     language: request.language,
     temperature: 0,
     bestOf: 1,
@@ -52,10 +52,10 @@ const readWhisperOptions = (request: DecodeRequest): TranscribeOptions => {
 
   const isRequestPromptEmpty = request.prompt === "";
   if (isRequestPromptEmpty) {
-    return options;
+    return settings;
   }
 
-  return { ...options, prompt: request.prompt };
+  return { ...settings, prompt: request.prompt };
 };
 
 // A constant specifier, so TypeScript does not type-check the package's own sources.
@@ -77,7 +77,7 @@ const THREADS = readThreadCount();
 const CAPTION_THREADS = Math.min(THREADS, 4);
 
 // Failures keep the Whisper prefix, so a log line says which engine failed.
-const wrapWhisperErrors = async <Result>(task: () => Promise<Result>): Promise<Result> => {
+const wrapWhisperErrors = async <Report>(task: () => Promise<Report>): Promise<Report> => {
   try {
     return await task();
   } catch (error) {
@@ -150,7 +150,7 @@ const createDecodeLane = (): DecodeLane => {
 export const loadTranscriber = async (modelPath: string): Promise<Transcriber> => {
   const whisper = await wrapWhisperErrors(importWhisper);
   await wrapWhisperErrors(() => whisper.toggleNativeLog(false));
-  const context = await wrapWhisperErrors(() =>
+  const whisperHandle = await wrapWhisperErrors(() =>
     whisper.initWhisper({ filePath: modelPath, useGpu: true, useFlashAttn: true }),
   );
   const lane = createDecodeLane();
@@ -160,18 +160,18 @@ export const loadTranscriber = async (modelPath: string): Promise<Transcriber> =
     const inputLevel = readRootMeanSquare(request.samples);
     const region = prepareForWhisper(request.samples);
 
-    const isSilence = region === undefined;
+    const isSilence = region == null;
     if (isSilence) {
       return { text: "", decodeMs: performance.now() - started, inputLevel, ranWhisper: false };
     }
 
     const pcm = readPcmFromSamples(region);
     const audio = readPcmBuffer(pcm);
-    const options = readWhisperOptions(request);
-    const decoded = await wrapWhisperErrors(() => context.transcribeData(audio, options).promise);
+    const transcribeOptions = readWhisperSettings(request);
+    const decoded = await wrapWhisperErrors(() => whisperHandle.transcribeData(audio, transcribeOptions).promise);
 
     return {
-      text: tidyWhisperText(decoded.result, region.length),
+      text: tidyWhisperString(decoded.result, region.length),
       decodeMs: performance.now() - started,
       inputLevel,
       ranWhisper: true,
@@ -204,7 +204,7 @@ export const loadTranscriber = async (modelPath: string): Promise<Transcriber> =
     }
   };
 
-  const release = (): Promise<void> => context.release();
+  const release = (): Promise<void> => whisperHandle.release();
 
   return { modelName: path.basename(modelPath), transcribe, readCaption: readCaption, warmUp, release };
 };

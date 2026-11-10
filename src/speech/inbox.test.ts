@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, st
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Config } from "#src/settings/config-schema.js";
+import type { Settings } from "#src/settings/config-schema.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
 import { focusFrom } from "./cmux-focus.js";
 import {
@@ -13,8 +13,8 @@ import {
   isSpeaksForFocus,
   type QueuedReply,
   queueReply,
-  readContentIdentity,
-  readContentToken,
+  readMessageIdentity,
+  readMessageToken,
   readSurfaceIdentity,
   replyIdentity,
 } from "./inbox.js";
@@ -42,7 +42,7 @@ const reply = (agentReplyId: string): QueuedReply => ({
 const readCmuxOrigin = (surfaceId: string) =>
   ({ kind: "cmux", socketPath: path.join(home, "no-cmux.sock"), workspaceId: "W1", surfaceId }) as const;
 
-const claimNext = (mode: Config["speechMode"]) => claimNextReply(mode);
+const claimNext = (mode: Settings["speechMode"]) => claimNextReply(mode);
 
 const claimReply = async () => {
   const claimed = await claimNext("auto");
@@ -76,18 +76,18 @@ const listFilePermissions = (folder: string): ReadonlyArray<number> =>
 
 describe("reply identity", () => {
   it("gives the same text the same stable token", () => {
-    expect(readContentToken("hello world")).toBe(readContentToken("hello world"));
-    expect(readContentToken("hello world")).not.toBe(readContentToken("hello world!"));
-    expect(readContentToken("hello world")).toMatch(/^[0-9a-f]{16}:11$/u);
+    expect(readMessageToken("hello world")).toBe(readMessageToken("hello world"));
+    expect(readMessageToken("hello world")).not.toBe(readMessageToken("hello world!"));
+    expect(readMessageToken("hello world")).toMatch(/^[0-9a-f]{16}:11$/u);
   });
 
   it("splits identity by reply ID but shares one content key", () => {
     const plain = reply("");
     const withId = reply("different-id");
     expect(replyIdentity(plain)).not.toBe(replyIdentity(withId));
-    expect(readContentIdentity(plain)).toBe(readContentIdentity(withId));
-    expect(replyIdentity(plain)).toBe(readContentIdentity(plain));
-    expect(replyIdentity(withId)).toBe(`claude-code:terminal:different-id:${readContentToken("Same reply")}`);
+    expect(readMessageIdentity(plain)).toBe(readMessageIdentity(withId));
+    expect(replyIdentity(plain)).toBe(readMessageIdentity(plain));
+    expect(replyIdentity(withId)).toBe(`claude-code:terminal:different-id:${readMessageToken("Same reply")}`);
   });
 
   it("keys a Cmux reply by workspace and surface", () => {
@@ -172,10 +172,10 @@ describe("inbox", () => {
     failReply(claimed.file);
     const failed = path.join(home, "failed");
     const seenFile = path.join(home, "seen.json");
-    const seenText = readFileSync(seenFile, "utf8");
+    const seenString = readFileSync(seenFile, "utf8");
     expect(listInboxNames()).toEqual([]);
     expect(readdirSync(failed)).toHaveLength(1);
-    expect(JSON.parse(seenText)).toBeTruthy();
+    expect(JSON.parse(seenString)).toBeTruthy();
   });
 
   it("keeps queued and failed replies readable by the user alone, tightening an inbox made looser before", async () => {

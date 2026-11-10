@@ -1,6 +1,6 @@
 import { describeError } from "#src/error-message.js";
 import { refinePrompt } from "#src/refine/refine-attempts.js";
-import { readConfig, readConfigOrDefaults, saveConfig } from "#src/settings/config-file.js";
+import { readSettings, readSettingsOrDefaults, saveSettings } from "#src/settings/config-file.js";
 import { sleep } from "#src/sleep.js";
 import { isSpeaking, queueReply } from "#src/speech/inbox.js";
 import { appendDictationLog } from "#src/workers/worker-log.js";
@@ -13,7 +13,7 @@ import {
   HOLD_THRESHOLD_MS,
   type HoldAction,
   type HoldEvent,
-  type HoldState,
+  type HoldStatus,
   holdTransition,
   initialHoldTracker,
   readDoubleTapAction,
@@ -24,7 +24,7 @@ import type { LiveCaption } from "./live-preview.js";
 import type { ClipBuffer } from "./microphone.js";
 
 // The clipboard refine's outcome stays on the pill for a few seconds.
-const clipboardOutcomeHoldMilliseconds = 4_000;
+const clipboardVerdictHoldMilliseconds = 4_000;
 
 const stopTappedSpeech = (status: StatusWriter): void => {
   const wasSpeaking = isSpeaking();
@@ -46,7 +46,7 @@ interface ClipboardRefineRequest {
 // Never rejects: a failed refine is shown on the pill.
 const refineCopiedPrompt = async (request: ClipboardRefineRequest): Promise<void> => {
   try {
-    const settings = readConfigOrDefaults();
+    const settings = readSettingsOrDefaults();
     const model = settings.refineModel || "default model";
     request.status.write("refining", `Refining copied prompt (${settings.refineProvider}/${model})…`);
 
@@ -76,15 +76,15 @@ const refineCopiedPrompt = async (request: ClipboardRefineRequest): Promise<void
 
 const refineClipboard = async (request: ClipboardRefineRequest): Promise<void> => {
   await refineCopiedPrompt(request);
-  await sleep(clipboardOutcomeHoldMilliseconds);
+  await sleep(clipboardVerdictHoldMilliseconds);
   request.status.write("inactive", "");
 };
 
 const toggleSpeechMute = (status: StatusWriter): void => {
   try {
-    const settings = readConfig();
+    const settings = readSettings();
     const willBeMuted = !settings.speechMuted;
-    saveConfig({ ...settings, speechMuted: willBeMuted });
+    saveSettings({ ...settings, speechMuted: willBeMuted });
 
     const isNotGoingToMute = !willBeMuted;
     if (isNotGoingToMute) {
@@ -110,7 +110,7 @@ export const makeHoldController = (request: {
 }) => {
   const { keyboard, clip, caption, status, queue, shutdown } = request;
   let tracker = initialHoldTracker;
-  let holdState: HoldState = "idle";
+  let holdStatus: HoldStatus = "idle";
   let deadline: number | undefined;
   let generation = 0;
   let lastTapAt: number | undefined;
@@ -148,7 +148,7 @@ export const makeHoldController = (request: {
 
   // Keeps listening after release so the last word is not clipped, unless a newer hold already took over.
   const endClipAfterKeepListening = (clipGeneration: number): void => {
-    const settings = readConfigOrDefaults();
+    const settings = readSettingsOrDefaults();
     const keepListeningMs = Math.round(settings.dictationKeepListeningSeconds * 1_000);
     setTimeout(() => {
       const isNewerHoldActive = finishingGeneration !== clipGeneration;
@@ -175,7 +175,7 @@ export const makeHoldController = (request: {
       return;
     }
 
-    const settings = readConfigOrDefaults();
+    const settings = readSettingsOrDefaults();
     const isClipboardRefineOn = settings.refineMode === "clipboard" || settings.refineMode === "both";
     const action = readDoubleTapAction({ isSpeaking: isSpeaking(), clipboardRefine: isClipboardRefineOn });
     switch (action) {
@@ -261,8 +261,8 @@ export const makeHoldController = (request: {
   };
 
   const applyHoldEvent = (event: HoldEvent): void => {
-    const [nextHoldState, action] = holdTransition(holdState, event);
-    holdState = nextHoldState;
+    const [nextHoldStatus, action] = holdTransition(holdStatus, event);
+    holdStatus = nextHoldStatus;
     runHoldAction(action);
   };
 
@@ -281,7 +281,7 @@ export const makeHoldController = (request: {
   };
 
   const listTimerEvents = (): ReadonlyArray<HoldEvent> => {
-    const isNotHoldElapsed = deadline === undefined || holdState !== "waiting" || Date.now() < deadline;
+    const isNotHoldElapsed = deadline === undefined || holdStatus !== "waiting" || Date.now() < deadline;
     if (isNotHoldElapsed) {
       return [];
     }
@@ -291,7 +291,7 @@ export const makeHoldController = (request: {
 
   // Recording with no dictation hold and no release tail means a signal was lost: never leave the mic on.
   const stopLostRecording = (): void => {
-    const isHeld = holdState === "waiting" || holdState === "listening";
+    const isHeld = holdStatus === "waiting" || holdStatus === "listening";
 
     const isNotLost = !clip.isRecording() || finishingGeneration !== undefined || isHeld;
     if (isNotLost) {

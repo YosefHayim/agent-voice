@@ -3,8 +3,8 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 
-import { readStateFolder } from "#src/settings/agent-voice-home.js";
-import type { Config } from "#src/settings/config-schema.js";
+import { readStatusFolder } from "#src/settings/agent-voice-home.js";
+import type { Settings } from "#src/settings/config-schema.js";
 import type { AgentVoiceEnvironment } from "#src/settings/environment-variables.js";
 import { downloadFile } from "#src/storage/model-download.js";
 
@@ -103,7 +103,7 @@ const pickWhisperModel = (key: WhisperModelKey): WhisperModel =>
 // AGENT_VOICE_DICTATION_MODEL wins (an unknown name means turbo-q5), then the dictation-model setting; auto follows the language: Hebrew picks ivrit.ai and English turbo-q5.
 export const selectWhisperModel = (request: {
   readonly environment: AgentVoiceEnvironment;
-  readonly config: Config;
+  readonly config: Settings;
 }): WhisperModel => {
   const forced = request.environment.AGENT_VOICE_DICTATION_MODEL.toLowerCase();
 
@@ -128,7 +128,7 @@ export const selectWhisperModel = (request: {
 };
 
 export const readWhisperModelPath = (model: WhisperModel): string => {
-  const modelsFolder = readStateFolder("models");
+  const modelsFolder = readStatusFolder("models");
   return path.join(modelsFolder, model.file);
 };
 

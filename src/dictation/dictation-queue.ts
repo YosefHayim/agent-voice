@@ -5,13 +5,13 @@
 import { describeError } from "#src/error-message.js";
 import { deliverToCmux } from "#src/refine/cmux-delivery.js";
 import { refinePrompt } from "#src/refine/refine-attempts.js";
-import { readConfigOrDefaults } from "#src/settings/config-file.js";
-import type { Config } from "#src/settings/config-schema.js";
+import { readSettingsOrDefaults } from "#src/settings/config-file.js";
+import type { Settings } from "#src/settings/config-schema.js";
 import { appendDictationLog } from "#src/workers/worker-log.js";
 import type { StatusWriter } from "#src/workers/worker-status.js";
 import { typeAtCaret } from "./caret.js";
 import { SAMPLE_RATE } from "./clip-audio.js";
-import { createDictationText, parseReplacements, readPromptBoost } from "./dictation-format.js";
+import { createDictationString, parseReplacements, readPromptBoost } from "./dictation-format.js";
 import type { Keyboard } from "./keyboard.js";
 import type { Transcriber } from "./transcriber.js";
 import { cleanTranscript, isShortPhrase } from "./transcript-text.js";
@@ -41,18 +41,18 @@ const refineWaitMilliseconds = 20_000;
 // Keeps the last detail on screen briefly before the pill clears.
 const idleDetailHoldMilliseconds = 800;
 
-const isDictationRefine = (config: Config): boolean =>
-  config.refineMode === "dictation" || config.refineMode === "both";
+const isDictationRefine = (settings: Settings): boolean =>
+  settings.refineMode === "dictation" || settings.refineMode === "both";
 
-const describeRefineLabel = (config: Config): string => {
-  const model = config.refineModel || "default model";
+const describeRefineLabel = (settings: Settings): string => {
+  const model = settings.refineModel || "default model";
 
-  const isRefineEffortMissing = config.refineEffort === undefined;
+  const isRefineEffortMissing = settings.refineEffort === undefined;
   if (isRefineEffortMissing) {
-    return `${config.refineProvider}/${model}`;
+    return `${settings.refineProvider}/${model}`;
   }
 
-  return `${config.refineProvider}/${model}/${config.refineEffort}`;
+  return `${settings.refineProvider}/${model}/${settings.refineEffort}`;
 };
 
 // Null when the wait ends first; the refine keeps running in the background, so a picker choice is still saved.
@@ -75,7 +75,7 @@ const keepDictation = (request: {
 
 const readRefinedOrDictated = async (request: {
   readonly pipeline: DictationPipeline;
-  readonly config: Config;
+  readonly config: Settings;
   readonly dictated: string;
   readonly generation: number;
 }): Promise<Prompt> => {
@@ -106,10 +106,10 @@ const readRefinedOrDictated = async (request: {
     log: appendDictationLog,
   });
   try {
-    const refinedText = await waitForRefine(refining);
+    const refinedString = await waitForRefine(refining);
     const elapsed = (performance.now() - started).toFixed(0);
 
-    const isWaitElapsed = refinedText === null;
+    const isWaitElapsed = refinedString === null;
     if (isWaitElapsed) {
       return keepDictation({
         dictatedText: request.dictated,
@@ -119,13 +119,13 @@ const readRefinedOrDictated = async (request: {
       });
     }
 
-    const isReplyEmpty = refinedText.trim() === "";
+    const isReplyEmpty = refinedString.trim() === "";
     if (isReplyEmpty) {
       return keepDictation({ dictatedText: request.dictated, generation, elapsed, why: "empty reply" });
     }
 
-    appendDictationLog(`refine gen=${generation} refine_ms=${elapsed} refined=${JSON.stringify(refinedText)}`);
-    return { promptText: refinedText, isRefined: true };
+    appendDictationLog(`refine gen=${generation} refine_ms=${elapsed} refined=${JSON.stringify(refinedString)}`);
+    return { promptText: refinedString, isRefined: true };
   } catch (error) {
     const elapsed = (performance.now() - started).toFixed(0);
     return keepDictation({ dictatedText: request.dictated, generation, elapsed, why: describeError(error) });
@@ -134,11 +134,11 @@ const readRefinedOrDictated = async (request: {
 
 const typeDictation = async (request: {
   readonly pipeline: DictationPipeline;
-  readonly config: Config;
+  readonly config: Settings;
   readonly text: string;
 }): Promise<string> => {
   const replacements = parseReplacements(request.config.dictationReplacements);
-  const formatted = createDictationText(request.text, replacements);
+  const formatted = createDictationString(request.text, replacements);
   await typeAtCaret({
     keyboard: request.pipeline.keyboard,
     text: formatted,
@@ -156,7 +156,7 @@ const typeDictation = async (request: {
 // Dictated text, and a refined prompt whose cmux delivery failed, are typed at the caret.
 const deliverPrompt = async (request: {
   readonly pipeline: DictationPipeline;
-  readonly config: Config;
+  readonly config: Settings;
   readonly prompt: Prompt;
 }): Promise<string> => {
   const isNotGoingToCmux = !request.prompt.isRefined || request.config.refineSendTo === "caret";
@@ -184,12 +184,12 @@ const decodeAndDeliverJob = async (pipeline: DictationPipeline, job: DictationJo
   const generation = String(job.generation);
   const seconds = (job.samples.length / SAMPLE_RATE).toFixed(2);
   pipeline.status.write("finishing", `Decoding ${String(job.samples.length)} samples…`);
-  const config = readConfigOrDefaults();
+  const settings = readSettingsOrDefaults();
   const started = performance.now();
-  const replacements = parseReplacements(config.dictationReplacements);
+  const replacements = parseReplacements(settings.dictationReplacements);
   const transcription = await pipeline.transcriber.transcribe({
     samples: job.samples,
-    language: config.dictationLanguage,
+    language: settings.dictationLanguage,
     prompt: readPromptBoost(replacements),
   });
   const dictated = cleanTranscript(transcription.text) || cleanTranscript(job.fallbackCaption);
@@ -206,8 +206,8 @@ const decodeAndDeliverJob = async (pipeline: DictationPipeline, job: DictationJo
     return;
   }
 
-  const prompt = await readRefinedOrDictated({ pipeline, config, dictated, generation: job.generation });
-  const delivered = await deliverPrompt({ pipeline, config, prompt });
+  const prompt = await readRefinedOrDictated({ pipeline, config: settings, dictated, generation: job.generation });
+  const delivered = await deliverPrompt({ pipeline, config: settings, prompt });
   const totalMs = (performance.now() - started).toFixed(1);
   appendDictationLog(`delivered gen=${generation} total_ms=${totalMs} text=${JSON.stringify(delivered)}`);
   pipeline.status.write("inactive", "");

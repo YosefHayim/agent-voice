@@ -3,8 +3,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import { z } from "zod";
-import { readStateFile } from "#src/settings/agent-voice-home.js";
-import { readJsonFile, writeJsonAtomically } from "#src/storage/state-files.js";
+import { readStatusFile } from "#src/settings/agent-voice-home.js";
+import { readDocumentFile, writeDocumentAtomically } from "#src/storage/state-files.js";
 import { type AgentHookTarget, type AgentId, agentHookTargets } from "./agent-catalog.js";
 
 export interface HookSettingsFile {
@@ -15,36 +15,36 @@ export interface HookSettingsFile {
   readonly ownFile: boolean;
 }
 
-const claudeConfigFoldersSchema = z.array(z.string());
+const claudeSettingsFoldersSchema = z.array(z.string());
 
 const CLAUDE_ACCOUNT_FOLDER = /^\.claude-./u;
 
 // Claude Code writes .claude.json into every config folder it runs with.
-const isClaudeConfigFolder = (folder: string): boolean => {
-  const stateFilePath = path.join(folder, ".claude.json");
+const isClaudeSettingsFolder = (folder: string): boolean => {
+  const statusFilePath = path.join(folder, ".claude.json");
   const settingsFile = path.join(folder, "settings.json");
-  return existsSync(stateFilePath) || existsSync(settingsFile);
+  return existsSync(statusFilePath) || existsSync(settingsFile);
 };
 
 const listConfiguredClaudeFolders = (): ReadonlyArray<string> => {
-  const claudeConfigDirectory = (process.env.CLAUDE_CONFIG_DIR ?? "").trim();
+  const claudeSettingsDirectory = (process.env.CLAUDE_CONFIG_DIR ?? "").trim();
 
-  const isClaudeDirectoryEmpty = claudeConfigDirectory === "";
+  const isClaudeDirectoryEmpty = claudeSettingsDirectory === "";
   if (isClaudeDirectoryEmpty) {
     return [];
   }
 
-  return [path.resolve(claudeConfigDirectory)];
+  return [path.resolve(claudeSettingsDirectory)];
 };
 
 const listRememberedClaudeFolders = (): ReadonlyArray<string> => {
-  const foldersPath = readStateFile("claude-config-folders.json");
-  const remembered = readJsonFile({ path: foldersPath, schema: claudeConfigFoldersSchema }) ?? [];
+  const foldersPath = readStatusFile("claude-config-folders.json");
+  const remembered = readDocumentFile({ path: foldersPath, schema: claudeSettingsFoldersSchema }) ?? [];
   return remembered.filter((folder) => existsSync(folder));
 };
 
 // `off` may run without CLAUDE_CONFIG_DIR, so the folder it named when the hook was added is kept here.
-export const rememberClaudeConfigFolder = (): void => {
+export const rememberClaudeSettingsFolder = (): void => {
   const remembered = listRememberedClaudeFolders();
   const newFolders = listConfiguredClaudeFolders().filter((folder) => !remembered.includes(folder));
 
@@ -53,18 +53,18 @@ export const rememberClaudeConfigFolder = (): void => {
     return;
   }
 
-  const foldersPath = readStateFile("claude-config-folders.json");
-  writeJsonAtomically({ path: foldersPath, value: [...remembered, ...newFolders] });
+  const foldersPath = readStatusFile("claude-config-folders.json");
+  writeDocumentAtomically({ path: foldersPath, value: [...remembered, ...newFolders] });
 };
 
 // Claude Code reads ~/.claude unless CLAUDE_CONFIG_DIR names another folder, so each extra account is its own
 // ~/.claude-<name> folder with its own settings.json.
-const listClaudeConfigFolders = (defaultFolder: string): ReadonlyArray<string> => {
+const listClaudeSettingsFolders = (defaultFolder: string): ReadonlyArray<string> => {
   const home = homedir();
   const accountFolders = readdirSync(home)
     .filter((name) => CLAUDE_ACCOUNT_FOLDER.test(name))
     .map((name) => path.join(home, name))
-    .filter(isClaudeConfigFolder);
+    .filter(isClaudeSettingsFolder);
   const rememberedFolders = listRememberedClaudeFolders();
   const configuredFolders = listConfiguredClaudeFolders();
   const folders = new Set([defaultFolder, ...accountFolders, ...rememberedFolders, ...configuredFolders]);
@@ -80,7 +80,7 @@ const listAgentFolders = (target: AgentHookTarget): ReadonlyArray<string> => {
     return [defaultFolder];
   }
 
-  return listClaudeConfigFolders(defaultFolder);
+  return listClaudeSettingsFolders(defaultFolder);
 };
 
 // One file per agent folder: Claude Code can have several, every other agent has one.

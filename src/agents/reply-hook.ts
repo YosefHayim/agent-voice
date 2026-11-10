@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { text } from "node:stream/consumers";
 
-import { readConfigFileReading } from "#src/settings/config-file.js";
-import { type Config, defaultConfig } from "#src/settings/config-schema.js";
+import { readSettingsFileReading } from "#src/settings/config-file.js";
+import { defaultSettings, type Settings } from "#src/settings/config-schema.js";
 import { queueReply, type ReplyOrigin } from "#src/speech/inbox.js";
 import { isWorkerRunning, spawnWorker, startSpeechWorker } from "#src/workers/worker-processes.js";
 import { type AgentId, agentIdSchema } from "./agent-catalog.js";
@@ -39,36 +39,36 @@ const readTranscriptReply = (transcriptPath: string): string => {
 };
 
 // A new dictation worker starts speech itself when speech is on.
-const wakeWorkers = (config: Config): void => {
+const wakeWorkers = (settings: Settings): void => {
   const isNotWorkerRunningDictation = !isWorkerRunning("dictation");
   if (isNotWorkerRunningDictation) {
     spawnWorker("dictation");
     return;
   }
 
-  const isSpeechOn = config.speechMode !== "off";
+  const isSpeechOn = settings.speechMode !== "off";
   if (isSpeechOn) {
     startSpeechWorker();
   }
 };
 
 const queueAgentReply = async (agent: AgentId): Promise<void> => {
-  const hookInput = await text(process.stdin);
-  const stopReply = readStopReply(hookInput);
+  const hookStdin = await text(process.stdin);
+  const stopReply = readStopReply(hookStdin);
 
   const isThereNoStopReply = stopReply === null;
   if (isThereNoStopReply) {
     return;
   }
 
-  const configFileReading = readConfigFileReading();
-  const isConfigFileBroken = configFileReading.status === "broken";
+  const settingsFileReading = readSettingsFileReading();
+  const isSettingsFileBroken = settingsFileReading.status === "broken";
   // A broken file reads as the defaults, and the hook says nothing about it, since its stderr shows to the user.
-  const config = isConfigFileBroken ? defaultConfig : configFileReading.config;
+  const settings = isSettingsFileBroken ? defaultSettings : settingsFileReading.config;
   // Every finished turn wakes dictation, so it comes back after a reboot even with speech off or muted.
-  wakeWorkers(config);
+  wakeWorkers(settings);
 
-  const isSpeechSilent = config.speechMode === "off" || config.speechMuted;
+  const isSpeechSilent = settings.speechMode === "off" || settings.speechMuted;
   if (isSpeechSilent) {
     return;
   }
@@ -98,8 +98,8 @@ const parseAgentId = (agentName: string | undefined): AgentId | null => {
   return parsedAgent.success ? parsedAgent.data : null;
 };
 
-const readAgentFromArguments = (args: ReadonlyArray<string>): AgentId | null => {
-  const inlineFlag = args.find((argument) => argument.startsWith("--agent="));
+const readAgentFromArguments = (argumentList: ReadonlyArray<string>): AgentId | null => {
+  const inlineFlag = argumentList.find((argument) => argument.startsWith("--agent="));
 
   const hasInlineFlag = inlineFlag !== undefined;
   if (hasInlineFlag) {
@@ -107,20 +107,20 @@ const readAgentFromArguments = (args: ReadonlyArray<string>): AgentId | null => 
     return parseAgentId(agentName);
   }
 
-  const flagIndex = args.indexOf("--agent");
+  const flagIndex = argumentList.indexOf("--agent");
 
   const isFlagNotGiven = flagIndex < 0;
   if (isFlagNotGiven) {
     return null;
   }
 
-  return parseAgentId(args[flagIndex + 1]);
+  return parseAgentId(argumentList[flagIndex + 1]);
 };
 
 // A Claude Code Stop hook that exits 2 blocks the agent, so wrong, missing, or extra arguments
 // (say, an agent ID renamed after the hook was registered) are a silent no-op.
-export const runReplyHookFromArguments = async (args: ReadonlyArray<string>): Promise<void> => {
-  const agent = readAgentFromArguments(args);
+export const runReplyHookFromArguments = async (argumentList: ReadonlyArray<string>): Promise<void> => {
+  const agent = readAgentFromArguments(argumentList);
 
   const isThereNoAgent = agent === null;
   if (isThereNoAgent) {

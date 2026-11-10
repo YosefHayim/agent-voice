@@ -82,16 +82,16 @@ const readVoicedThreshold = (energies: ReadonlyArray<number>): number => {
   return Math.min(softFloor, loudPeak * 0.9);
 };
 
-const keepIfLoud = (samples: Float32Array, minimumRms: number): Float32Array | undefined => {
+const keepIfLoud = (samples: Float32Array, minimumRms: number): Float32Array | null => {
   const isNotLoud = readRootMeanSquare(samples) < minimumRms;
   if (isNotLoud) {
-    return undefined;
+    return null;
   }
 
   return samples;
 };
 
-export const extractSpeechRegion = (samples: Float32Array): Float32Array | undefined => {
+export const extractSpeechRegion = (samples: Float32Array): Float32Array | null => {
   const isShorterThanVadFrame = samples.length < VAD_FRAME;
   if (isShorterThanVadFrame) {
     return keepIfLoud(samples, SILENCE_RMS);
@@ -123,19 +123,19 @@ export const extractSpeechRegion = (samples: Float32Array): Float32Array | undef
   return keepIfLoud(region, SILENCE_RMS);
 };
 
-export const prepareForWhisper = (samples: Float32Array): Float32Array | undefined => {
+export const prepareForWhisper = (samples: Float32Array): Float32Array | null => {
   const normalized = scaleSamplesToPeak(samples, NORMALIZE_PEAK);
 
   const isSilence = readRootMeanSquare(normalized) < SILENCE_RMS;
   if (isSilence) {
-    return undefined;
+    return null;
   }
 
   const region = extractSpeechRegion(normalized);
 
-  const isNotLongEnough = region === undefined || region.length < MIN_VOICED_SAMPLES;
+  const isNotLongEnough = region == null || region.length < MIN_VOICED_SAMPLES;
   if (isNotLongEnough) {
-    return undefined;
+    return null;
   }
 
   return region;

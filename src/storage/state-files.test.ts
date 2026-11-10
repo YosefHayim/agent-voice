@@ -61,7 +61,7 @@ describe("private files", () => {
     const home = path.join(folder, "agent-voice-home");
     const chosen = path.join(folder, "dotfiles");
     const lastGood = path.join(home, "refine-codex-last-good.txt");
-    const chosenConfig = path.join(chosen, "agent-voice.json");
+    const chosenSettings = path.join(chosen, "agent-voice.json");
     mkdirSync(home, { mode: 0o755 });
     mkdirSync(chosen, { mode: 0o755 });
     chmodSync(home, 0o755);
@@ -69,7 +69,7 @@ describe("private files", () => {
     vi.stubEnv("AGENT_VOICE_HOME", home);
 
     writeFileAtomically({ path: lastGood, contents: "gpt-5\n" });
-    writeFileAtomically({ path: chosenConfig, contents: "{}\n" });
+    writeFileAtomically({ path: chosenSettings, contents: "{}\n" });
 
     expect(readPermissions(home)).toBe(0o700);
     expect(readPermissions(lastGood)).toBe(0o600);

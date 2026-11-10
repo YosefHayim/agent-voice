@@ -7,7 +7,7 @@ import {
   isShortPhrase,
   limitWordsToDuration,
   rejectNoiseHallucination,
-  tidyWhisperText,
+  tidyWhisperString,
 } from "./transcript-text.js";
 
 describe("transcript text", () => {
@@ -40,7 +40,7 @@ describe("transcript text", () => {
     expect(collapseRepeatedRuns("hello hello hello")).toBe("hello");
     expect(collapseRepeatedRuns("Hello Hello world")).toBe("Hello world");
     expect(collapseRepeatedRuns("go go go now")).toBe("go now");
-    expect(tidyWhisperText(" go go now ", SAMPLE_RATE * 2)).toBe("go now");
+    expect(tidyWhisperString(" go go now ", SAMPLE_RATE * 2)).toBe("go now");
   });
 
   it("never types no-speech markers or tags", () => {

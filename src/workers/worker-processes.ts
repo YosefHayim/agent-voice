@@ -1,14 +1,14 @@
 import { spawn, spawnSync } from "node:child_process";
 import { closeSync, existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { readAgentVoiceHome, readStateFile } from "#src/settings/agent-voice-home.js";
+import { readAgentVoiceHome, readStatusFile } from "#src/settings/agent-voice-home.js";
 import { sleep } from "#src/sleep.js";
 import { removeInboxFiles } from "#src/speech/inbox.js";
 import { holdLock, type ReleaseLock, removeFreeLock } from "#src/storage/file-lock.js";
 import {
   makePrivateFolder,
   openPrivateFile,
-  readTextIfReadable,
+  readStringIfReadable,
   removeIfPresent,
   touchFile,
 } from "#src/storage/state-files.js";
@@ -23,12 +23,12 @@ const WORKER_FILES = {
   speech: { pid: "speech.pid", lock: "speech.lock", log: "speech-worker.log" },
 } as const;
 
-const PROCESS_ROW = /^\s*(\S+)\s+(.*)$/u;
+const PS_LINE_PATTERN = /^\s*(\S+)\s+(.*)$/u;
 const WORKER_COMMAND = / worker (?:dictation|speech)$/u;
 
-const readWorkerLockPath = (kind: WorkerKind): string => readStateFile(WORKER_FILES[kind].lock);
+const readWorkerLockPath = (kind: WorkerKind): string => readStatusFile(WORKER_FILES[kind].lock);
 
-const readWorkerLogPath = (kind: WorkerKind): string => readStateFile(WORKER_FILES[kind].log);
+const readWorkerLogPath = (kind: WorkerKind): string => readStatusFile(WORKER_FILES[kind].log);
 
 const runPs = (psArguments: ReadonlyArray<string>): string => {
   const ps = spawnSync("ps", psArguments, { encoding: "utf8" });
@@ -46,8 +46,8 @@ const sendSignal = (pid: number, signal: NodeJS.Signals | 0): boolean => {
 
 // A zombie still answers signal 0 until it is reaped, so it is checked by its ps state.
 const isZombie = (pid: number): boolean => {
-  const processState = runPs(["-o", "state=", "-p", String(pid)]);
-  return processState.startsWith("Z");
+  const processStatus = runPs(["-o", "state=", "-p", String(pid)]);
+  return processStatus.startsWith("Z");
 };
 
 const isProcessAlive = (pid: number): boolean => sendSignal(pid, 0) && !isZombie(pid);
@@ -61,21 +61,21 @@ const isUsablePid = (pid: number): boolean => Number.isInteger(pid) && pid > 1;
 
 // The pid file's text as a pid, or null when the file is missing, empty, or not a number.
 export const readPid = (name: PidFileName): number | null => {
-  const pidText = readTextIfReadable(readStateFile(name));
+  const pidString = readStringIfReadable(readStatusFile(name));
 
-  const isThereNoPidText = pidText === null;
-  if (isThereNoPidText) {
+  const isThereNoPidString = pidString === null;
+  if (isThereNoPidString) {
     return null;
   }
 
-  const pid = Number(pidText.trim());
+  const pid = Number(pidString.trim());
   return isUsablePid(pid) ? pid : null;
 };
 
 export const writePid = (name: PidFileName, pid: number): void => {
   const home = readAgentVoiceHome();
   makePrivateFolder(home);
-  const pidPath = readStateFile(name);
+  const pidPath = readStatusFile(name);
   writeFileSync(pidPath, `${pid}`);
 };
 
@@ -93,18 +93,18 @@ const isNamedProcess = (name: PidFileName, commandLine: string): boolean => {
 };
 
 const isRunningAs = (name: PidFileName, pid: number): boolean => {
-  const processRow = runPs(["-o", "state=,args=", "-p", String(pid)]);
+  const psLine = runPs(["-o", "state=,args=", "-p", String(pid)]);
 
-  const processRowMatch = PROCESS_ROW.exec(processRow);
+  const psLineHit = PS_LINE_PATTERN.exec(psLine);
 
-  const isProcessMissing = processRowMatch === null;
+  const isProcessMissing = psLineHit === null;
   if (isProcessMissing) {
     return false;
   }
 
-  const processState = processRowMatch[1] || "";
-  const commandLine = processRowMatch[2] || "";
-  return !processState.startsWith("Z") && isNamedProcess(name, commandLine);
+  const processStatus = psLineHit[1] || "";
+  const commandLine = psLineHit[2] || "";
+  return !processStatus.startsWith("Z") && isNamedProcess(name, commandLine);
 };
 
 // The pid from the pid file, only when that process still runs as the named worker.
@@ -175,7 +175,7 @@ const removeOwnPidFile = (kind: WorkerKind): void => {
 
   const isOwnPid = savedPid === process.pid;
   if (isOwnPid) {
-    const pidPath = readStateFile(pidName);
+    const pidPath = readStatusFile(pidName);
     removeIfPresent(pidPath);
   }
 };
@@ -201,12 +201,12 @@ export const claimWorkerLock = (kind: WorkerKind): ReleaseLock | null => {
 };
 
 // From source there is no built main.js next to this file, so tsx runs main.ts.
-const readEntryScript = (): string => {
-  const builtEntry = fileURLToPath(new URL("../cli/main.js", import.meta.url));
+const readLineScript = (): string => {
+  const builtLine = fileURLToPath(new URL("../cli/main.js", import.meta.url));
 
-  const hasBuiltEntry = existsSync(builtEntry);
-  if (hasBuiltEntry) {
-    return builtEntry;
+  const hasBuiltLine = existsSync(builtLine);
+  if (hasBuiltLine) {
+    return builtLine;
   }
 
   return fileURLToPath(new URL("../cli/main.ts", import.meta.url));
@@ -218,7 +218,7 @@ export const readAgentVoiceInvocation = (): {
   readonly scriptArguments: ReadonlyArray<string>;
 } => ({
   executable: process.execPath,
-  scriptArguments: [...process.execArgv, readEntryScript()],
+  scriptArguments: [...process.execArgv, readLineScript()],
 });
 
 // Detached in its own process group. Its log is private because errors can quote dictated text.
@@ -235,14 +235,14 @@ export const spawnWorker = (kind: WorkerKind): void => {
 };
 
 export const stopRequested = (): boolean => {
-  const stopPath = readStateFile("stop");
+  const stopPath = readStatusFile("stop");
   return existsSync(stopPath);
 };
 
 const readLastLogLines = (kind: WorkerKind): string => {
   const logPath = readWorkerLogPath(kind);
-  const logText = readTextIfReadable(logPath) ?? "";
-  return logText.trimEnd().split("\n").slice(-6).join("\n");
+  const logString = readStringIfReadable(logPath) ?? "";
+  return logString.trimEnd().split("\n").slice(-6).join("\n");
 };
 
 const waitUntil = async (request: { readonly done: () => boolean; readonly timeoutMs: number }): Promise<void> => {
@@ -260,7 +260,7 @@ const listRunningWorkerPids = (): ReadonlyArray<number> => [
 
 // Asks both workers to stop, forces any survivor, and clears their pid, lock, and stop files.
 export const stopWorkers = async (): Promise<void> => {
-  const stopPath = readStateFile("stop");
+  const stopPath = readStatusFile("stop");
   touchFile(stopPath);
   const stoppingPids = listRunningWorkerPids();
   for (const pid of stoppingPids) {
@@ -274,7 +274,7 @@ export const stopWorkers = async (): Promise<void> => {
     sendSignalToGroup(pid, "SIGKILL");
   }
   for (const name of ["dictation.pid", "speech.pid", "pill.pid", "stop"] as const) {
-    const filePath = readStateFile(name);
+    const filePath = readStatusFile(name);
     removeIfPresent(filePath);
   }
   // A lock some worker still holds (say one that started after the pids were read) must stay, or a second could start.
@@ -289,8 +289,8 @@ export const stopWorkers = async (): Promise<void> => {
 const listStrayAgentVoiceProcesses = (): ReadonlyArray<number> => {
   const processList = runPs(["-ax", "-o", "pid=,args="]);
   return processList.split("\n").flatMap((line) => {
-    const processRowMatch = PROCESS_ROW.exec(line);
-    const commandLine = processRowMatch?.[2] || "";
+    const psLineHit = PS_LINE_PATTERN.exec(line);
+    const commandLine = psLineHit?.[2] || "";
     const isWorker = commandLine.includes("agent-voice") && WORKER_COMMAND.test(commandLine);
 
     const isNotStray = !isWorker && !isPillCommand(commandLine);
@@ -327,7 +327,7 @@ export const startWorkers = async (): Promise<"started" | "already running"> => 
     return "already running";
   }
 
-  const stopPath = readStateFile("stop");
+  const stopPath = readStatusFile("stop");
   removeIfPresent(stopPath);
   writeWorkerStatus({
     stage: "starting",

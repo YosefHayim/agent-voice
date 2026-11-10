@@ -81,14 +81,14 @@ export const writeFileAtomically = (request: { readonly path: string; readonly c
   renameSync(staging, request.path);
 };
 
-export const writeJsonAtomically = (request: { readonly path: string; readonly value: unknown }): void => {
-  const serializedValue = JSON.stringify(request.value);
-  writeFileAtomically({ path: request.path, contents: `${serializedValue}\n` });
+export const writeDocumentAtomically = (request: { readonly path: string; readonly value: unknown }): void => {
+  const serializedField = JSON.stringify(request.value);
+  writeFileAtomically({ path: request.path, contents: `${serializedField}\n` });
 };
 
 // Only a missing file is null; any other read failure is thrown, so a caller that writes the file back never
 // mistakes an unreadable file for a missing one.
-export const readTextIfPresent = (filePath: string): string | null => {
+export const readStringIfPresent = (filePath: string): string | null => {
   try {
     return readFileSync(filePath, "utf8");
   } catch (error) {
@@ -102,9 +102,9 @@ export const readTextIfPresent = (filePath: string): string | null => {
 };
 
 // For files agent-voice only reads, never writes back: an unreadable file counts as missing.
-export const readTextIfReadable = (filePath: string): string | null => {
+export const readStringIfReadable = (filePath: string): string | null => {
   try {
-    return readTextIfPresent(filePath);
+    return readStringIfPresent(filePath);
   } catch {
     // Read-only files: any failure to read means there is nothing to use, so the caller falls back to its default.
     return null;
@@ -112,10 +112,10 @@ export const readTextIfReadable = (filePath: string): string | null => {
 };
 
 // A file that is not JSON, or does not match the schema, reads as null.
-const parseJsonText = <Value>(fileContents: string, schema: ZodType<Value>): Value | null => {
+const parseDocumentString = <Field>(fileMessages: string, schema: ZodType<Field>): Field | null => {
   try {
-    const jsonValue: unknown = JSON.parse(fileContents);
-    const checkedReply = schema.safeParse(jsonValue);
+    const documentField: unknown = JSON.parse(fileMessages);
+    const checkedReply = schema.safeParse(documentField);
     return checkedReply.success ? checkedReply.data : null;
   } catch {
     // Invalid JSON is an expected outcome for a state file, so it reads as missing.
@@ -123,18 +123,18 @@ const parseJsonText = <Value>(fileContents: string, schema: ZodType<Value>): Val
   }
 };
 
-export const readJsonFile = <Value>(request: {
+export const readDocumentFile = <Value>(request: {
   readonly path: string;
   readonly schema: ZodType<Value>;
 }): Value | null => {
-  const fileContents = readTextIfReadable(request.path);
+  const fileMessages = readStringIfReadable(request.path);
 
-  const isThereNoFileContents = fileContents === null;
-  if (isThereNoFileContents) {
+  const isThereNoFileMessages = fileMessages === null;
+  if (isThereNoFileMessages) {
     return null;
   }
 
-  return parseJsonText(fileContents, request.schema);
+  return parseDocumentString(fileMessages, request.schema);
 };
 
 export const removeIfPresent = (filePath: string): void => rmSync(filePath, { force: true });

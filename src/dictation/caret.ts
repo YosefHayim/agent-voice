@@ -15,14 +15,14 @@ const runFile = promisify(execFile);
 
 export const readClipboard = async (): Promise<string> => {
   try {
-    const output = await runFile("pbpaste", { encoding: "utf8" });
-    return output.stdout;
+    const printout = await runFile("pbpaste", { encoding: "utf8" });
+    return printout.stdout;
   } catch (error) {
     throw new Error(`pbpaste: ${String(error)}`, { cause: error });
   }
 };
 
-export const writeClipboard = (text: string): Promise<void> =>
+export const writeClipboard = (string: string): Promise<void> =>
   new Promise<void>((finishWrite, failWrite) => {
     const child = spawn("pbcopy", [], { stdio: ["pipe", "ignore", "ignore"] });
     child.on("error", (error) => failWrite(new Error(`pbcopy: ${error.message}`, { cause: error })));
@@ -35,7 +35,7 @@ export const writeClipboard = (text: string): Promise<void> =>
 
       failWrite(new Error(`pbcopy exited ${String(code)}`));
     });
-    child.stdin.end(text);
+    child.stdin.end(string);
   });
 
 // Release the selected modifier before typing so it cannot alter the text.
@@ -78,12 +78,12 @@ const pressCommandV = async (keyboard: Keyboard): Promise<void> => {
 };
 
 // The pasteboard is read back before Command-V, because a raced pbcopy would paste something else.
-const pasteText = async (keyboard: Keyboard, text: string): Promise<void> => {
+const pasteString = async (keyboard: Keyboard, string: string): Promise<void> => {
   const previous = await readPreviousClipboard();
-  await writeClipboard(text);
+  await writeClipboard(string);
   const copied = await readClipboard();
 
-  const isClipboardCopyFailing = copied !== text;
+  const isClipboardCopyFailing = copied !== string;
   if (isClipboardCopyFailing) {
     throw new Error("the clipboard did not take the text");
   }
@@ -96,7 +96,7 @@ const pasteText = async (keyboard: Keyboard, text: string): Promise<void> => {
   }
 
   // Not awaited: the restore waits 400 milliseconds, and the paste should not.
-  void restoreClipboard({ pasted: text, previous });
+  void restoreClipboard({ pasted: string, previous });
 };
 
 // A clipboard that cannot be read is not restored afterwards.
@@ -108,22 +108,22 @@ const readPreviousClipboard = async (): Promise<string | null> => {
   }
 };
 
-const putText = async (keyboard: Keyboard, text: string): Promise<void> => {
-  const length = [...text].length;
+const putString = async (keyboard: Keyboard, string: string): Promise<void> => {
+  const length = [...string].length;
 
   const isShortEnoughToType = length <= CLIPBOARD_CHARACTERS;
   if (isShortEnoughToType) {
-    keyboard.typeUnicode(text);
+    keyboard.typeUnicode(string);
     appendDictationLog(`type_path chars=${String(length)} keys`);
     return;
   }
 
   try {
-    await pasteText(keyboard, text);
+    await pasteString(keyboard, string);
     appendDictationLog(`type_path chars=${String(length)} clipboard`);
   } catch (error) {
     appendDictationLog(`type_path chars=${String(length)} paste failed, typing instead: ${String(error)}`);
-    keyboard.typeUnicode(text);
+    keyboard.typeUnicode(string);
   }
 };
 
@@ -132,13 +132,13 @@ export const typeAtCaret = async (request: {
   readonly text: string;
   readonly pressEnter: boolean;
 }): Promise<void> => {
-  const isThereNoText = request.text === "";
-  if (isThereNoText) {
+  const isThereNoString = request.text === "";
+  if (isThereNoString) {
     return;
   }
 
   await waitForHoldUp(request.keyboard, 900);
-  await putText(request.keyboard, request.text);
+  await putString(request.keyboard, request.text);
 
   const isPressEnterOff = !request.pressEnter;
   if (isPressEnterOff) {

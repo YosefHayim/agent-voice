@@ -9,7 +9,7 @@ import { readSyntheticSpeech, SAMPLE_RATE } from "#src/dictation/clip-audio.js";
 import { loadTranscriber, readWhisperBackend, type Transcriber } from "#src/dictation/transcriber.js";
 import { ensureWhisperModel, whisperModels } from "#src/dictation/whisper-models.js";
 
-const { values } = parseArgs({
+const { values: fields } = parseArgs({
   options: {
     models: { type: "string", default: "tiny,base,small,turbo-q5" },
     seconds: { type: "string", default: "1,2,4" },
@@ -17,8 +17,8 @@ const { values } = parseArgs({
   },
 });
 
-const listCommaSeparatedList = (commaSeparatedText: string) =>
-  commaSeparatedText
+const listCommaSeparatedList = (commaSeparatedString: string) =>
+  commaSeparatedString
     .split(",")
     .map((word) => word.trim())
     .filter((word) => word !== "");
@@ -99,11 +99,11 @@ const readBenchModel = async (request: {
   };
 };
 
-const seconds = durationsSchema.parse(listCommaSeparatedList(values.seconds));
+const seconds = durationsSchema.parse(listCommaSeparatedList(fields.seconds));
 
-const runs = runsSchema.parse(values.runs);
+const runs = runsSchema.parse(fields.runs);
 
-const modelKeys = listCommaSeparatedList(values.models);
+const modelKeys = listCommaSeparatedList(fields.models);
 
 const modelReports = [];
 for (const key of modelKeys) {

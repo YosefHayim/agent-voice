@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { chunkSpeech, listCharacterIds, readSpeedFromWordsPerMinute, readSupertonicText } from "./speech-chunks.js";
+import { chunkSpeech, listCharacterIds, readSpeedFromWordsPerMinute, readSupertonicString } from "./speech-chunks.js";
 import { decodeWav, encodeWav } from "./wav-file.js";
 
 describe("chunkSpeech", () => {
@@ -21,13 +21,13 @@ describe("chunkSpeech", () => {
 
 describe("supertonicText", () => {
   it("normalizes symbols, spacing, and quotes, ends with a period, and adds the language tags", () => {
-    expect(readSupertonicText("Use foo_bar — see “docs” @ home , ok")).toBe(
+    expect(readSupertonicString("Use foo_bar — see “docs” @ home , ok")).toBe(
       '<en>Use foo bar - see "docs" at home, ok.</en>',
     );
   });
 
   it("keeps existing end punctuation and removes emoji", () => {
-    expect(readSupertonicText("Done! 🎉")).toBe("<en>Done!</en>");
+    expect(readSupertonicString("Done! 🎉")).toBe("<en>Done!</en>");
   });
 });
 
@@ -52,6 +52,6 @@ describe("WAV files", () => {
     const wav = encodeWav({ samples: Float32Array.from([0, 0.5, -0.5, 1]), sampleRate: 44_100 });
     expect(decodeWav(wav)).toEqual({ sampleRate: 44_100, pcm: Int16Array.from([0, 16_384, -16_383, 32_767]) });
     const notWav = Buffer.from("not a wav file at all");
-    expect(decodeWav(notWav)).toBeUndefined();
+    expect(decodeWav(notWav)).toBeNull();
   });
 });

@@ -24,7 +24,7 @@ export const runAgentVoice = async (request: {
   child.stdin.end(request.stdin || "");
   const stdout = text(child.stdout);
   const stderr = text(child.stderr);
-  const exit = new Promise<number | null>((resolve) => child.once("close", resolve));
-  const [stdoutText, stderrText, status] = await Promise.all([stdout, stderr, exit]);
-  return { status, stdout: stdoutText, stderr: stderrText };
+  const exit = new Promise<number | null>((fulfill) => child.once("close", fulfill));
+  const [stdoutString, stderrString, status] = await Promise.all([stdout, stderr, exit]);
+  return { status, stdout: stdoutString, stderr: stderrString };
 };

@@ -17,13 +17,13 @@ vi.mock("koffi", () => ({
   default: {
     load: () => ({
       func: (declaration: string) => {
-        const isKeyStateDeclaration = declaration.includes("CGEventSourceKeyState");
-        if (isKeyStateDeclaration) {
-          return (_state: number, key: number) => nativeKeyboard.pressed.has(key);
+        const isKeyStatusDeclaration = declaration.includes("CGEventSourceKeyState");
+        if (isKeyStatusDeclaration) {
+          return (_status: number, key: number) => nativeKeyboard.pressed.has(key);
         }
 
-        const isFlagsStateDeclaration = declaration.includes("CGEventSourceFlagsState");
-        if (isFlagsStateDeclaration) {
+        const isFlagsStatusDeclaration = declaration.includes("CGEventSourceFlagsState");
+        if (isFlagsStatusDeclaration) {
           return () => nativeKeyboard.flags;
         }
 
@@ -57,8 +57,8 @@ afterEach(() => {
 
 describe("configured native hold key", () => {
   const createRightOptionKeyboard = () => {
-    const configPath = path.join(keyboardHome, "config.json");
-    writeFileSync(configPath, '{"dictationHoldKey":"right-option"}');
+    const settingsPath = path.join(keyboardHome, "config.json");
+    writeFileSync(settingsPath, '{"dictationHoldKey":"right-option"}');
     return loadKeyboard();
   };
 
@@ -132,8 +132,10 @@ describe("utf16Units", () => {
   });
 
   it("never splits a surrogate pair across chunks, and posts every unit of every chunk", () => {
-    const text = `${"x".repeat(19)}😀 done`;
-    expect(listUnicodeChunks(text)).toEqual(["x".repeat(19), "😀 done"]);
-    expect(listUnicodeChunks(text).flatMap((chunk) => [...readUtf16Units(chunk)])).toEqual([...readUtf16Units(text)]);
+    const string = `${"x".repeat(19)}😀 done`;
+    expect(listUnicodeChunks(string)).toEqual(["x".repeat(19), "😀 done"]);
+    expect(listUnicodeChunks(string).flatMap((chunk) => [...readUtf16Units(chunk)])).toEqual([
+      ...readUtf16Units(string),
+    ]);
   });
 });

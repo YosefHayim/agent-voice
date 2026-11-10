@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { type Config, defaultConfig } from "#src/settings/config-schema.js";
+import { defaultSettings, type Settings } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { selectWhisperModel } from "./whisper-models.js";
 
-const readSelectedKey = (request: { readonly forced: string; readonly config: Partial<Config> }) => {
+const readSelectedKey = (request: { readonly forced: string; readonly config: Partial<Settings> }) => {
   const environment = { ...readEnvironment(), AGENT_VOICE_DICTATION_MODEL: request.forced };
-  const config = { ...defaultConfig, ...request.config };
-  return selectWhisperModel({ environment, config }).key;
+  const settings = { ...defaultSettings, ...request.config };
+  return selectWhisperModel({ environment, config: settings }).key;
 };
 
 describe("selectWhisperModel", () => {

@@ -24,7 +24,7 @@ interface HookInsertion {
 }
 
 // POSIX single quotes: the shell expands nothing inside them, and an embedded ' is closed, escaped, and reopened.
-const quoteShellWord = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
+const quoteShellWord = (string: string) => `'${string.replaceAll("'", "'\\''")}'`;
 
 // `'<node>' [loader flags] '<agent-voice main>' reply --agent <id>`: the command that identifies agent-voice's entry.
 export const replyHookCommand = (request: {
@@ -52,9 +52,9 @@ export const isReplyHookCommand = (command: string, agent: AgentId): boolean => 
 };
 
 // Throws when the text is not one JSON object, so the caller reports the file as failed and leaves it alone.
-const parseSettings = (source: string): Node => {
+const parseSettings = (code: string): Node => {
   const errors: Array<ParseError> = [];
-  const root = parseTree(source, errors, { allowTrailingComma: true, disallowComments: false });
+  const root = parseTree(code, errors, { allowTrailingComma: true, disallowComments: false });
 
   const isRootObject = root?.type === "object";
 
@@ -66,13 +66,13 @@ const parseSettings = (source: string): Node => {
   return root;
 };
 
-const readLineIndent = (source: string, offset: number): string => {
-  const lineStart = source.lastIndexOf("\n", offset - 1) + 1;
-  const line = source.slice(lineStart);
+const readLineIndent = (code: string, offset: number): string => {
+  const lineStart = code.lastIndexOf("\n", offset - 1) + 1;
+  const line = code.slice(lineStart);
   return /^[ \t]*/u.exec(line)?.[0] || "";
 };
 
-const readIndentUnit = (source: string): string => /\n([ \t]+)"/u.exec(source)?.[1] || "  ";
+const readIndentUnit = (code: string): string => /\n([ \t]+)"/u.exec(code)?.[1] || "  ";
 
 const stringifyWithIndent = (request: {
   readonly value: unknown;
@@ -80,8 +80,8 @@ const stringifyWithIndent = (request: {
   readonly baseIndent: string;
 }) => JSON.stringify(request.value, null, request.unit).split("\n").join(`\n${request.baseIndent}`);
 
-const splice = (source: string, edit: { readonly offset: number; readonly length: number; readonly text: string }) =>
-  source.slice(0, edit.offset) + edit.text + source.slice(edit.offset + edit.length);
+const splice = (code: string, edit: { readonly offset: number; readonly length: number; readonly text: string }) =>
+  code.slice(0, edit.offset) + edit.text + code.slice(edit.offset + edit.length);
 
 // The new member is indented like its siblings, or one unit deeper than an empty container.
 const appendMember = (request: {
@@ -155,12 +155,12 @@ const readHookCommand = (hook: Node): string => {
     return "";
   }
 
-  const commandValue: unknown = getNodeValue(commandNode);
-  const isCommandText = typeof commandValue === "string";
-  return isCommandText ? commandValue : "";
+  const commandField: unknown = getNodeValue(commandNode);
+  const isCommandString = typeof commandField === "string";
+  return isCommandString ? commandField : "";
 };
 
-const findReplyHook = (root: Node, matches: (command: string) => boolean): ReplyHookLocation | null => {
+const findReplyHook = (root: Node, hits: (command: string) => boolean): ReplyHookLocation | null => {
   const stopArray = findNodeAtLocation(root, ["hooks", "Stop"]);
 
   const isStopArrayTypeNotArray = stopArray?.type !== "array";
@@ -180,7 +180,7 @@ const findReplyHook = (root: Node, matches: (command: string) => boolean): Reply
   });
   const location = locations.find((candidate) => {
     const command = readHookCommand(candidate.hook);
-    return matches(command);
+    return hits(command);
   });
   return location ?? null;
 };
@@ -196,9 +196,9 @@ const pruneIfEmpty = (request: { readonly source: string; readonly path: Readonl
   const parent = findNodeAtLocation(root, parentPath);
   const property = (parent?.children || []).find((candidate) => candidate.children?.[0]?.value === key);
 
-  const hasEmptyValue = isEmptyContainer(property?.children?.[1]);
+  const hasEmptyField = isEmptyContainer(property?.children?.[1]);
 
-  const isNothingToRemove = parent === undefined || property === undefined || !hasEmptyValue;
+  const isNothingToRemove = parent === undefined || property === undefined || !hasEmptyField;
   if (isNothingToRemove) {
     return request.source;
   }
@@ -207,13 +207,13 @@ const pruneIfEmpty = (request: { readonly source: string; readonly path: Readonl
 };
 
 // A group that also holds other hooks keeps them; a group holding only agent-voice's hook goes whole.
-const removeHookEntry = (source: string, location: ReplyHookLocation): string => {
+const removeHookLine = (code: string, location: ReplyHookLocation): string => {
   const hasOtherHooks = (location.groupHooks.children || []).length > 1;
   if (hasOtherHooks) {
-    return removeMember({ source, container: location.groupHooks, member: location.hook });
+    return removeMember({ source: code, container: location.groupHooks, member: location.hook });
   }
 
-  return removeMember({ source, container: location.stopArray, member: location.group });
+  return removeMember({ source: code, container: location.stopArray, member: location.group });
 };
 
 // A container left empty by the removal goes too.
@@ -226,7 +226,7 @@ export const removeReplyHook = (request: { readonly source: string; readonly age
     return { source: request.source, changed: false };
   }
 
-  const withoutHook = removeHookEntry(request.source, location);
+  const withoutHook = removeHookLine(request.source, location);
   const withoutStop = pruneIfEmpty({ source: withoutHook, path: ["hooks", "Stop"] });
   const withoutHooks = pruneIfEmpty({ source: withoutStop, path: ["hooks"] });
   return { source: withoutHooks, changed: true };
@@ -261,25 +261,25 @@ const readHookInsertion = (root: Node, command: string): HookInsertion => {
   return { container: root, keyPrefix: '"hooks": ', value: { Stop: [hookGroup] } };
 };
 
-const appendReplyHook = (source: string, command: string): string => {
-  const root = parseSettings(source);
+const appendReplyHook = (code: string, command: string): string => {
+  const root = parseSettings(code);
   const insertion = readHookInsertion(root, command);
-  const unit = readIndentUnit(source);
+  const unit = readIndentUnit(code);
   return appendMember({
-    source,
+    source: code,
     container: insertion.container,
     member: (indent) =>
       `${insertion.keyPrefix}${stringifyWithIndent({ value: insertion.value, unit, baseIndent: indent })}`,
   });
 };
 
-const readSettingsText = (source: string): string => {
-  const isBlank = source.trim() === "";
+const readSettingsString = (code: string): string => {
+  const isBlank = code.trim() === "";
   if (isBlank) {
     return "{}\n";
   }
 
-  return source;
+  return code;
 };
 
 const confirmAdded = (edited: string, command: string): SettingsEdit => {
@@ -310,8 +310,8 @@ export const addReplyHook = (request: {
   readonly command: string;
   readonly agent: AgentId;
 }): SettingsEdit => {
-  const source = readSettingsText(request.source);
-  const root = parseSettings(source);
+  const code = readSettingsString(request.source);
+  const root = parseSettings(code);
   const existing = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
 
   const isCurrent = existing !== null && readHookCommand(existing.hook) === request.command;
@@ -319,8 +319,8 @@ export const addReplyHook = (request: {
     return { source: request.source, changed: false };
   }
 
-  return replaceReplyHook({ source, command: request.command, agent: request.agent });
+  return replaceReplyHook({ source: code, command: request.command, agent: request.agent });
 };
 
 // `{}` and whitespace with no comment, so agent-voice may then delete its own file.
-export const isEmptySettings = (source: string): boolean => source.replace(/\s/gu, "") === "{}";
+export const isEmptySettings = (code: string): boolean => code.replace(/\s/gu, "") === "{}";

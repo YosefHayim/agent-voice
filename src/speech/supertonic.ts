@@ -5,12 +5,12 @@ import type * as OnnxRuntime from "onnxruntime-node";
 import { z } from "zod";
 
 import { describeError } from "#src/error-message.js";
-import type { Config } from "#src/settings/config-schema.js";
-import { listCharacterIds, readSupertonicText } from "./speech-chunks.js";
+import type { Settings } from "#src/settings/config-schema.js";
+import { listCharacterIds, readSupertonicString } from "./speech-chunks.js";
 
 export interface SynthesizeRequest {
   readonly text: string;
-  readonly voice: Config["speechVoice"];
+  readonly voice: Settings["speechVoice"];
   readonly speed: number;
 }
 
@@ -19,7 +19,7 @@ export interface SupertonicEngine {
   readonly synthesize: (request: SynthesizeRequest) => Promise<Float32Array>;
 }
 
-const ttsConfigSchema = z.object({
+const ttsSettingsSchema = z.object({
   ae: z.object({ sample_rate: z.number(), base_chunk_size: z.number() }),
   ttl: z.object({ chunk_compress_factor: z.number(), latent_dim: z.number() }),
 });
@@ -38,7 +38,7 @@ const FLOW_STEPS = 8;
 const createSupertonicError = (issue: string, cause?: unknown): Error => new Error(`Supertonic: ${issue}`, { cause });
 
 // Turns any failure from onnxruntime into one error that names Supertonic.
-const wrapSupertonicErrors = async <Value>(work: () => Promise<Value>): Promise<Value> => {
+const wrapSupertonicErrors = async <Field>(work: () => Promise<Field>): Promise<Field> => {
   try {
     return await work();
   } catch (error) {
@@ -46,7 +46,7 @@ const wrapSupertonicErrors = async <Value>(work: () => Promise<Value>): Promise<
   }
 };
 
-const readSupertonicJson = <Output>(schema: z.ZodType<Output>, file: string): Output => {
+const readSupertonicDocument = <Printout>(schema: z.ZodType<Printout>, file: string): Printout => {
   try {
     return schema.parse(JSON.parse(readFileSync(file, "utf8")));
   } catch (error) {
@@ -73,12 +73,12 @@ const runModel = async (request: {
   readonly model: OnnxRuntime.InferenceSession;
   readonly feeds: Readonly<Record<string, OnnxRuntime.Tensor>>;
 }) => {
-  const outputs = await wrapSupertonicErrors(() => request.model.run({ ...request.feeds }));
+  const printouts = await wrapSupertonicErrors(() => request.model.run({ ...request.feeds }));
   const firstName = request.model.outputNames[0] || "";
-  const tensor = outputs[firstName];
+  const tensor = printouts[firstName];
 
-  const isNoOutput = tensor === undefined;
-  if (isNoOutput) {
+  const isNoPrintout = tensor === undefined;
+  if (isNoPrintout) {
     throw createSupertonicError("a model returned no output");
   }
 
@@ -89,23 +89,23 @@ const runModel = async (request: {
 export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEngine> => {
   const ort: typeof OnnxRuntime = await wrapSupertonicErrors(() => import("onnxruntime-node"));
   const onnxFolder = path.join(modelFolder, "onnx");
-  const configFile = path.join(onnxFolder, "tts.json");
+  const settingsFile = path.join(onnxFolder, "tts.json");
   const indexerFile = path.join(onnxFolder, "unicode_indexer.json");
-  const config = readSupertonicJson(ttsConfigSchema, configFile);
-  const indexer = readSupertonicJson(numbersSchema, indexerFile);
+  const settings = readSupertonicDocument(ttsSettingsSchema, settingsFile);
+  const indexer = readSupertonicDocument(numbersSchema, indexerFile);
 
   const loadSession = (name: string) =>
     wrapSupertonicErrors(() =>
       ort.InferenceSession.create(path.join(onnxFolder, `${name}.onnx`), { executionProviders: ["cpu"] }),
     );
   const durationPredictor = await loadSession("duration_predictor");
-  const textEncoder = await loadSession("text_encoder");
+  const stringEncoder = await loadSession("text_encoder");
   const vectorEstimator = await loadSession("vector_estimator");
   const vocoder = await loadSession("vocoder");
 
-  const sampleRate = config.ae.sample_rate;
-  const chunkSize = config.ae.base_chunk_size * config.ttl.chunk_compress_factor;
-  const latentDimension = config.ttl.latent_dim * config.ttl.chunk_compress_factor;
+  const sampleRate = settings.ae.sample_rate;
+  const chunkSize = settings.ae.base_chunk_size * settings.ttl.chunk_compress_factor;
+  const latentDimension = settings.ttl.latent_dim * settings.ttl.chunk_compress_factor;
 
   const readFloatTensor = (
     floats: Float32Array | ReadonlyArray<number>,
@@ -117,16 +117,16 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
     return readFloatTensor(floats, style.dims);
   };
 
-  const readStyleTensors = (voice: Config["speechVoice"]) => {
+  const readStyleTensors = (voice: Settings["speechVoice"]) => {
     const styleFile = path.join(modelFolder, "voice_styles", `${voice}.json`);
-    const style = readSupertonicJson(voiceStyleSchema, styleFile);
+    const style = readSupertonicDocument(voiceStyleSchema, styleFile);
     return { textToLatent: readStyleTensor(style.style_ttl), duration: readStyleTensor(style.style_dp) };
   };
 
   // Mono samples at `sampleRate` for one chunk of speech text.
   const synthesize = async (request: SynthesizeRequest): Promise<Float32Array> => {
-    const modelText = readSupertonicText(request.text);
-    const ids = listCharacterIds(modelText, indexer);
+    const modelString = readSupertonicString(request.text);
+    const ids = listCharacterIds(modelString, indexer);
 
     const isNoIds = ids.length === 0;
     if (isNoIds) {
@@ -134,17 +134,17 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
     }
 
     const style = readStyleTensors(request.voice);
-    const textIds = new ort.Tensor("int64", ids, [1, ids.length]);
-    const textOnes = createOnes(ids.length);
-    const textMask = readFloatTensor(textOnes, [1, 1, ids.length]);
+    const stringIds = new ort.Tensor("int64", ids, [1, ids.length]);
+    const stringOnes = createOnes(ids.length);
+    const stringMask = readFloatTensor(stringOnes, [1, 1, ids.length]);
 
     const duration = await runModel({
       model: durationPredictor,
-      feeds: { text_ids: textIds, style_dp: style.duration, text_mask: textMask },
+      feeds: { text_ids: stringIds, style_dp: style.duration, text_mask: stringMask },
     });
-    const textEmbedding = await runModel({
-      model: textEncoder,
-      feeds: { text_ids: textIds, style_ttl: style.textToLatent, text_mask: textMask },
+    const stringEmbedding = await runModel({
+      model: stringEncoder,
+      feeds: { text_ids: stringIds, style_ttl: style.textToLatent, text_mask: stringMask },
     });
 
     const seconds = Number(duration.data[0] || 0) / request.speed;
@@ -161,9 +161,9 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
         model: vectorEstimator,
         feeds: {
           noisy_latent: noisyLatent,
-          text_emb: textEmbedding,
+          text_emb: stringEmbedding,
           style_ttl: style.textToLatent,
-          text_mask: textMask,
+          text_mask: stringMask,
           latent_mask: latentMask,
           current_step: currentStep,
           total_step: totalSteps,

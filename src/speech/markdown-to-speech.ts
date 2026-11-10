@@ -1,5 +1,5 @@
-const readSentence = (text: string): string => {
-  const words = text.split(/\s+/u).filter(Boolean).join(" ");
+const readSentence = (string: string): string => {
+  const words = string.split(/\s+/u).filter(Boolean).join(" ");
 
   const isFinished = words === "" || /[.!?:;]$/u.test(words);
   if (isFinished) {
@@ -10,8 +10,8 @@ const readSentence = (text: string): string => {
 };
 
 // Paired emphasis markers only (**bold**, *it*, _it_, ~~gone~~); a lone or escaped one (2 * 3, *.ts, snake_case) is text.
-const stripEmphasis = (text: string): string =>
-  text
+const stripEmphasis = (string: string): string =>
+  string
     .replace(/(?<![\\\p{L}\p{N}_*~])(\*\*|__|~~)(?=\S)(.+?)(?<=\S)\1(?![\p{L}\p{N}_*~])/gu, "$2")
     .replace(/(?<![\\\p{L}\p{N}_*~])([*_~])(?=\S)(.+?)(?<=\S)\1(?![\p{L}\p{N}_*~])/gu, "$2");
 
@@ -21,8 +21,8 @@ const CODE_SPAN = /`([^`]*)`/gu;
 const SET_ASIDE = /(\d+)/gu;
 
 // Code spans are set aside while emphasis and HTML tags are removed, so `Array<T>` and `__init__` stay as written.
-const readInlineSpeech = (text: string): string => {
-  const linked = text
+const readInlineSpeech = (string: string): string => {
+  const linked = string
     .replace(/!\[\s*\]\(/gu, "![image](")
     .replace(/!\[\s*([^\]]*?)\s*\]\(\s*([^)]+?)\s*\)/gu, "Image: $1. Source $2")
     .replace(/\[\s*([^\]]+?)\s*\]\(\s*([^)]+?)\s*\)/gu, "$1, link $2")
@@ -40,8 +40,8 @@ const readInlineSpeech = (text: string): string => {
     .join(" ");
 };
 
-const readProseSentence = (prefix: string, text: string): string => {
-  const prose = readInlineSpeech(text);
+const readProseSentence = (prefix: string, string: string): string => {
+  const prose = readInlineSpeech(string);
   return readSentence(`${prefix}${prose}`);
 };
 
@@ -72,7 +72,7 @@ const readCodeSpeech = (line: string): string => {
     return "Blank line.";
   }
 
-  const spoken = SPOKEN_SYMBOLS.reduce((text, [symbol, words]) => text.split(symbol).join(words), code);
+  const spoken = SPOKEN_SYMBOLS.reduce((string, [symbol, words]) => string.split(symbol).join(words), code);
   return readSentence(spoken);
 };
 
@@ -127,22 +127,22 @@ const isTableStart = (line: string, nextLine: string | undefined): boolean =>
   line.includes("|") && nextLine !== undefined && TABLE_SEPARATOR.test(nextLine);
 
 // One sentence per row: "Row 1. Item: Voice. State: Ready."
-const listTableSpeech = (header: string, rows: ReadonlyArray<string>): ReadonlyArray<string> => {
+const listTableSpeech = (header: string, storedList: ReadonlyArray<string>): ReadonlyArray<string> => {
   const columns = listTableCells(header);
   const readCellSpeech = (cell: string, cellIndex: number): string => {
     const column = columns.at(cellIndex) || `Column ${cellIndex + 1}`;
-    const value = cell || "empty";
-    return readSentence(`${column}: ${value}`);
+    const field = cell || "empty";
+    return readSentence(`${column}: ${field}`);
   };
-  return rows.map((row, rowIndex) => {
-    const cells = listTableCells(row).map(readCellSpeech);
-    return [`Row ${rowIndex + 1}.`, ...cells].join(" ");
+  return storedList.map((stored, storedIndex) => {
+    const cells = listTableCells(stored).map(readCellSpeech);
+    return [`Row ${storedIndex + 1}.`, ...cells].join(" ");
   });
 };
 
 // A table runs until the first line without a cell separator.
-const readTableEnd = (lines: ReadonlyArray<string>, firstRow: number): number => {
-  const end = lines.findIndex((line, index) => index >= firstRow && !line.includes("|"));
+const readTableEnd = (lines: ReadonlyArray<string>, storedFirst: number): number => {
+  const end = lines.findIndex((line, index) => index >= storedFirst && !line.includes("|"));
 
   const isEndNotFound = end < 0;
   if (isEndNotFound) {
@@ -194,11 +194,11 @@ export const convertMarkdownToSpeech = (markdown: string): string => {
 
     const isTable = fence === null && !inCode && isTableStart(line, lines[index + 1]);
     if (isTable) {
-      const firstRow = index + 2;
-      const end = readTableEnd(lines, firstRow);
-      const rows = lines.slice(firstRow, end);
-      const rowSentences = listTableSpeech(line, rows);
-      spoken.push(...rowSentences);
+      const storedFirst = index + 2;
+      const end = readTableEnd(lines, storedFirst);
+      const storedList = lines.slice(storedFirst, end);
+      const storedSentences = listTableSpeech(line, storedList);
+      spoken.push(...storedSentences);
       index = end;
       continue;
     }

@@ -1,6 +1,6 @@
 import type { CommandSpec, FlagSpec, PositionalSpec } from "./command-spec.js";
 
-interface HelpRow {
+interface HelpLine {
   readonly label: string;
   readonly description: string;
 }
@@ -41,22 +41,22 @@ const readUsageLabel = (commandPath: string, command: CommandSpec): string => {
   return [commandPath, ...flagParts, ...positionalParts].join(" ");
 };
 
-const listTableLines = (rows: ReadonlyArray<HelpRow>): ReadonlyArray<string> => {
-  const labelWidth = Math.max(...rows.map((row) => row.label.length));
-  return rows.map((row) => `${INDENT}${row.label.padEnd(labelWidth)}  ${row.description}`);
+const listTableLines = (storedList: ReadonlyArray<HelpLine>): ReadonlyArray<string> => {
+  const labelWidth = Math.max(...storedList.map((helpLine) => helpLine.label.length));
+  return storedList.map((helpLine) => `${INDENT}${helpLine.label.padEnd(labelWidth)}  ${helpLine.description}`);
 };
 
-const listSectionLines = (title: string, rows: ReadonlyArray<HelpRow>): ReadonlyArray<string> => {
-  const isEmptySection = rows.length === 0;
+const listSectionLines = (title: string, storedList: ReadonlyArray<HelpLine>): ReadonlyArray<string> => {
+  const isEmptySection = storedList.length === 0;
   if (isEmptySection) {
     return [];
   }
 
-  return ["", `${title}:`, ...listTableLines(rows)];
+  return ["", `${title}:`, ...listTableLines(storedList)];
 };
 
 export const createRootHelp = (commands: ReadonlyArray<CommandSpec>): string => {
-  const commandRows = commands.map((command) => ({
+  const storedCommandList = commands.map((command) => ({
     label: readUsageLabel(command.name, command),
     description: command.description,
   }));
@@ -64,22 +64,22 @@ export const createRootHelp = (commands: ReadonlyArray<CommandSpec>): string => 
     "agent-voice · Hold Shift to dictate into any text field and hear coding-agent replies read aloud.",
     "",
     "Usage: agent-voice <command> [options]",
-    ...listSectionLines("Commands", commandRows),
+    ...listSectionLines("Commands", storedCommandList),
     "",
     "Run agent-voice <command> --help for the options of one command.",
   ].join("\n");
 };
 
 export const createCommandHelp = (commandPath: string, command: CommandSpec): string => {
-  const subcommandRows = (command.subcommands ?? []).map((subcommand) => ({
+  const storedSubcommandList = (command.subcommands ?? []).map((subcommand) => ({
     label: readUsageLabel(subcommand.name, subcommand),
     description: subcommand.description,
   }));
-  const positionalRows = command.positionals.map((positionalSpec) => ({
+  const storedPositionalList = command.positionals.map((positionalSpec) => ({
     label: readPositionalUsage(positionalSpec),
     description: positionalSpec.description,
   }));
-  const flagRows = Object.entries(command.flags).map(([flagName, flag]) => ({
+  const storedFlagList = Object.entries(command.flags).map(([flagName, flag]) => ({
     label: flagUsage(flagName, flag),
     description: flag.description,
   }));
@@ -87,8 +87,8 @@ export const createCommandHelp = (commandPath: string, command: CommandSpec): st
     `${commandPath} — ${command.description}`,
     "",
     `Usage: ${readUsageLabel(commandPath, command)}`,
-    ...listSectionLines("Commands", subcommandRows),
-    ...listSectionLines("Arguments", positionalRows),
-    ...listSectionLines("Options", flagRows),
+    ...listSectionLines("Commands", storedSubcommandList),
+    ...listSectionLines("Arguments", storedPositionalList),
+    ...listSectionLines("Options", storedFlagList),
   ].join("\n");
 };

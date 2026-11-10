@@ -5,9 +5,9 @@ import {
   selectWhisperModel,
   whisperModels,
 } from "#src/dictation/whisper-models.js";
-import { readAgentVoiceHome, readConfigFilePath } from "#src/settings/agent-voice-home.js";
-import { readConfigOrDefaults } from "#src/settings/config-file.js";
-import type { Config } from "#src/settings/config-schema.js";
+import { readAgentVoiceHome, readSettingsFilePath } from "#src/settings/agent-voice-home.js";
+import { readSettingsOrDefaults } from "#src/settings/config-file.js";
+import type { Settings } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { isWorkerRunning, readPid } from "#src/workers/worker-processes.js";
 import { readWorkerStatus } from "#src/workers/worker-status.js";
@@ -18,7 +18,7 @@ const NOT_STARTED = { stage: "starting", detail: "", model: "", backend: "" };
 
 const BYTES_PER_MEGABYTE = 1_000_000;
 
-interface ModelEntry {
+interface ModelLine {
   readonly key: string;
   readonly label: string;
   readonly megabytes: number;
@@ -36,7 +36,7 @@ interface DictationStatus {
   readonly backend: string;
   readonly language: string;
   readonly modelKey: string;
-  readonly models: ReadonlyArray<ModelEntry>;
+  readonly models: ReadonlyArray<ModelLine>;
   readonly hotkey: string;
 }
 
@@ -63,7 +63,7 @@ interface AgentVoiceStatus {
   readonly hooks: ReadonlyArray<string>;
 }
 
-const listModelEntries = (selectedKey: string): ReadonlyArray<ModelEntry> =>
+const listModelLines = (selectedKey: string): ReadonlyArray<ModelLine> =>
   whisperModels.map((model) => ({
     key: model.key,
     label: model.label,
@@ -73,7 +73,7 @@ const listModelEntries = (selectedKey: string): ReadonlyArray<ModelEntry> =>
     selected: model.key === selectedKey,
   }));
 
-const readDictationStatus = (settings: Config): DictationStatus => {
+const readDictationStatus = (settings: Settings): DictationStatus => {
   const selected = selectWhisperModel({ environment: readEnvironment(), config: settings });
   const isRunning = isWorkerRunning("dictation");
   const pid = readPid("dictation.pid") ?? undefined;
@@ -87,7 +87,7 @@ const readDictationStatus = (settings: Config): DictationStatus => {
     backend: saved.backend,
     language: settings.dictationLanguage,
     modelKey: selected.key,
-    models: listModelEntries(selected.key),
+    models: listModelLines(selected.key),
     hotkey: `hold-${settings.dictationHoldKey}`,
   };
 
@@ -107,10 +107,10 @@ const listRegisteredAgents = (): ReadonlyArray<string> => {
 };
 
 const readCurrentStatus = (): AgentVoiceStatus => {
-  const settings = readConfigOrDefaults();
+  const settings = readSettingsOrDefaults();
   return {
     home: readAgentVoiceHome(),
-    configFile: readConfigFilePath(),
+    configFile: readSettingsFilePath(),
     dictation: readDictationStatus(settings),
     speech: {
       running: isWorkerRunning("speech"),

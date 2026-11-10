@@ -34,9 +34,9 @@ const NOISE_PHRASES = [
 ];
 
 const NO_SPEECH_TAGS = ["[MUSIC]", "[BLANK_AUDIO]", "[Silence]", "[silence]", "(music)", "(blank)", "♪"];
-const NO_SPEECH_TEXTS = ["", "no speech", "no speech detected", ".", "..."];
+const NO_SPEECH_STRINGS = ["", "no speech", "no speech detected", ".", "..."];
 
-const splitWords = (text: string): ReadonlyArray<string> => text.split(/\s+/u).filter((word) => word !== "");
+const splitWords = (string: string): ReadonlyArray<string> => string.split(/\s+/u).filter((word) => word !== "");
 
 const readWordsPerSecond = (seconds: number): number => {
   const isShortClip = seconds < SHORT_CLIP_SECONDS;
@@ -48,8 +48,8 @@ const readWordsPerSecond = (seconds: number): number => {
 };
 
 // Whisper invents prose on near-silence, so a clip keeps only the words its length could hold.
-export const limitWordsToDuration = (text: string, sampleCount: number): string => {
-  const words = splitWords(text);
+export const limitWordsToDuration = (string: string, sampleCount: number): string => {
+  const words = splitWords(string);
   const seconds = Math.max(sampleCount / SAMPLE_RATE, 0.15);
   const wordsPerSecond = readWordsPerSecond(seconds);
 
@@ -57,28 +57,28 @@ export const limitWordsToDuration = (text: string, sampleCount: number): string 
 
   const isWordsLengthAtMostMaxWords = words.length <= maxWords;
   if (isWordsLengthAtMostMaxWords) {
-    return text;
+    return string;
   }
 
   return words.slice(0, maxWords).join(" ");
 };
 
-export const collapseRepeatedRuns = (text: string): string => {
-  const words = splitWords(text);
+export const collapseRepeatedRuns = (string: string): string => {
+  const words = splitWords(string);
   const kept = words.filter((word, index) => word.toLowerCase() !== words[index - 1]?.toLowerCase());
   return kept.join(" ");
 };
 
-export const rejectNoiseHallucination = (text: string, sampleCount: number): string => {
-  const clean = text.trim();
+export const rejectNoiseHallucination = (string: string, sampleCount: number): string => {
+  const clean = string.trim();
   const seconds = sampleCount / SAMPLE_RATE;
   const lowercase = clean.toLowerCase();
   const lettersOnly = lowercase.replace(/[^\p{L}\p{N}\s]/gu, "");
   const words = splitWords(lettersOnly);
-  const bareText = words.join(" ");
-  const isNoiseWord = words.length === 1 && seconds < 2.5 && SINGLE_WORD_NOISE.has(bareText);
+  const bareString = words.join(" ");
+  const isNoiseWord = words.length === 1 && seconds < 2.5 && SINGLE_WORD_NOISE.has(bareString);
 
-  const isNoisePhrase = seconds < 4 && words.length <= 8 && NOISE_PHRASES.some((phrase) => bareText.includes(phrase));
+  const isNoisePhrase = seconds < 4 && words.length <= 8 && NOISE_PHRASES.some((phrase) => bareString.includes(phrase));
 
   const isNoise = isNoiseWord || isNoisePhrase;
   if (isNoise) {
@@ -88,20 +88,20 @@ export const rejectNoiseHallucination = (text: string, sampleCount: number): str
   return clean;
 };
 
-export const tidyWhisperText = (text: string, sampleCount: number): string => {
-  const trimmed = text.trim();
+export const tidyWhisperString = (string: string, sampleCount: number): string => {
+  const trimmed = string.trim();
   const capped = limitWordsToDuration(trimmed, sampleCount);
   const collapsed = collapseRepeatedRuns(capped);
   return rejectNoiseHallucination(collapsed, sampleCount);
 };
 
 // An empty transcript is never typed.
-export const cleanTranscript = (text: string): string => {
-  const untagged = NO_SPEECH_TAGS.reduce((current, tag) => current.replaceAll(tag, ""), text);
+export const cleanTranscript = (string: string): string => {
+  const untagged = NO_SPEECH_TAGS.reduce((current, tag) => current.replaceAll(tag, ""), string);
   const clean = splitWords(untagged).join(" ");
   const lowercase = clean.toLowerCase();
 
-  const isNoSpeech = NO_SPEECH_TEXTS.includes(lowercase);
+  const isNoSpeech = NO_SPEECH_STRINGS.includes(lowercase);
   if (isNoSpeech) {
     return "";
   }
