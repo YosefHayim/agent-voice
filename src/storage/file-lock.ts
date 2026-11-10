@@ -41,6 +41,7 @@ const isFileAtPath = (lock: HeldLock): boolean => {
 // it is dropped and taken again on the file now at the path.
 const takeLock = (filePath: string): number | null => {
   const descriptor = openLocked(filePath);
+
   const isHeldElsewhere = descriptor === null;
   if (isHeldElsewhere) {
     return null;
@@ -72,6 +73,7 @@ const takeLockOrReport = (filePath: string): number | null => {
 // Returns the release when this caller took the lock, or null when another holder has it. The folder must exist.
 export const holdLock = (filePath: string): ReleaseLock | null => {
   const descriptor = takeLockOrReport(filePath);
+
   const isHeldElsewhere = descriptor === null;
   if (isHeldElsewhere) {
     return null;
@@ -83,6 +85,7 @@ export const holdLock = (filePath: string): ReleaseLock | null => {
 // Polls until the lock is free, then holds it, so a starter waits its turn instead of failing.
 export const waitForLock = async (filePath: string): Promise<ReleaseLock> => {
   const release = holdLock(filePath);
+
   const isHeld = release !== null;
   if (isHeld) {
     return release;
@@ -100,6 +103,7 @@ export const removeFreeLock = (filePath: string): void => {
   }
 
   const descriptor = takeLock(filePath);
+
   const isHeldElsewhere = descriptor === null;
   if (isHeldElsewhere) {
     return;

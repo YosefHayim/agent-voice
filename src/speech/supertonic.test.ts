@@ -20,12 +20,15 @@ const vocoderFile = path.join(supertonicModelFolder, "onnx", "vocoder.onnx");
 const hasSupertonic = existsSync(vocoderFile);
 
 const findWhisperModel = (): string | undefined => {
-  if (!existsSync(modelsFolder)) {
+  const isModelsFolderAbsent = !existsSync(modelsFolder);
+  if (isModelsFolderAbsent) {
     return undefined;
   }
 
   const modelName = readdirSync(modelsFolder).find((name) => name.startsWith("ggml-") && name.endsWith(".bin"));
-  if (modelName === undefined) {
+
+  const isModelNameMissing = modelName === undefined;
+  if (isModelNameMissing) {
     return undefined;
   }
 
@@ -59,7 +62,9 @@ describe.skipIf(!hasSupertonic)("Supertonic speech (smoke)", () => {
 
     expect(seconds).toBeGreaterThan(1);
     expect(rendered?.sampleRate).toBe(44_100);
-    if (whisperModel === undefined) {
+
+    const isWhisperModelMissing = whisperModel === undefined;
+    if (isWhisperModelMissing) {
       return;
     }
 

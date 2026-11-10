@@ -32,8 +32,9 @@ const parseRpcReply = (line: string): z.infer<typeof rpcReplySchema> | null => {
   try {
     const replyJson: unknown = JSON.parse(line);
     const checkedReply = rpcReplySchema.safeParse(replyJson);
-    const isReplyReadable = checkedReply.success;
-    if (!isReplyReadable) {
+
+    const isReplyInvalid = !checkedReply.success;
+    if (isReplyInvalid) {
       return null;
     }
 
@@ -45,8 +46,9 @@ const parseRpcReply = (line: string): z.infer<typeof rpcReplySchema> | null => {
 
 const answerFrom = (line: string): CmuxReply | null => {
   const reply = parseRpcReply(line);
-  const isOkReply = reply?.ok === true;
-  if (!isOkReply) {
+
+  const isNotOkReply = reply?.ok !== true;
+  if (isNotOkReply) {
     return null;
   }
 
@@ -81,8 +83,11 @@ const askCmux = (request: { readonly socketPath: string; readonly method: string
     });
     socket.on("data", (chunk) => {
       received += chunk.toString("utf8");
+
       const newline = received.indexOf("\n");
-      if (newline < 0) {
+
+      const isNewlineNotFound = newline < 0;
+      if (isNewlineNotFound) {
         return;
       }
 
@@ -93,8 +98,9 @@ const askCmux = (request: { readonly socketPath: string; readonly method: string
 
 const isWindowKey = (windows: unknown): boolean => {
   const checkedWindows = windowListSchema.safeParse(windows);
-  const isWindowsReadable = checkedWindows.success;
-  if (!isWindowsReadable) {
+
+  const isWindowsInvalid = !checkedWindows.success;
+  if (isWindowsInvalid) {
     return false;
   }
 
@@ -103,8 +109,9 @@ const isWindowKey = (windows: unknown): boolean => {
 
 const focusedIdsFrom = (identity: unknown): z.infer<typeof identitySchema>["focused"] => {
   const checkedIdentity = identitySchema.safeParse(identity);
-  const isIdentityReadable = checkedIdentity.success;
-  if (!isIdentityReadable) {
+
+  const isIdentityInvalid = !checkedIdentity.success;
+  if (isIdentityInvalid) {
     return null;
   }
 
@@ -117,8 +124,9 @@ export const focusFrom = (windows: unknown, identity: unknown): CmuxFocus => {
   const focused = focusedIdsFrom(identity);
   const workspace = focused?.workspace_id ?? "";
   const surface = focused?.surface_id ?? "";
-  const isFocusedSurface = isFrontmost && workspace !== "" && surface !== "";
-  if (!isFocusedSurface) {
+
+  const isNotFocusedSurface = !isFrontmost || workspace === "" || surface === "";
+  if (isNotFocusedSurface) {
     return { kind: "away" };
   }
 
@@ -128,6 +136,7 @@ export const focusFrom = (windows: unknown, identity: unknown): CmuxFocus => {
 export const cmuxFocus = async (socketPath: string): Promise<CmuxFocus> => {
   const windowsReply = await askCmux({ socketPath, method: "window.list" });
   const identityReply = await askCmux({ socketPath, method: "system.identify" });
+
   const isThereNoAnswer = windowsReply === null || identityReply === null;
   if (isThereNoAnswer) {
     return { kind: "unknown" };

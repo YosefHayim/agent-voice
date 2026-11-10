@@ -57,11 +57,14 @@ export const contentToken = (markdown: string): string => {
 };
 
 export const surfaceIdentity = (reply: QueuedReply): string => {
-  if (reply.origin.kind !== "cmux" || reply.origin.workspaceId === "" || reply.origin.surfaceId === "") {
+  const { origin } = reply;
+
+  const isOriginUnusable = origin.kind !== "cmux" || origin.workspaceId === "" || origin.surfaceId === "";
+  if (isOriginUnusable) {
     return "";
   }
 
-  return `${reply.origin.workspaceId}:${reply.origin.surfaceId}`;
+  return `${origin.workspaceId}:${origin.surfaceId}`;
 };
 
 const replyPlace = (reply: QueuedReply): string => {
@@ -80,7 +83,9 @@ export const contentIdentity = (reply: QueuedReply): string => {
 // Hooks do not always send a stable ID, so the text is always part of the identity.
 export const replyIdentity = (reply: QueuedReply): string => {
   const replyId = reply.agentReplyId.trim();
-  if (replyId === "") {
+
+  const isReplyIdEmpty = replyId === "";
+  if (isReplyIdEmpty) {
     return contentIdentity(reply);
   }
 
@@ -103,7 +108,9 @@ export const speaksForFocus = (surface: string, focus: CmuxFocus): boolean => {
 
 const inboxFiles = (extension: ".json" | ".speaking"): ReadonlyArray<string> => {
   const folder = inboxFolder();
-  if (!existsSync(folder)) {
+
+  const isFolderAbsent = !existsSync(folder);
+  if (isFolderAbsent) {
     return [];
   }
 
@@ -126,6 +133,7 @@ export const isSpeaking = (): boolean => inboxFiles(".speaking").length > 0;
 const seenKeys = (): ReadonlyMap<string, number> => {
   const now = nowSeconds();
   const savedStamps = readJsonFile({ path: seenFile(), schema: seenKeysSchema });
+
   const isThereNoSavedStamp = savedStamps === null;
   if (isThereNoSavedStamp) {
     return new Map();
@@ -166,8 +174,11 @@ export const queueReply = (request: {
     agentReplyId: request.agentReplyId.trim() || contentToken(request.markdown),
     source: request.source,
   };
+
   const seen = seenKeys();
-  if (alreadySpoken(seen, reply)) {
+
+  const isAlreadySpoken = alreadySpoken(seen, reply);
+  if (isAlreadySpoken) {
     return;
   }
 
@@ -198,6 +209,7 @@ const pendingReplies = (): ReadonlyArray<PendingReply> => {
   const files = inboxFiles(".json");
   return files.flatMap((file) => {
     const storedReply = readJsonFile({ path: file, schema: queuedReplySchema });
+
     const isThereNoReply = storedReply === null || !isSpeakable(storedReply);
     if (isThereNoReply) {
       removeIfPresent(file);
@@ -214,6 +226,7 @@ const isSuperseded = (pending: ReadonlyArray<PendingReply>, candidate: PendingRe
   const surface = surfaceIdentity(candidate.reply);
   const newestFirst = [...pending].reverse();
   const newestTwin = newestFirst.find((other) => replyIdentity(other.reply) === identity);
+
   const hasNewerTwin = newestTwin?.file !== candidate.file;
   if (hasNewerTwin) {
     return true;
@@ -234,6 +247,7 @@ const speaksNow = async (request: {
 }): Promise<boolean> => {
   const { origin } = request.reply;
   const surface = surfaceIdentity(request.reply);
+
   const isSpokenAtOnce = request.mode === "immediate" || surface === "" || origin.kind !== "cmux";
   if (isSpokenAtOnce) {
     return true;
@@ -257,6 +271,7 @@ const claimFile = (file: string): string | null => {
 // The rename to `.speaking` stops a reply from being picked twice; one waiting for its Cmux surface stays queued.
 export const claimNextReply = async (mode: Config["speechMode"]): Promise<PendingReply | null> => {
   const pending = pendingReplies();
+
   const isModeOff = mode === "off";
   if (isModeOff) {
     removeInboxFiles([".json"]);
@@ -271,12 +286,13 @@ export const claimNextReply = async (mode: Config["speechMode"]): Promise<Pendin
       continue;
     }
 
-    const isTimeToSpeak = await speaksNow({ mode, reply: candidate.reply });
-    if (!isTimeToSpeak) {
+    const isNotTimeToSpeak = !(await speaksNow({ mode, reply: candidate.reply }));
+    if (isNotTimeToSpeak) {
       continue;
     }
 
     const claimed = claimFile(candidate.file);
+
     const isClaimLost = claimed === null;
     if (isClaimLost) {
       continue;

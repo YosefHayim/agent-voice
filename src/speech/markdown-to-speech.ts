@@ -1,5 +1,6 @@
 const sentence = (text: string): string => {
   const words = text.split(/\s+/u).filter(Boolean).join(" ");
+
   const isFinished = words === "" || /[.!?:;]$/u.test(words);
   if (isFinished) {
     return words;
@@ -65,7 +66,9 @@ const SPOKEN_SYMBOLS: ReadonlyArray<readonly [string, string]> = [
 
 const codeSpeech = (line: string): string => {
   const code = line.trim();
-  if (code === "") {
+
+  const isCodeEmpty = code === "";
+  if (isCodeEmpty) {
     return "Blank line.";
   }
 
@@ -140,7 +143,9 @@ const tableSpeech = (header: string, rows: ReadonlyArray<string>): ReadonlyArray
 // A table runs until the first line without a cell separator.
 const tableEnd = (lines: ReadonlyArray<string>, firstRow: number): number => {
   const end = lines.findIndex((line, index) => index >= firstRow && !line.includes("|"));
-  if (end < 0) {
+
+  const isEndNotFound = end < 0;
+  if (isEndNotFound) {
     return lines.length;
   }
 
@@ -154,17 +159,23 @@ const lineSpeech = (line: string): string => {
   }
 
   const heading = HEADING.exec(line) || UNORDERED.exec(line);
-  if (heading !== null) {
+
+  const hasHeading = heading !== null;
+  if (hasHeading) {
     return proseSentence("", heading[1] || "");
   }
 
   const ordered = ORDERED.exec(line);
-  if (ordered !== null) {
+
+  const hasOrdered = ordered !== null;
+  if (hasOrdered) {
     return proseSentence(`${ordered[1] || ""}. `, ordered[2] || "");
   }
 
   const quote = QUOTE.exec(line);
-  if (quote !== null) {
+
+  const hasQuote = quote !== null;
+  if (hasQuote) {
     return proseSentence("Quote. ", quote[1] || "");
   }
 
@@ -180,6 +191,7 @@ export const markdownToSpeech = (markdown: string): string => {
   while (index < lines.length) {
     const line = lines[index] || "";
     const fence = FENCE.exec(line);
+
     const isTable = fence === null && !inCode && isTableStart(line, lines[index + 1]);
     if (isTable) {
       const firstRow = index + 2;
@@ -192,13 +204,16 @@ export const markdownToSpeech = (markdown: string): string => {
     }
 
     index += 1;
-    if (fence !== null && inCode) {
+
+    const isInsideCodeFence = fence !== null && inCode;
+    if (isInsideCodeFence) {
       spoken.push(CODE_END);
       inCode = false;
       continue;
     }
 
-    if (fence !== null) {
+    const hasFence = fence !== null;
+    if (hasFence) {
       const opening = codeStart(fence[1] || "");
       spoken.push(opening);
       inCode = true;
@@ -214,6 +229,7 @@ export const markdownToSpeech = (markdown: string): string => {
     const lineSentence = lineSpeech(line);
     spoken.push(lineSentence);
   }
+
   if (inCode) {
     spoken.push(CODE_END);
   }

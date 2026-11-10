@@ -60,8 +60,11 @@ const writeCodexFailedModels = (failed: ReadonlySet<string>): void => {
 export const markCodexModelFailed = (model: string): void => {
   const trimmed = model.trim();
   const failed = readCodexFailedModels();
+
   const isUnreadable = failed === null;
-  if (isUnreadable || trimmed === "" || failed.has(trimmed)) {
+
+  const isChoiceUnusable = isUnreadable || trimmed === "" || failed.has(trimmed);
+  if (isChoiceUnusable) {
     return;
   }
 
@@ -76,7 +79,9 @@ export const saveRefineChoice = (request: {
   readonly effort: string;
 }): void => {
   const model = request.model.trim();
-  if (model === "") {
+
+  const isModelEmpty = model === "";
+  if (isModelEmpty) {
     return;
   }
 
@@ -89,6 +94,7 @@ export const saveRefineChoice = (request: {
       updatedAt: Date.now() / 1_000,
     },
   });
+
   const isNotCodex = request.provider !== "codex";
   if (isNotCodex) {
     return;
@@ -96,6 +102,7 @@ export const saveRefineChoice = (request: {
 
   writeFileAtomically({ path: stateFile(CODEX_LAST_GOOD_FILE), contents: `${model}\n` });
   const failed = readCodexFailedModels();
+
   const isModelNotMarkedFailed = failed === null || !failed.has(model);
   if (isModelNotMarkedFailed) {
     return;

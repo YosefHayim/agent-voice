@@ -13,6 +13,7 @@ const replyOrigin = (): ReplyOrigin => {
   const workspaceId = (process.env.CMUX_WORKSPACE_ID ?? "").trim();
   const surfaceId = (process.env.CMUX_SURFACE_ID ?? "").trim();
   const socketPath = (process.env.CMUX_SOCKET_PATH ?? "").trim();
+
   const isThereNoCmuxPane = workspaceId === "" || surfaceId === "";
   if (isThereNoCmuxPane) {
     return { kind: "terminal" };
@@ -39,7 +40,8 @@ const transcriptReply = (transcriptPath: string): string => {
 
 // A new dictation worker starts speech itself when speech is on.
 const wakeWorkers = (config: Config): void => {
-  if (!isWorkerRunning("dictation")) {
+  const isNotWorkerRunningDictation = !isWorkerRunning("dictation");
+  if (isNotWorkerRunningDictation) {
     spawnWorker("dictation");
     return;
   }
@@ -53,6 +55,7 @@ const wakeWorkers = (config: Config): void => {
 const queueAgentReply = async (agent: AgentId): Promise<void> => {
   const hookInput = await text(process.stdin);
   const stopReply = readStopReply(hookInput);
+
   const isThereNoStopReply = stopReply === null;
   if (isThereNoStopReply) {
     return;
@@ -64,12 +67,14 @@ const queueAgentReply = async (agent: AgentId): Promise<void> => {
   const config = isConfigFileBroken ? defaultConfig : configFileReading.config;
   // Every finished turn wakes dictation, so it comes back after a reboot even with speech off or muted.
   wakeWorkers(config);
+
   const isSpeechSilent = config.speechMode === "off" || config.speechMuted;
   if (isSpeechSilent) {
     return;
   }
 
   const markdown = stopReply.markdown || transcriptReply(stopReply.transcriptPath);
+
   const isThereNoMarkdown = markdown.trim() === "";
   if (isThereNoMarkdown) {
     return;
@@ -95,13 +100,17 @@ const parseAgentId = (agentName: string | undefined): AgentId | null => {
 
 const agentFromArguments = (args: ReadonlyArray<string>): AgentId | null => {
   const inlineFlag = args.find((argument) => argument.startsWith("--agent="));
-  if (inlineFlag !== undefined) {
+
+  const hasInlineFlag = inlineFlag !== undefined;
+  if (hasInlineFlag) {
     const agentName = inlineFlag.slice("--agent=".length);
     return parseAgentId(agentName);
   }
 
   const flagIndex = args.indexOf("--agent");
-  if (flagIndex < 0) {
+
+  const isFlagNotGiven = flagIndex < 0;
+  if (isFlagNotGiven) {
     return null;
   }
 
@@ -112,6 +121,7 @@ const agentFromArguments = (args: ReadonlyArray<string>): AgentId | null => {
 // (say, an agent ID renamed after the hook was registered) are a silent no-op.
 export const runReplyHookFromArguments = async (args: ReadonlyArray<string>): Promise<void> => {
   const agent = agentFromArguments(args);
+
   const isThereNoAgent = agent === null;
   if (isThereNoAgent) {
     return;

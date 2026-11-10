@@ -56,8 +56,9 @@ const restoreClipboard = async (request: { readonly pasted: string; readonly pre
   try {
     await sleep(400);
     const currentClipboard = await readClipboard();
-    const isClipboardStillPasted = currentClipboard === request.pasted;
-    if (!isClipboardStillPasted) {
+
+    const isNotClipboardStillPasted = currentClipboard !== request.pasted;
+    if (isNotClipboardStillPasted) {
       return;
     }
 
@@ -81,12 +82,14 @@ const pasteText = async (keyboard: Keyboard, text: string): Promise<void> => {
   const previous = await readPreviousClipboard();
   await writeClipboard(text);
   const copied = await readClipboard();
+
   const isClipboardCopyFailing = copied !== text;
   if (isClipboardCopyFailing) {
     throw new Error("the clipboard did not take the text");
   }
 
   await pressCommandV(keyboard);
+
   const isPreviousClipboardUnknown = previous === null;
   if (isPreviousClipboardUnknown) {
     return;
@@ -107,6 +110,7 @@ const readPreviousClipboard = async (): Promise<string | null> => {
 
 const putText = async (keyboard: Keyboard, text: string): Promise<void> => {
   const length = [...text].length;
+
   const isShortEnoughToType = length <= CLIPBOARD_CHARACTERS;
   if (isShortEnoughToType) {
     keyboard.typeUnicode(text);
@@ -135,7 +139,9 @@ export const typeAtCaret = async (request: {
 
   await waitForHoldUp(request.keyboard, 900);
   await putText(request.keyboard, request.text);
-  if (!request.pressEnter) {
+
+  const isPressEnterOff = !request.pressEnter;
+  if (isPressEnterOff) {
     return;
   }
 

@@ -19,7 +19,8 @@ import { type CommandSpec, type ExitCode, isFlagOn } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
 const backupNote = (change: HookChange): string => {
-  if (change.backup === undefined) {
+  const isChangeBackupMissing = change.backup === undefined;
+  if (isChangeBackupMissing) {
     return "";
   }
 
@@ -66,8 +67,8 @@ interface ModelDownload {
 }
 
 const showDownloadProgress = (download: ModelDownload): void => {
-  const isPartialFilePresent = existsSync(download.partialFile);
-  if (!isPartialFilePresent) {
+  const isPartialFileAbsent = !existsSync(download.partialFile);
+  if (isPartialFileAbsent) {
     return;
   }
 
@@ -84,6 +85,7 @@ const waitForDownload = async (download: ModelDownload): Promise<void> => {
   });
   while (isDownloadRunning) {
     await Promise.race([settledDownload, sleep(progressIntervalMilliseconds)]);
+
     if (isDownloadRunning) {
       showDownloadProgress(download);
     }
@@ -95,6 +97,7 @@ const waitForDownload = async (download: ModelDownload): Promise<void> => {
 export const prepareModels = async (settings: Config): Promise<void> => {
   const environment = readEnvironment();
   const model = selectWhisperModel({ environment, config: settings });
+
   const isModelMissing = !isWhisperModelPresent(model);
   if (isModelMissing) {
     TerminalUI.printStep(`Downloading ${model.label} (~${megabytes(model.approximateBytes)})`);
@@ -115,7 +118,9 @@ export const prepareModels = async (settings: Config): Promise<void> => {
 
 const refineTarget = (settings: Config): string => {
   const model = settings.refineModel || "default model";
-  if (settings.refineEffort === undefined) {
+
+  const isSettingsRefineEffortMissing = settings.refineEffort === undefined;
+  if (isSettingsRefineEffortMissing) {
     return `${settings.refineProvider}/${model}`;
   }
 
@@ -124,6 +129,7 @@ const refineTarget = (settings: Config): string => {
 
 const describeRefine = (settings: Config): string => {
   const target = refineTarget(settings);
+
   if (settings.refinePressEnter) {
     return `${target} → ${settings.refineSendTo} + Enter`;
   }
@@ -132,11 +138,13 @@ const describeRefine = (settings: Config): string => {
 };
 
 export const describeSpeech = (settings: Config): string => {
-  if (settings.speechMode === "off") {
+  const isSettingsSpeechModeOff = settings.speechMode === "off";
+  if (isSettingsSpeechModeOff) {
     return "Speech: off (turn on with `agent-voice config set speech-mode auto`).";
   }
 
   const speech = `Speech: ${settings.speechMode}, voice ${settings.speechVoice}`;
+
   if (settings.speechMuted) {
     return `${speech}, muted (unmute with \`agent-voice config set speech-muted false\`).`;
   }
@@ -149,12 +157,16 @@ const printOnSummary = (settings: Config): void => {
   const isDictationRefineOn = settings.refineMode === "dictation" || settings.refineMode === "both";
   const holdLabel = holdKeyLabels[settings.dictationHoldKey];
   TerminalUI.printDetail(`Hold ${holdLabel} alone to dictate; release to finish.`);
-  if (settings.dictationHoldKey === "shift") {
+
+  const isSettingsDictationHoldKeyShift = settings.dictationHoldKey === "shift";
+  if (isSettingsDictationHoldKeyShift) {
     TerminalUI.printDetail("Tap Shift to stop speech.");
   }
 
   TerminalUI.printDetail(describeSpeech(settings));
-  if (isClipboardRefineOn && settings.dictationHoldKey === "shift") {
+
+  const isClipboardRefineWithShiftHold = isClipboardRefineOn && settings.dictationHoldKey === "shift";
+  if (isClipboardRefineWithShiftHold) {
     TerminalUI.printDetail("Double-tap Shift to refine the copied prompt, then press ⌘V.");
   }
 
@@ -183,8 +195,8 @@ const restartWorkersWithRetry = async (): Promise<void> => {
 };
 
 const printHooksOnlyOutro = (changes: ReadonlyArray<HookChange>): void => {
-  const isRegistered = changes.some((change) => change.change === "added" || change.change === "unchanged");
-  if (!isRegistered) {
+  const isNotRegistered = !changes.some((change) => change.change === "added" || change.change === "unchanged");
+  if (isNotRegistered) {
     TerminalUI.printOutro("No agent hook was confirmed as registered (see above).");
     return;
   }

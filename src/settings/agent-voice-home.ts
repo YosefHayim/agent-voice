@@ -25,7 +25,9 @@ type StateFolderName = "inbox" | "failed" | "models" | "backups" | "audio" | "pr
 
 export const agentVoiceHome = (): string => {
   const { AGENT_VOICE_HOME } = readEnvironment();
-  if (AGENT_VOICE_HOME !== "") {
+
+  const isHomeSet = AGENT_VOICE_HOME !== "";
+  if (isHomeSet) {
     return path.resolve(AGENT_VOICE_HOME);
   }
 
@@ -40,7 +42,9 @@ const homePath = (name: string): string => {
 
 export const configFilePath = (): string => {
   const { AGENT_VOICE_CONFIG_FILE } = readEnvironment();
-  if (AGENT_VOICE_CONFIG_FILE !== "") {
+
+  const isConfigFileSet = AGENT_VOICE_CONFIG_FILE !== "";
+  if (isConfigFileSet) {
     return path.resolve(AGENT_VOICE_CONFIG_FILE);
   }
 

@@ -60,7 +60,9 @@ describe("watchDevinSession", () => {
 
   const queuedMarkdown = (): ReadonlyArray<string> => {
     const inbox = path.join(home, "inbox");
-    if (!existsSync(inbox)) {
+
+    const isInboxAbsent = !existsSync(inbox);
+    if (isInboxAbsent) {
       return [];
     }
 

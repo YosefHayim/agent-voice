@@ -95,6 +95,7 @@ const modelSlug = (model: CodexCachedModel): string => (model.slug || model.id |
 // The live account catalog the Codex CLI caches.
 export const codexCachedModels = (): ReadonlyArray<string> => {
   const modelsCache = readJsonFile({ path: codexFile("models_cache.json"), schema: codexModelsCacheSchema });
+
   const isCacheMissing = modelsCache === null;
   if (isCacheMissing) {
     return [];
@@ -118,6 +119,7 @@ const codexConfiguredModel = (): ReadonlyArray<string> => {
     .join("=")
     .trim()
     .replace(/^["']|["']$/gu, "");
+
   const isModelMissing = model === "";
   if (isModelMissing) {
     return [];
@@ -162,12 +164,14 @@ const listClaudeModels = async (): Promise<ReadonlyArray<string>> => {
   for (const args of [["models"], ["--list-models"]]) {
     const lines = await listLines({ executable: "claude", args });
     const listing = lines.join("\n");
+
     const isLoggedOut = containsAny(listing, CLAUDE_LOGGED_OUT_MARKERS);
     if (isLoggedOut) {
       return CLAUDE_FALLBACK;
     }
 
     const tokens = claudeModelTokens(lines);
+
     const hasTokens = tokens.length > 0;
     if (hasTokens) {
       return dedupe(tokens);
@@ -198,8 +202,8 @@ const agyModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
 
 // Only agy has a models command; gemini names its models in its help text.
 const listAgyModels = async (cli: { readonly name: string; readonly path: string }): Promise<ReadonlyArray<string>> => {
-  const isAgy = cli.name === "agy";
-  if (!isAgy) {
+  const isNotAgy = cli.name !== "agy";
+  if (isNotAgy) {
     return [];
   }
 
@@ -210,12 +214,14 @@ const listAgyModels = async (cli: { readonly name: string; readonly path: string
 // Models of the CLI refine runs (gemini before agy): agy's list also holds Claude and GPT IDs that gemini rejects.
 const listGeminiModels = async (): Promise<ReadonlyArray<string>> => {
   const cli = findFirstCli(["gemini", "agy"]);
+
   const isNoCliInstalled = cli === null;
   if (isNoCliInstalled) {
     return GEMINI_FALLBACK;
   }
 
   const agyModels = await listAgyModels(cli);
+
   const hasAgyModels = agyModels.length > 0;
   if (hasAgyModels) {
     return topModels(agyModels);
@@ -223,6 +229,7 @@ const listGeminiModels = async (): Promise<ReadonlyArray<string>> => {
 
   const help = await helpLines(cli.path);
   const helpModels = help.flatMap((line) => findMatches(line, /gemini-[\w.-]+/gu).map(unglueLabel));
+
   const isHelpEmpty = helpModels.length === 0;
   if (isHelpEmpty) {
     return GEMINI_FALLBACK;
@@ -236,6 +243,7 @@ const GROK_MODEL = /\bgrok-[\w.-]+\b/gu;
 
 const grokListedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   const headingIndex = lines.findIndex((line) => line.toLowerCase().includes("available model"));
+
   const isHeadingMissing = headingIndex < 0;
   if (isHeadingMissing) {
     return [];
@@ -259,6 +267,7 @@ const grokModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
 
 const listGrokLines = async (): Promise<ReadonlyArray<string>> => {
   const grokLines = await listLines({ executable: "grok", args: ["models"] });
+
   const hasGrokLines = grokLines.length > 0;
   if (hasGrokLines) {
     return grokLines;
@@ -270,6 +279,7 @@ const listGrokLines = async (): Promise<ReadonlyArray<string>> => {
 const listGrokModels = async (): Promise<ReadonlyArray<string>> => {
   const lines = await listGrokLines();
   const tokens = grokModelTokens(lines);
+
   const hasTokens = tokens.length > 0;
   if (hasTokens) {
     return tokens;
@@ -277,6 +287,7 @@ const listGrokModels = async (): Promise<ReadonlyArray<string>> => {
 
   const help = await helpLines("grok");
   const helpModels = dedupe(grokMentionedModels(help));
+
   const isHelpEmpty = helpModels.length === 0;
   if (isHelpEmpty) {
     return GROK_FALLBACK;
@@ -301,6 +312,7 @@ const listOpencodeModels = async (): Promise<ReadonlyArray<string>> => {
   for (const args of [["models"], ["model", "list"]]) {
     const lines = await listLines({ executable: "opencode", args });
     const found = opencodeModelTokens(lines);
+
     const hasFound = found.length > 0;
     if (hasFound) {
       return topModels(found);
@@ -318,11 +330,14 @@ const PI_LOGGED_OUT_MARKERS = ["no models available", "no api key", "use /login"
 
 const piRank = (token: string): number => {
   const lowercase = token.toLowerCase();
-  if (lowercase.includes("openrouter")) {
+
+  const isOpenrouterInLowercase = lowercase.includes("openrouter");
+  if (isOpenrouterInLowercase) {
     return 9;
   }
 
   const rank = PI_PREFERRED_PREFIXES.findIndex((prefix) => lowercase.startsWith(prefix));
+
   const isUnranked = rank < 0;
   if (isUnranked) {
     return 5;
@@ -337,18 +352,20 @@ const piLineModels = (line: string): ReadonlyArray<string> => {
   const slashTokens = findMatches(line, /\b[a-z][\w.-]*\/[\w.:-]+\b/giu).filter(
     (token) => !token.toLowerCase().includes("http"),
   );
+
   const hasSlashTokens = slashTokens.length > 0;
   if (hasSlashTokens) {
     return slashTokens;
   }
 
   const [provider = "", model = ""] = line.split(/\s+/u);
-  const isModelRow =
-    model !== "" &&
-    !provider.startsWith("-") &&
-    !PI_TABLE_COLUMNS.includes(model) &&
-    !model.toLowerCase().includes("http");
-  if (!isModelRow) {
+
+  const isNotModelRow =
+    model === "" ||
+    provider.startsWith("-") ||
+    PI_TABLE_COLUMNS.includes(model) ||
+    model.toLowerCase().includes("http");
+  if (isNotModelRow) {
     return [];
   }
 
@@ -363,6 +380,7 @@ const piModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
 
 const rankPiModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   const listing = lines.join("\n");
+
   const isLoggedOut = containsAny(listing, PI_LOGGED_OUT_MARKERS);
   if (isLoggedOut) {
     return ["default"];
@@ -371,8 +389,9 @@ const rankPiModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   const tokens = piModelTokens(lines);
   const uniqueTokens = dedupe(tokens);
   const ranked = [...uniqueTokens].sort(byPiRank);
-  const hasRankedModels = ranked.length > 0;
-  if (!hasRankedModels) {
+
+  const isRankedEmpty = ranked.length <= 0;
+  if (isRankedEmpty) {
     return ["default"];
   }
 
@@ -419,6 +438,7 @@ const findProviderSpec = (provider: ProviderId): ProviderSpec | null =>
 
 export const isProviderInstalled = (provider: ProviderId): boolean => {
   const spec = findProviderSpec(provider);
+
   const isUnknownProvider = spec === null;
   if (isUnknownProvider) {
     return false;
@@ -430,6 +450,7 @@ export const isProviderInstalled = (provider: ProviderId): boolean => {
 
 export const providerModels = async (provider: ProviderId): Promise<ReadonlyArray<string>> => {
   const spec = findProviderSpec(provider);
+
   const isUnknownProvider = spec === null;
   if (isUnknownProvider) {
     return [];
@@ -449,6 +470,7 @@ const withDefaultModel = (models: ReadonlyArray<string>): ReadonlyArray<string> 
 
 const describeProvider = async (spec: ProviderSpec): Promise<DiscoveredProvider | null> => {
   const cli = findFirstCli(spec.binaries);
+
   const isNotInstalled = cli === null;
   if (isNotInstalled) {
     return null;
@@ -474,6 +496,7 @@ export const discoverProviders = async (request: {
   readonly refresh: boolean;
 }): Promise<ReadonlyArray<DiscoveredProvider>> => {
   const age = Date.now() - discoveryCache.at;
+
   const isFresh = !request.refresh && age < DISCOVERY_CACHE_MS;
   if (isFresh) {
     return discoveryCache.providers;

@@ -61,6 +61,7 @@ const SYSTEM_TOOLS: ReadonlyArray<SystemTool> = [
 
 const checkPlatform = (): DoctorCheck => {
   const isMac = process.platform === "darwin";
+
   const isNotMac = !isMac;
   if (isNotMac) {
     return {
@@ -79,6 +80,7 @@ const minimumNodeMajor = 22;
 const checkNode = (): DoctorCheck => {
   const [major] = process.versions.node.split(".");
   const isSupported = Number(major) >= minimumNodeMajor;
+
   const isTooOld = !isSupported;
   if (isTooOld) {
     const fix = "Install Node 22 or newer: brew install node";
@@ -99,6 +101,7 @@ const checkNativeModule = async (nativeModule: NativeModule): Promise<DoctorChec
 
 const checkSystemTool = (systemTool: SystemTool): DoctorCheck => {
   const toolPath = findCli(systemTool.tool);
+
   const isToolMissing = toolPath == null;
   if (isToolMissing) {
     const detail = `missing (${systemTool.purpose})`;
@@ -115,6 +118,7 @@ const checkSystemTool = (systemTool: SystemTool): DoctorCheck => {
 
 const checkAccessibility = (keyboard: Keyboard): DoctorCheck => {
   const canType = keyboard.accessibilityAllowed() && keyboard.postingAllowed();
+
   const isTypingBlocked = !canType;
   if (isTypingBlocked) {
     const fix = `${PRIVACY_PANE} Accessibility: ${ALLOW_TERMINAL}`;
@@ -126,6 +130,7 @@ const checkAccessibility = (keyboard: Keyboard): DoctorCheck => {
 
 const checkInputMonitoring = (keyboard: Keyboard): DoctorCheck => {
   const canReadKeys = keyboard.inputMonitoringAllowed();
+
   const isReadingBlocked = !canReadKeys;
   if (isReadingBlocked) {
     const fix = `${PRIVACY_PANE} Input Monitoring: ${ALLOW_TERMINAL}`;
@@ -179,13 +184,14 @@ const checkHooks = (): ReadonlyArray<DoctorCheck> => {
   const registeredFiles = registeredSettingsFiles().map((settings) => settings.file);
   return hookSettingsFiles().map((settings) => {
     const name = `${settings.displayName} hook`;
+
     const isRegistered = registeredFiles.includes(settings.file);
     if (isRegistered) {
       return createOkCheck(name, settings.file);
     }
 
-    const isAgentInstalled = existsSync(settings.folder);
-    if (!isAgentInstalled) {
+    const isSettingsFolderAbsent = !existsSync(settings.folder);
+    if (isSettingsFolderAbsent) {
       return createOkCheck(name, "agent not installed");
     }
 
@@ -201,6 +207,7 @@ const checkHooks = (): ReadonlyArray<DoctorCheck> => {
 const checkWhisperModel = (settings: Config): DoctorCheck => {
   const environment = readEnvironment();
   const model = selectWhisperModel({ environment, config: settings });
+
   const isModelMissing = !isWhisperModelPresent(model);
   if (isModelMissing) {
     return {
@@ -217,6 +224,7 @@ const checkWhisperModel = (settings: Config): DoctorCheck => {
 
 const checkSupertonicVoices = (settings: Config): DoctorCheck => {
   const missingFiles = missingSupertonicFiles();
+
   const isEverythingPresent = missingFiles.length === 0;
   if (isEverythingPresent) {
     const folder = supertonicFolder();
@@ -250,6 +258,7 @@ const checkCmux = (settings: Config): DoctorCheck => {
   }
 
   const cmuxPath = findCli("cmux");
+
   const isCmuxMissing = cmuxPath == null;
   if (isCmuxMissing) {
     return {
@@ -355,6 +364,7 @@ export const doctorCommand: CommandSpec = {
   positionals: [],
   run: async (parsedCommand): Promise<ExitCode> => {
     const checks = await runDoctorChecks();
+
     const isJsonWanted = isFlagOn(parsedCommand, "json");
     if (isJsonWanted) {
       TerminalUI.printDocument(checks);
@@ -363,8 +373,9 @@ export const doctorCommand: CommandSpec = {
     }
 
     const failedCount = checks.filter((check) => check.status === "fail").length;
-    const isAnyCheckFailed = failedCount > 0;
-    if (!isAnyCheckFailed) {
+
+    const isNoCheckFailed = failedCount <= 0;
+    if (isNoCheckFailed) {
       return 0;
     }
 

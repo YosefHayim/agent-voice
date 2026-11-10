@@ -15,12 +15,15 @@ const userHome = homedir();
 const modelsFolder = path.join(userHome, ".agent-voice", "models");
 
 const installedModel = (): string | undefined => {
-  if (!existsSync(modelsFolder)) {
+  const isModelsFolderAbsent = !existsSync(modelsFolder);
+  if (isModelsFolderAbsent) {
     return undefined;
   }
 
   const modelName = readdirSync(modelsFolder).find((file) => /^ggml-.*\.bin$/u.test(file));
-  if (modelName === undefined) {
+
+  const isModelNameMissing = modelName === undefined;
+  if (isModelNameMissing) {
     return undefined;
   }
 
@@ -47,8 +50,12 @@ describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisp
     execFileSync("say", ["-o", aiff, text]);
     execFileSync("afconvert", ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", aiff, wav]);
     const wavBytes = readFileSync(wav);
+
     const decoded = decodeWav(wavBytes);
-    if (decoded === undefined || decoded.sampleRate !== 16_000) {
+
+    const whisperSampleRate = 16_000;
+    const isNotWhisperAudio = decoded == null || decoded.sampleRate !== whisperSampleRate;
+    if (isNotWhisperAudio) {
       throw new Error("afconvert did not write 16 kHz PCM");
     }
 

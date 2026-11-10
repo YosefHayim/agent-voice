@@ -28,7 +28,9 @@ const isClaudeConfigFolder = (folder: string): boolean => {
 
 const configuredClaudeFolders = (): ReadonlyArray<string> => {
   const claudeConfigDirectory = (process.env.CLAUDE_CONFIG_DIR ?? "").trim();
-  if (claudeConfigDirectory === "") {
+
+  const isClaudeDirectoryEmpty = claudeConfigDirectory === "";
+  if (isClaudeDirectoryEmpty) {
     return [];
   }
 
@@ -45,7 +47,9 @@ const rememberedClaudeFolders = (): ReadonlyArray<string> => {
 export const rememberClaudeConfigFolder = (): void => {
   const remembered = rememberedClaudeFolders();
   const newFolders = configuredClaudeFolders().filter((folder) => !remembered.includes(folder));
-  if (newFolders.length === 0) {
+
+  const isNewFoldersEmpty = newFolders.length === 0;
+  if (isNewFoldersEmpty) {
     return;
   }
 
@@ -70,8 +74,9 @@ const claudeConfigFolders = (defaultFolder: string): ReadonlyArray<string> => {
 const agentFolders = (target: AgentHookTarget): ReadonlyArray<string> => {
   const home = homedir();
   const defaultFolder = path.join(home, target.homeFolder);
-  const isClaudeCode = target.agent === "claude-code";
-  if (!isClaudeCode) {
+
+  const isNotClaudeCode = target.agent !== "claude-code";
+  if (isNotClaudeCode) {
     return [defaultFolder];
   }
 

@@ -46,7 +46,9 @@ const isDictationRefine = (config: Config): boolean =>
 
 const describeRefineLabel = (config: Config): string => {
   const model = config.refineModel || "default model";
-  if (config.refineEffort === undefined) {
+
+  const isRefineEffortMissing = config.refineEffort === undefined;
+  if (isRefineEffortMissing) {
     return `${config.refineProvider}/${model}`;
   }
 
@@ -79,6 +81,7 @@ const refinedOrDictated = async (request: {
 }): Promise<Prompt> => {
   const generation = String(request.generation);
   const dictatedPrompt: Prompt = { promptText: request.dictated, isRefined: false };
+
   const isRefineOff = !isDictationRefine(request.config);
   if (isRefineOff) {
     return dictatedPrompt;
@@ -105,6 +108,7 @@ const refinedOrDictated = async (request: {
   try {
     const refinedText = await waitForRefine(refining);
     const elapsed = (performance.now() - started).toFixed(0);
+
     const isWaitElapsed = refinedText === null;
     if (isWaitElapsed) {
       return keepDictation({
@@ -140,7 +144,9 @@ const typeDictation = async (request: {
     text: formatted,
     pressEnter: request.config.refinePressEnter,
   });
-  if (!request.config.refinePressEnter) {
+
+  const isNotRefinePressEnter = !request.config.refinePressEnter;
+  if (isNotRefinePressEnter) {
     return formatted;
   }
 
@@ -153,8 +159,8 @@ const deliverPrompt = async (request: {
   readonly config: Config;
   readonly prompt: Prompt;
 }): Promise<string> => {
-  const isGoingToCmux = request.prompt.isRefined && request.config.refineSendTo !== "caret";
-  if (!isGoingToCmux) {
+  const isNotGoingToCmux = !request.prompt.isRefined || request.config.refineSendTo === "caret";
+  if (isNotGoingToCmux) {
     return typeDictation({ pipeline: request.pipeline, config: request.config, text: request.prompt.promptText });
   }
 
@@ -192,6 +198,7 @@ const decodeAndDeliverJob = async (pipeline: DictationPipeline, job: DictationJo
   appendDictationLog(
     `stt gen=${generation} secs=${seconds} decode_ms=${decodeMs} level=${level} whisper=${String(transcription.ranWhisper)} text=${JSON.stringify(dictated)}`,
   );
+
   const isNoSpeech = dictated === "";
   if (isNoSpeech) {
     const detail = describeNoSpeech({ seconds, ranWhisper: transcription.ranWhisper });
@@ -233,8 +240,11 @@ export const startDictationQueue = (pipeline: DictationPipeline): DictationQueue
   const clearIdleDetailLater = (): void => {
     setTimeout(() => {
       const stage = pipeline.status.stage();
+
       const showsDetail = stage !== null && stage !== "listening";
-      if (isIdle() && showsDetail) {
+
+      const isIdleShowingDetail = isIdle() && showsDetail;
+      if (isIdleShowingDetail) {
         pipeline.status.write("inactive", "");
       }
     }, idleDetailHoldMilliseconds);
@@ -246,6 +256,7 @@ export const startDictationQueue = (pipeline: DictationPipeline): DictationQueue
     isWorking = true;
     await runDictationJob(pipeline, job);
     isWorking = false;
+
     if (isIdle()) {
       clearIdleDetailLater();
     }

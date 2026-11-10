@@ -16,7 +16,9 @@ beforeEach(() => {
 afterEach(async () => {
   const runningServer = server;
   server = undefined;
-  if (runningServer !== undefined) {
+
+  const hasRunningServer = runningServer !== undefined;
+  if (hasRunningServer) {
     await new Promise<void>((closed) => runningServer.close(() => closed()));
   }
 

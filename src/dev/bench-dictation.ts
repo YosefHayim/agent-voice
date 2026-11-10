@@ -67,6 +67,7 @@ const benchModel = async (request: {
   readonly runs: number;
 }) => {
   const model = whisperModels.find((candidate) => candidate.key === request.key);
+
   const isUnknownModel = model === undefined;
   if (isUnknownModel) {
     return { model: request.key, issue: "unknown model key" };

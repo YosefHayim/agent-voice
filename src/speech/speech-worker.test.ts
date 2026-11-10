@@ -23,7 +23,8 @@ beforeEach(() => {
 
 afterEach(async () => {
   await new Promise((finish) => {
-    if (server === undefined) {
+    const isServerMissing = server === undefined;
+    if (isServerMissing) {
       finish(undefined);
       return;
     }

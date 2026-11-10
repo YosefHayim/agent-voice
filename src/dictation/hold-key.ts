@@ -58,7 +58,8 @@ type HoldDebounce = { readonly isDown: boolean; readonly downStreak: number; rea
 export const initialHoldDebounce: HoldDebounce = { isDown: false, downStreak: 0, upStreak: 0 };
 
 const nextStreaks = (debounce: HoldDebounce, sample: HoldSample) => {
-  if (sample === "down") {
+  const isSampleDown = sample === "down";
+  if (isSampleDown) {
     return { downStreak: debounce.downStreak + 1, upStreak: 0 };
   }
 
@@ -69,6 +70,7 @@ const nextStreaks = (debounce: HoldDebounce, sample: HoldSample) => {
 // never ends a real hold mid-recording.
 export const debounceHold = (debounce: HoldDebounce, sample: HoldSample): readonly [HoldDebounce, HoldEdge] => {
   const streaks = nextStreaks(debounce, sample);
+
   const isPressed = streaks.downStreak >= 2 && !debounce.isDown;
   if (isPressed) {
     return [{ isDown: true, ...streaks }, "holdDown"];
@@ -87,7 +89,8 @@ type HoldTracker = { readonly debounce: HoldDebounce; readonly heldAtHoldDown: b
 export const initialHoldTracker: HoldTracker = { debounce: initialHoldDebounce, heldAtHoldDown: 0n };
 
 const edgeEvents = (edge: HoldEdge): ReadonlyArray<HoldEvent> => {
-  if (edge === "none") {
+  const isEdgeNone = edge === "none";
+  if (isEdgeNone) {
     return [];
   }
 
@@ -113,15 +116,18 @@ export const sampleHold = (
 ): readonly [HoldTracker, ReadonlyArray<HoldEvent>] => {
   const [debounce, edge] = debounceHold(tracker.debounce, sample.hold);
   const holdEvents = edgeEvents(edge);
-  if (sample.hold === "up") {
+
+  const isSampleHoldUp = sample.hold === "up";
+  if (isSampleHoldUp) {
     return [{ debounce, heldAtHoldDown: tracker.heldAtHoldDown }, holdEvents];
   }
 
   const heldNow = sample.otherKeys();
   const baseline = baselineKeys(tracker, heldNow);
   const next = { debounce, heldAtHoldDown: baseline & heldNow };
-  const isTyping = debounce.isDown && newlyPressed(baseline, heldNow);
-  if (!isTyping) {
+
+  const isNotTyping = !debounce.isDown || !newlyPressed(baseline, heldNow);
+  if (isNotTyping) {
     return [next, holdEvents];
   }
 

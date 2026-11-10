@@ -75,6 +75,7 @@ export const speakMarkdown = async (request: {
   try {
     for (const index of pieces.keys()) {
       const samples = await pendingRender;
+
       const isStoppedBeforePlay = request.player.isStopped();
       if (isStoppedBeforePlay) {
         return "stopped";

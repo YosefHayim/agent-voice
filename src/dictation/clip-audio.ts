@@ -16,7 +16,8 @@ const MAX_NORMALIZE_GAIN = 50;
 const TURN = 2 * Math.PI;
 
 export const rootMeanSquare = (samples: Float32Array): number => {
-  if (samples.length === 0) {
+  const isSamplesEmpty = samples.length === 0;
+  if (isSamplesEmpty) {
     return 0;
   }
 
@@ -42,12 +43,16 @@ export const pcmFromSamples = (samples: Float32Array): Int16Array => Int16Array.
 
 export const peakNormalize = (samples: Float32Array, targetPeak: number): Float32Array => {
   const peak = peakOf(samples);
-  if (peak < 1e-6) {
+
+  const silentPeakLimit = 1e-6;
+  const isPeakSilent = peak < silentPeakLimit;
+  if (isPeakSilent) {
     return samples;
   }
 
   const wantedGain = Math.max(targetPeak / peak, 1);
   const gain = Math.min(wantedGain, MAX_NORMALIZE_GAIN);
+
   const isGainNearOne = Math.abs(gain - 1) < 0.05;
   if (isGainNearOne) {
     return samples;
@@ -77,8 +82,8 @@ const voicedThreshold = (energies: ReadonlyArray<number>): number => {
 };
 
 const keepIfLoud = (samples: Float32Array, minimumRms: number): Float32Array | undefined => {
-  const isLoud = rootMeanSquare(samples) >= minimumRms;
-  if (!isLoud) {
+  const isNotLoud = rootMeanSquare(samples) < minimumRms;
+  if (isNotLoud) {
     return undefined;
   }
 
@@ -86,16 +91,20 @@ const keepIfLoud = (samples: Float32Array, minimumRms: number): Float32Array | u
 };
 
 export const extractSpeechRegion = (samples: Float32Array): Float32Array | undefined => {
-  if (samples.length < VAD_FRAME) {
+  const isShorterThanVadFrame = samples.length < VAD_FRAME;
+  if (isShorterThanVadFrame) {
     return keepIfLoud(samples, SILENCE_RMS);
   }
 
   const energies = frameEnergies(samples);
   const threshold = voicedThreshold(energies);
   const voiced = energies.map((energy) => energy >= threshold);
+
   const voicedCount = voiced.filter(Boolean).length;
+
   // The adaptive threshold can wipe soft continuous speech; keep the whole clip when it is clearly not silence.
-  if (voicedCount === 0) {
+  const hasNoVoicedFrames = voicedCount === 0;
+  if (hasNoVoicedFrames) {
     return keepIfLoud(samples, SILENCE_RMS * 1.5);
   }
 
@@ -115,14 +124,16 @@ export const extractSpeechRegion = (samples: Float32Array): Float32Array | undef
 
 export const prepareForWhisper = (samples: Float32Array): Float32Array | undefined => {
   const normalized = peakNormalize(samples, NORMALIZE_PEAK);
+
   const isSilence = rootMeanSquare(normalized) < SILENCE_RMS;
   if (isSilence) {
     return undefined;
   }
 
   const region = extractSpeechRegion(normalized);
-  const isLongEnough = region !== undefined && region.length >= MIN_VOICED_SAMPLES;
-  if (!isLongEnough) {
+
+  const isNotLongEnough = region === undefined || region.length < MIN_VOICED_SAMPLES;
+  if (isNotLongEnough) {
     return undefined;
   }
 

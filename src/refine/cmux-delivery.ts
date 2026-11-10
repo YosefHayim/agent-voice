@@ -29,7 +29,9 @@ const cmuxRecordSchema = z.record(z.string(), z.unknown());
 
 const readRecord = (value: unknown): Readonly<Record<string, unknown>> | null => {
   const checked = cmuxRecordSchema.safeParse(value);
-  if (!checked.success) {
+
+  const isCheckFailed = !checked.success;
+  if (isCheckFailed) {
     return null;
   }
 
@@ -37,8 +39,8 @@ const readRecord = (value: unknown): Readonly<Record<string, unknown>> | null =>
 };
 
 const readNonEmptyString = (value: unknown): string | null => {
-  const isNonEmptyText = typeof value === "string" && value !== "";
-  if (!isNonEmptyText) {
+  const isNotNonEmptyText = typeof value !== "string" || value === "";
+  if (isNotNonEmptyText) {
     return null;
   }
 
@@ -48,6 +50,7 @@ const readNonEmptyString = (value: unknown): string | null => {
 // The first key whose value is a non-empty string.
 const readFirstString = (value: unknown, keys: ReadonlyArray<string>): string | null => {
   const record = readRecord(value);
+
   const isNotRecord = record === null;
   if (isNotRecord) {
     return null;
@@ -55,6 +58,7 @@ const readFirstString = (value: unknown, keys: ReadonlyArray<string>): string | 
 
   for (const key of keys) {
     const found = readNonEmptyString(record[key]);
+
     const isFound = found !== null;
     if (isFound) {
       return found;
@@ -69,6 +73,7 @@ const readCmuxReply = (stdout: string): unknown => {
   const jsonLines = nonBlankLines(stdout).filter((line) => line.startsWith("{"));
   const lastJsonLine = jsonLines.at(-1) ?? "";
   const wholeReply = parseJsonOrNull(stdout.trim());
+
   const isWholeReplyJson = wholeReply !== null;
   if (isWholeReplyJson) {
     return wholeReply;
@@ -91,7 +96,8 @@ const runCmuxCli = async (request: {
       signal: AbortSignal.timeout(CMUX_TIMEOUT_MS),
     });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const isErrorInstanceError = error instanceof Error;
+    const detail = isErrorInstanceError ? error.message : String(error);
     throw new Error(`cmux ${request.step}: ${detail}`, { cause: error });
   }
 };
@@ -102,6 +108,7 @@ const runCmuxJson = async (request: {
 }): Promise<unknown> => {
   const executable = pickCmuxExecutable();
   const cliRun = await runCmuxCli({ executable, args: request.args, step: request.step });
+
   const isFailedExit = cliRun.exitCode !== 0;
   if (isFailedExit) {
     const detail = cliFailureText(cliRun) || "failed";
@@ -157,6 +164,7 @@ const sendTextToSurface = async (request: {
 }): Promise<void> => {
   const textParams = surfaceParams(request.surface, { text: request.text });
   await callRpc("surface.send_text", textParams);
+
   if (request.pressEnter) {
     await pressEnterKey(request.surface);
   }
@@ -164,6 +172,7 @@ const sendTextToSurface = async (request: {
 
 const readFocusedOrCaller = (identity: unknown): unknown => {
   const record = readRecord(identity);
+
   const isNotRecord = record === null;
   if (isNotRecord) {
     return identity;
@@ -183,7 +192,9 @@ const workspaceListSchema = z.object({
 
 const readWorkspaces = (listing: unknown): ReadonlyArray<unknown> => {
   const checked = workspaceListSchema.safeParse(listing);
-  if (!checked.success) {
+
+  const isCheckFailed = !checked.success;
+  if (isCheckFailed) {
     return [];
   }
 
@@ -214,6 +225,7 @@ const readWorkspaceDirectory = (workspace: unknown): string | null => readFirstS
 
 const isFocusedWorkspace = (workspace: unknown, focusId: string): boolean => {
   const id = readFirstString(workspace, ["id", "workspace_id", "ref"]) ?? "";
+
   const isUnknownWorkspace = id === "" || focusId === "";
   if (isUnknownWorkspace) {
     return false;
@@ -225,6 +237,7 @@ const isFocusedWorkspace = (workspace: unknown, focusId: string): boolean => {
 const readFirstWorkspaceDirectory = (workspaces: ReadonlyArray<unknown>): string | null => {
   for (const workspace of workspaces) {
     const directory = readWorkspaceDirectory(workspace);
+
     const isFound = directory !== null;
     if (isFound) {
       return directory;
@@ -239,13 +252,16 @@ const readDeliveryFolder = async (): Promise<string> => {
   const workspaces = await listWorkspaces();
   const focusId = await readFocusedWorkspaceId();
   const focused = workspaces.find((workspace) => isFocusedWorkspace(workspace, focusId));
-  const focusedDirectory = focused === undefined ? null : readWorkspaceDirectory(focused);
+  const isFocusedMissing = focused === undefined;
+  const focusedDirectory = isFocusedMissing ? null : readWorkspaceDirectory(focused);
+
   const isFocusedFolderFound = focusedDirectory !== null;
   if (isFocusedFolderFound) {
     return focusedDirectory;
   }
 
   const firstDirectory = readFirstWorkspaceDirectory(workspaces);
+
   const isFirstFolderFound = firstDirectory !== null;
   if (isFirstFolderFound) {
     return firstDirectory;
@@ -278,6 +294,7 @@ export const workspaceTitle = (plainText: string): string => {
   const firstLine = plainText.split("\n")[0] || "";
   const characters = [...firstLine.trim()];
   const shortLine = characters.slice(0, 40).join("");
+
   const isLineEmpty = shortLine === "";
   if (isLineEmpty) {
     return "refine";
@@ -333,6 +350,7 @@ const pasteInNewWorkspace = async (request: {
   const createArgs = createWorkspaceArgs({ promptText: request.promptText, folder: request.folder });
   const created = await runCmuxJson({ args: [...createArgs, "--json"], step: "workspace create" });
   const surface = readFirstString(created, ["surface_id", "surface_ref"]);
+
   const hasNoSurface = surface === null;
   if (hasNoSurface) {
     throw createCmuxError("workspace create", "no surface id in the reply");
@@ -349,6 +367,7 @@ const deliverToNewWorkspace = async (request: {
 }): Promise<string> => {
   const folder = await readDeliveryFolder();
   const template = request.config.refineCmuxCommand;
+
   const isCommandTemplate = template !== "";
   if (isCommandTemplate) {
     return runInNewWorkspace({ promptText: request.promptText, template, folder });
@@ -367,6 +386,7 @@ const deliverToFocusedSurface = async (request: {
 }): Promise<string> => {
   const focus = await identifyFocus();
   const surface = readFirstString(focus, ["surface_id", "surface_ref"]);
+
   const hasNoSurface = surface === null;
   if (hasNoSurface) {
     throw createCmuxError("identify", "no focused surface");

@@ -48,7 +48,8 @@ const backupFile = (settings: HookSettingsFile): string => {
 };
 
 const fileMode = (file: string): number => {
-  if (!existsSync(file)) {
+  const isFileAbsent = !existsSync(file);
+  if (isFileAbsent) {
     return 0o644;
   }
 
@@ -75,6 +76,7 @@ const createdFiles = (): ReadonlyArray<string> => {
 const recordCreated = (request: { readonly file: string; readonly created: boolean }): void => {
   const createdPath = stateFile("created-hook-files.json");
   const others = createdFiles().filter((file) => file !== request.file);
+
   if (request.created) {
     writeJsonAtomically({ path: createdPath, value: [...others, request.file] });
     return;
@@ -117,7 +119,9 @@ const agentVoiceReplyCommand = (settings: HookSettingsFile): string => {
 // A settings file agent-voice created is deleted once its entry was the only thing in it.
 const saveRemoval = (settings: HookSettingsFile, source: string): void => {
   const isCreatedByAgentVoice = settings.ownFile || createdFiles().includes(settings.file);
-  if (isCreatedByAgentVoice && isEmptySettings(source)) {
+
+  const isEmptyAgentVoiceSettings = isCreatedByAgentVoice && isEmptySettings(source);
+  if (isEmptyAgentVoiceSettings) {
     rmSync(settings.file, { force: true });
     return;
   }
@@ -130,11 +134,14 @@ const registerInstalled = (settings: HookSettingsFile): HookChange => {
   const source = current ?? "";
   const command = agentVoiceReplyCommand(settings);
   const edit = addReplyHook({ source, command, agent: settings.agent });
-  if (!edit.changed) {
+
+  const isEditUnchanged = !edit.changed;
+  if (isEditUnchanged) {
     return changeFor(settings, "unchanged");
   }
 
   const added = changeFor(settings, "added");
+
   const isNewSettingsFile = current === null;
   if (isNewSettingsFile) {
     writeSettings(settings, edit.source);
@@ -162,13 +169,16 @@ const registerOne = (settings: HookSettingsFile): HookChange => {
 
 const unregisterInstalled = (settings: HookSettingsFile): HookChange => {
   const current = readSettings(settings);
+
   const isThereNoSettingsText = current === null;
   if (isThereNoSettingsText) {
     return changeFor(settings, "absent");
   }
 
   const edit = removeReplyHook({ source: current, agent: settings.agent });
-  if (!edit.changed) {
+
+  const isEditUnchanged = !edit.changed;
+  if (isEditUnchanged) {
     return changeFor(settings, "absent");
   }
 
@@ -198,6 +208,7 @@ export const unregisterReplyHooks = (): ReadonlyArray<HookChange> => hookSetting
 const hasReplyHook = (settings: HookSettingsFile): boolean => {
   try {
     const current = readSettings(settings);
+
     const isThereNoSettingsText = current === null;
     if (isThereNoSettingsText) {
       return false;

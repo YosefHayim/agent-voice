@@ -97,8 +97,11 @@ describe("configSchema", () => {
 
   it("turns CLI text into a setting value and clears an optional setting with empty text", () => {
     const keepListening = configSettings.find((setting) => setting.key === "dictationKeepListeningSeconds");
+
     const refineModel = configSettings.find((setting) => setting.key === "refineModel");
-    if (keepListening === undefined || refineModel === undefined) {
+
+    const isSettingsIncomplete = keepListening === undefined || refineModel === undefined;
+    if (isSettingsIncomplete) {
       throw new Error("missing settings");
     }
 

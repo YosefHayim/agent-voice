@@ -50,6 +50,7 @@ export type StatusWriter = ReturnType<typeof makeStatusWriter>;
 // Speech waits while the dictation worker starts and while a hold is captured, release tail included.
 export const dictationOwnsAudio = (): boolean => {
   const status = readWorkerStatus();
+
   const isThereNoStatus = status === null;
   if (isThereNoStatus) {
     return false;

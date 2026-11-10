@@ -40,8 +40,8 @@ const parseJsonOrNull = (stopHookStdin: string): unknown => {
 
 // Grok also sends Stop when its session closes (reason "shutdown" or "channel_closed"); only a finished turn is read.
 const grokTurnReply = (grokStop: GrokStop): StopReply | null => {
-  const isFinishedTurn = grokStop.reason === "end_turn";
-  if (!isFinishedTurn) {
+  const isNotFinishedTurn = grokStop.reason !== "end_turn";
+  if (isNotFinishedTurn) {
     return null;
   }
 
@@ -51,14 +51,16 @@ const grokTurnReply = (grokStop: GrokStop): StopReply | null => {
 export const readStopReply = (stopHookStdin: string): StopReply | null => {
   const stopHookValue = parseJsonOrNull(stopHookStdin);
   const grokStopReply = grokStopSchema.safeParse(stopHookValue);
+
   const isGrokStop = grokStopReply.success;
   if (isGrokStop) {
     return grokTurnReply(grokStopReply.data);
   }
 
   const snakeCaseStopReply = snakeCaseStopSchema.safeParse(stopHookValue);
-  const isSnakeCaseStop = snakeCaseStopReply.success;
-  if (!isSnakeCaseStop) {
+
+  const isNotSnakeCaseStop = !snakeCaseStopReply.success;
+  if (isNotSnakeCaseStop) {
     return null;
   }
 
@@ -89,6 +91,7 @@ const claudeLineSchema = z.object({ message: chatMessageSchema });
 const transcriptMessage = (line: string): ReadonlyArray<ChatMessage> => {
   const lineValue = parseJsonOrNull(line);
   const claudeLine = claudeLineSchema.safeParse(lineValue);
+
   const isClaudeLine = claudeLine.success;
   if (isClaudeLine) {
     return [claudeLine.data.message];
@@ -115,7 +118,8 @@ const isUserPrompt = (message: ChatMessage): boolean => {
 };
 
 const assistantTexts = (message: ChatMessage): ReadonlyArray<string> => {
-  if (message.role !== "assistant") {
+  const isMessageRoleNotAssistant = message.role !== "assistant";
+  if (isMessageRoleNotAssistant) {
     return [];
   }
 

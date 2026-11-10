@@ -62,6 +62,7 @@ const isUsablePid = (pid: number): boolean => Number.isInteger(pid) && pid > 1;
 // The pid file's text as a pid, or null when the file is missing, empty, or not a number.
 export const readPid = (name: PidFileName): number | null => {
   const pidText = readTextIfReadable(stateFile(name));
+
   const isThereNoPidText = pidText === null;
   if (isThereNoPidText) {
     return null;
@@ -93,8 +94,11 @@ const isNamedProcess = (name: PidFileName, commandLine: string): boolean => {
 
 const isRunningAs = (name: PidFileName, pid: number): boolean => {
   const processRow = runPs(["-o", "state=,args=", "-p", String(pid)]);
+
   const processRowMatch = PROCESS_ROW.exec(processRow);
-  if (processRowMatch === null) {
+
+  const isProcessMissing = processRowMatch === null;
+  if (isProcessMissing) {
     return false;
   }
 
@@ -106,6 +110,7 @@ const isRunningAs = (name: PidFileName, pid: number): boolean => {
 // The pid from the pid file, only when that process still runs as the named worker.
 export const runningPid = (name: PidFileName): number | null => {
   const savedPid = readPid(name);
+
   const isThereNoSavedPid = savedPid === null;
   if (isThereNoSavedPid) {
     return null;
@@ -116,6 +121,7 @@ export const runningPid = (name: PidFileName): number | null => {
 
 const runningPidList = (name: PidFileName): ReadonlyArray<number> => {
   const workerPid = runningPid(name);
+
   const isThereNoRunningPid = workerPid === null;
   if (isThereNoRunningPid) {
     return [];
@@ -132,6 +138,7 @@ export const isWorkerRunning = (kind: WorkerKind): boolean => {
 // The speech worker drops the reply it is reading on SIGUSR2.
 export const stopSpeech = (): void => {
   const speechPid = runningPid("speech.pid");
+
   const isSpeechRunning = speechPid !== null;
   if (isSpeechRunning) {
     sendSignal(speechPid, "SIGUSR2");
@@ -149,7 +156,8 @@ const isSafeTarget = (pid: number): boolean =>
 
 // Workers lead their process group, so their pill and players stop with them.
 export const signalGroup = (pid: number, signal: NodeJS.Signals): void => {
-  if (!isSafeTarget(pid)) {
+  const isNotSafeTargetPid = !isSafeTarget(pid);
+  if (isNotSafeTargetPid) {
     return;
   }
 
@@ -164,6 +172,7 @@ export const signalGroup = (pid: number, signal: NodeJS.Signals): void => {
 const removeOwnPidFile = (kind: WorkerKind): void => {
   const pidName = WORKER_FILES[kind].pid;
   const savedPid = readPid(pidName);
+
   const isOwnPid = savedPid === process.pid;
   if (isOwnPid) {
     const pidPath = stateFile(pidName);
@@ -178,6 +187,7 @@ export const claimWorkerLock = (kind: WorkerKind): ReleaseLock | null => {
   const home = agentVoiceHome();
   makePrivateFolder(home);
   const releaseLock = holdLock(workerLockPath(kind));
+
   const isLockHeldByAnother = releaseLock === null;
   if (isLockHeldByAnother) {
     return null;
@@ -193,7 +203,9 @@ export const claimWorkerLock = (kind: WorkerKind): ReleaseLock | null => {
 // From source there is no built main.js next to this file, so tsx runs main.ts.
 const entryScript = (): string => {
   const builtEntry = fileURLToPath(new URL("../cli/main.js", import.meta.url));
-  if (existsSync(builtEntry)) {
+
+  const hasBuiltEntry = existsSync(builtEntry);
+  if (hasBuiltEntry) {
     return builtEntry;
   }
 
@@ -280,8 +292,9 @@ const strayAgentVoiceProcesses = (): ReadonlyArray<number> => {
     const processRowMatch = PROCESS_ROW.exec(line);
     const commandLine = processRowMatch?.[2] || "";
     const isWorker = commandLine.includes("agent-voice") && WORKER_COMMAND.test(commandLine);
-    const isStray = isWorker || isPillCommand(commandLine);
-    if (!isStray) {
+
+    const isNotStray = !isWorker && !isPillCommand(commandLine);
+    if (isNotStray) {
       return [];
     }
 
@@ -298,8 +311,9 @@ export const resetWorkers = async (): Promise<void> => {
 
 const dictationStartFailureMessage = (lastLines: string): string => {
   const summary = `The dictation worker did not start. See ${workerLogPath("dictation")}.`;
-  const hasLastLines = lastLines !== "";
-  if (!hasLastLines) {
+
+  const isLastLinesEmpty = lastLines === "";
+  if (isLastLinesEmpty) {
     return summary;
   }
 
@@ -338,6 +352,7 @@ export const startWorkers = async (): Promise<"started" | "already running"> => 
 
   const status = readWorkerStatus();
   const isAvailable = status !== null && status.stage !== "unavailable";
+
   const isDictationStarted = isAvailable && isWorkerRunning("dictation");
   if (isDictationStarted) {
     return "started";

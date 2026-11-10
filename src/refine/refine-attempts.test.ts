@@ -22,6 +22,7 @@ vi.mock("node:fs", async (importOriginal) => {
       if (isHostBin(file)) {
         throw new Error(`${String(file)} is hidden from the refine tests`);
       }
+
       fs.accessSync(file, mode);
     },
   };

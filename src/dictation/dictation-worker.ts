@@ -56,6 +56,7 @@ const runUntilStopped = async (request: {
   const controller = makeHoldController({ keyboard, clip, caption, status, queue, shutdown: shutdown.signal });
   const pollTimer = setInterval(controller.poll, HOLD_POLL_MS);
   void warmTranscriber(transcriber);
+
   if (isLivePreviewOn) {
     void captionLoop({ clip, transcriber, caption, status, shutdown: shutdown.signal });
   }
@@ -152,6 +153,7 @@ const loadModelAndRun = async (): Promise<void> => {
 // starts a fresh worker.
 export const runDictationWorker = async (): Promise<void> => {
   const releaseWorkerLock = claimWorkerLock("dictation");
+
   const isLockTaken = releaseWorkerLock === null;
   if (isLockTaken) {
     return;

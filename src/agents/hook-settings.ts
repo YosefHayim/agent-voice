@@ -51,8 +51,11 @@ export const isReplyHookCommand = (command: string, agent: AgentId): boolean => 
 const parseSettings = (source: string): Node => {
   const errors: Array<ParseError> = [];
   const root = parseTree(source, errors, { allowTrailingComma: true, disallowComments: false });
+
   const isRootObject = root?.type === "object";
-  if (errors.length > 0 || !isRootObject) {
+
+  const isSettingsUnreadable = errors.length > 0 || !isRootObject;
+  if (isSettingsUnreadable) {
     throw new Error("the settings file is not a JSON object");
   }
 
@@ -81,7 +84,9 @@ const appendMember = (request: {
 }) => {
   const children = request.container.children || [];
   const last = children.at(-1);
-  if (last !== undefined) {
+
+  const hasLast = last !== undefined;
+  if (hasLast) {
     const indent = lineIndent(request.source, last.offset);
     return splice(request.source, {
       offset: last.offset + last.length,
@@ -109,7 +114,9 @@ const removeMember = (request: {
   const index = children.indexOf(request.member);
   const previous = children[index - 1];
   const next = children[index + 1];
-  if (previous !== undefined) {
+
+  const hasPrevious = previous !== undefined;
+  if (hasPrevious) {
     return splice(request.source, {
       offset: previous.offset + previous.length,
       length: request.member.offset + request.member.length - (previous.offset + previous.length),
@@ -117,7 +124,8 @@ const removeMember = (request: {
     });
   }
 
-  if (next !== undefined) {
+  const hasNext = next !== undefined;
+  if (hasNext) {
     return splice(request.source, {
       offset: request.member.offset,
       length: next.offset - request.member.offset,
@@ -134,6 +142,7 @@ const removeMember = (request: {
 
 const commandOf = (hook: Node): string => {
   const commandNode = findNodeAtLocation(hook, ["command"]);
+
   const isThereNoCommandNode = commandNode === undefined;
   if (isThereNoCommandNode) {
     return "";
@@ -146,13 +155,17 @@ const commandOf = (hook: Node): string => {
 
 const findReplyHook = (root: Node, matches: (command: string) => boolean): ReplyHookLocation | null => {
   const stopArray = findNodeAtLocation(root, ["hooks", "Stop"]);
-  if (stopArray?.type !== "array") {
+
+  const isStopArrayTypeNotArray = stopArray?.type !== "array";
+  if (isStopArrayTypeNotArray) {
     return null;
   }
 
   const locations = (stopArray.children || []).flatMap((group) => {
     const groupHooks = findNodeAtLocation(group, ["hooks"]);
-    if (groupHooks?.type !== "array") {
+
+    const isGroupHooksTypeNotArray = groupHooks?.type !== "array";
+    if (isGroupHooksTypeNotArray) {
       return [];
     }
 
@@ -175,8 +188,11 @@ const pruneIfEmpty = (request: { readonly source: string; readonly path: Readonl
   const key = request.path.at(-1) || "";
   const parent = findNodeAtLocation(root, parentPath);
   const property = (parent?.children || []).find((candidate) => candidate.children?.[0]?.value === key);
+
   const hasEmptyValue = isEmptyContainer(property?.children?.[1]);
-  if (parent === undefined || property === undefined || !hasEmptyValue) {
+
+  const isNothingToRemove = parent === undefined || property === undefined || !hasEmptyValue;
+  if (isNothingToRemove) {
     return request.source;
   }
 
@@ -197,6 +213,7 @@ const removeHookEntry = (source: string, location: ReplyHookLocation): string =>
 export const removeReplyHook = (request: { readonly source: string; readonly agent: AgentId }): SettingsEdit => {
   const root = parseSettings(request.source);
   const location = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
+
   const isThereNoReplyHook = location === null;
   if (isThereNoReplyHook) {
     return { source: request.source, changed: false };
@@ -213,19 +230,24 @@ const hookInsertion = (root: Node, command: string): HookInsertion => {
   const hookGroup = { hooks: [{ type: "command", command }] };
   const hooks = findNodeAtLocation(root, ["hooks"]);
   const stopArray = findNodeAtLocation(root, ["hooks", "Stop"]);
-  if (hooks !== undefined && hooks.type !== "object") {
+
+  const isHooksWrongType = hooks !== undefined && hooks.type !== "object";
+  if (isHooksWrongType) {
     throw new Error("hooks is not an object");
   }
 
-  if (stopArray !== undefined && stopArray.type !== "array") {
+  const isStopArrayWrongType = stopArray !== undefined && stopArray.type !== "array";
+  if (isStopArrayWrongType) {
     throw new Error("hooks.Stop is not an array");
   }
 
-  if (stopArray !== undefined) {
+  const hasStopArray = stopArray !== undefined;
+  if (hasStopArray) {
     return { container: stopArray, keyPrefix: "", value: hookGroup };
   }
 
-  if (hooks !== undefined) {
+  const hasHooks = hooks !== undefined;
+  if (hasHooks) {
     return { container: hooks, keyPrefix: '"Stop": ', value: [hookGroup] };
   }
 
@@ -255,6 +277,7 @@ const settingsText = (source: string): string => {
 const confirmAdded = (edited: string, command: string): SettingsEdit => {
   const root = parseSettings(edited);
   const addedLocation = findReplyHook(root, (found) => found === command);
+
   const isAddedLost = addedLocation === null;
   if (isAddedLost) {
     throw new Error("the edited settings lost agent-voice's entry");
@@ -282,6 +305,7 @@ export const addReplyHook = (request: {
   const source = settingsText(request.source);
   const root = parseSettings(source);
   const existing = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
+
   const isCurrent = existing !== null && commandOf(existing.hook) === request.command;
   if (isCurrent) {
     return { source: request.source, changed: false };

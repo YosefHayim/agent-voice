@@ -49,7 +49,9 @@ const whisperOptions = (request: DecodeRequest): TranscribeOptions => {
     maxContext: 0,
     maxThreads: request.threads,
   };
-  if (request.prompt === "") {
+
+  const isRequestPromptEmpty = request.prompt === "";
+  if (isRequestPromptEmpty) {
     return options;
   }
 
@@ -79,7 +81,8 @@ const withWhisperErrors = async <Result>(task: () => Promise<Result>): Promise<R
   try {
     return await task();
   } catch (error) {
-    const issue = error instanceof Error ? error.message : String(error);
+    const isErrorInstanceError = error instanceof Error;
+    const issue = isErrorInstanceError ? error.message : String(error);
     throw new Error(`Whisper: ${issue}`, { cause: error });
   }
 };
@@ -95,7 +98,8 @@ const createDecodeLane = (): DecodeLane => {
   let isBusy = false;
 
   const takeTurn = async (): Promise<void> => {
-    if (!isBusy) {
+    const isNotBusy = !isBusy;
+    if (isNotBusy) {
       isBusy = true;
       return;
     }
@@ -107,6 +111,7 @@ const createDecodeLane = (): DecodeLane => {
 
   const passTurn = (): void => {
     const nextTurn = waitingTurns.shift();
+
     const isNobodyWaiting = nextTurn === undefined;
     if (isNobodyWaiting) {
       isBusy = false;
@@ -154,6 +159,7 @@ export const loadTranscriber = async (modelPath: string): Promise<Transcriber> =
     const started = performance.now();
     const inputLevel = rootMeanSquare(request.samples);
     const region = prepareForWhisper(request.samples);
+
     const isSilence = region === undefined;
     if (isSilence) {
       return { text: "", decodeMs: performance.now() - started, inputLevel, ranWhisper: false };
@@ -179,6 +185,7 @@ export const loadTranscriber = async (modelPath: string): Promise<Transcriber> =
   // A caption pass is skipped while a final decode holds the model.
   const caption = async (request: CaptionRequest): Promise<string | null> => {
     const heard = await lane.runIfFree(() => decode({ ...request, prompt: "", threads: CAPTION_THREADS }));
+
     const isModelBusy = heard === null;
     if (isModelBusy) {
       return null;
@@ -203,8 +210,8 @@ export const loadTranscriber = async (modelPath: string): Promise<Transcriber> =
 };
 
 export const whisperBackend = (): string => {
-  const isAppleSilicon = process.platform === "darwin" && process.arch === "arm64";
-  if (!isAppleSilicon) {
+  const isNotAppleSilicon = process.platform !== "darwin" || process.arch !== "arm64";
+  if (isNotAppleSilicon) {
     return "whisper.cpp";
   }
 

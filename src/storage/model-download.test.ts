@@ -29,8 +29,8 @@ const largeModel = Buffer.alloc(LARGE_BYTES, 7);
 
 // The test server listens on a TCP port, so its address is an object that carries the port.
 const portOf = (address: AddressInfo | string | null): number => {
-  const isTcpAddress = address !== null && typeof address === "object";
-  if (!isTcpAddress) {
+  const isNotTcpAddress = address === null || typeof address !== "object";
+  if (isNotTcpAddress) {
     throw new Error("the test server is not on a TCP port");
   }
 

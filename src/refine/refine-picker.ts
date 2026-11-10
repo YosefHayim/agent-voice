@@ -54,6 +54,7 @@ const moveDefaultFirst = (labels: ReadonlyArray<string>, defaultLabel: string): 
 // Null when the user dismisses the dialog or the dialog reports an error.
 const readChosenLabel = (stdout: string): string | null => {
   const chosen = stdout.trim();
+
   const isDismissed = chosen === "" || chosen === "CANCEL" || chosen.startsWith("ERROR:");
   if (isDismissed) {
     return null;
@@ -76,6 +77,7 @@ const chooseFromList = async (request: {
   readonly defaultLabel: string;
 }): Promise<string | null> => {
   const orderedLabels = moveDefaultFirst(request.labels, request.defaultLabel);
+
   const hasNoLabels = orderedLabels.length === 0;
   if (hasNoLabels) {
     return null;
@@ -116,7 +118,9 @@ const showAlert = async (request: { readonly title: string; readonly message: st
 
 const readListedModels = (providers: ReadonlyArray<DiscoveredProvider>, id: ProviderId): ReadonlyArray<string> => {
   const listed = providers.find((provider) => provider.id === id);
-  if (listed === undefined) {
+
+  const isListedMissing = listed === undefined;
+  if (isListedMissing) {
     return [];
   }
 
@@ -138,12 +142,14 @@ const pickPreferredModel = (
 
 const readSavedCodexModel = (): string => {
   const saved = readSavedChoice();
-  if (saved === null) {
+
+  const isSavedMissing = saved === null;
+  if (isSavedMissing) {
     return "";
   }
 
-  const isSavedCodex = saved.provider === "codex";
-  if (!isSavedCodex) {
+  const isNotSavedCodex = saved.provider !== "codex";
+  if (isNotSavedCodex) {
     return "";
   }
 
@@ -158,6 +164,7 @@ export const listPickerModels = (request: {
 }): ReadonlyArray<string> => {
   const listed = readListedModels(request.providers, request.provider);
   const preferred = pickPreferredModel(request.preferred, request.provider);
+
   const isNotCodex = request.provider !== "codex";
   if (isNotCodex) {
     return dedupe([preferred, ...listed]);
@@ -174,7 +181,9 @@ const createProviderLabel = (provider: DiscoveredProvider): string =>
 
 const pickDefaultProviderLabel = (providers: ReadonlyArray<DiscoveredProvider>, preferredProvider: string): string => {
   const preferred = providers.find((provider) => provider.id === preferredProvider) ?? providers[0];
-  if (preferred === undefined) {
+
+  const isPreferredMissing = preferred === undefined;
+  if (isPreferredMissing) {
     return "";
   }
 
@@ -190,7 +199,8 @@ const listModelLabels = (request: {
   readonly models: ReadonlyArray<string>;
   readonly offerSkip: boolean;
 }): ReadonlyArray<string> => {
-  if (!request.offerSkip) {
+  const isOfferSkipOff = !request.offerSkip;
+  if (isOfferSkipOff) {
     return request.models;
   }
 
@@ -206,6 +216,7 @@ export const pickRefineTargetWithDialogs = async (request: {
   readonly offerSkip: boolean;
 }): Promise<RefinePick | null> => {
   const providers = await discoverProviders({ refresh: false });
+
   const hasNoProviders = providers.length === 0;
   if (hasNoProviders) {
     await showAlert({ title: "No refine providers", message: NO_PROVIDERS_MESSAGE });
@@ -222,12 +233,14 @@ export const pickRefineTargetWithDialogs = async (request: {
     labels: providers.map(createProviderLabel),
     defaultLabel: pickDefaultProviderLabel(providers, request.preferredProvider),
   });
+
   const isProviderDismissed = chosenLabel === null;
   if (isProviderDismissed) {
     return null;
   }
 
   const provider = findProviderWithLabel(providers, chosenLabel);
+
   const isProviderUnknown = provider === null;
   if (isProviderUnknown) {
     return null;
@@ -244,14 +257,18 @@ export const pickRefineTargetWithDialogs = async (request: {
     labels: listModelLabels({ models, offerSkip: request.offerSkip }),
     defaultLabel: models[0] || "",
   });
+
   const isModelDismissed = chosenModel === null;
   if (isModelDismissed) {
     return null;
   }
 
   const isSkipped = chosenModel === SKIP_REFINE_LABEL;
+
   const hasNoEffort = !provider.effort;
-  if (isSkipped || hasNoEffort) {
+
+  const isEffortSkipped = isSkipped || hasNoEffort;
+  if (isEffortSkipped) {
     return { provider: providerId, model: chosenModel, effort: "" };
   }
 
@@ -261,6 +278,7 @@ export const pickRefineTargetWithDialogs = async (request: {
     labels: REASONING_EFFORTS,
     defaultLabel: effortDefault,
   });
+
   const isEffortDismissed = chosenEffort === null;
   if (isEffortDismissed) {
     return null;

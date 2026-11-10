@@ -13,7 +13,8 @@ const flagUsage = (flagName: string, flag: FlagSpec): string => {
     return `--${flagName}`;
   }
 
-  const placeholderName = flag.choices == null ? flag.kind : flag.choices.join("|");
+  const isFlagChoicesMissing = flag.choices == null;
+  const placeholderName = isFlagChoicesMissing ? flag.kind : flag.choices.join("|");
   return `--${flagName} <${placeholderName}>`;
 };
 

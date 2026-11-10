@@ -50,6 +50,7 @@ export const refineCommand: CommandSpec = {
     }
 
     const draft = readOptionalPositional(parsedCommand, "prompt") ?? "";
+
     const isDraftMissing = draft.trim() === "";
     if (isDraftMissing) {
       TerminalUI.printError("Pass the prompt to refine, or --list-providers.");
@@ -78,6 +79,7 @@ export const refineCommand: CommandSpec = {
       log: () => undefined,
     });
     TerminalUI.printLine(refinedPrompt);
+
     if (isFlagOn(parsedCommand, "speak")) {
       await speakAloud(refinedPrompt, settings);
     }

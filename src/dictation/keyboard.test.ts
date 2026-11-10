@@ -17,15 +17,21 @@ vi.mock("koffi", () => ({
   default: {
     load: () => ({
       func: (declaration: string) => {
-        if (declaration.includes("CGEventSourceKeyState")) {
+        const isKeyStateDeclaration = declaration.includes("CGEventSourceKeyState");
+        if (isKeyStateDeclaration) {
           return (_state: number, key: number) => nativeKeyboard.pressed.has(key);
         }
-        if (declaration.includes("CGEventSourceFlagsState")) {
+
+        const isFlagsStateDeclaration = declaration.includes("CGEventSourceFlagsState");
+        if (isFlagsStateDeclaration) {
           return () => nativeKeyboard.flags;
         }
-        if (declaration.includes("CGEventCreateKeyboardEvent")) {
+
+        const isKeyboardEventDeclaration = declaration.includes("CGEventCreateKeyboardEvent");
+        if (isKeyboardEventDeclaration) {
           return nativeKeyboard.createKeyEvent;
         }
+
         return () => undefined;
       },
     }),

@@ -46,6 +46,7 @@ const claimNext = (mode: Config["speechMode"]) => claimNextReply(mode);
 
 const claimReply = async () => {
   const claimed = await claimNext("auto");
+
   const isThereNoClaim = claimed === null;
   if (isThereNoClaim) {
     throw new Error("no reply was claimed");
@@ -56,7 +57,9 @@ const claimReply = async () => {
 
 const inboxNames = (): ReadonlyArray<string> => {
   const inbox = path.join(home, "inbox");
-  if (!existsSync(inbox)) {
+
+  const isInboxAbsent = !existsSync(inbox);
+  if (isInboxAbsent) {
     return [];
   }
 
