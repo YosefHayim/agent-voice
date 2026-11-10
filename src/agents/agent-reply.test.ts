@@ -4,12 +4,12 @@ import { describe, expect, it } from "vitest";
 
 import { readStopReply, replyFromTranscript } from "./agent-reply.js";
 
-const fixture = (name: string) => {
+const readFixture = (name: string) => {
   const fixtureUrl = new URL(`./fixtures/${name}`, import.meta.url);
   return readFileSync(fixtureUrl, "utf8");
 };
 
-const grokStop = (reason: string) =>
+const readGrokStop = (reason: string) =>
   JSON.stringify({
     hookEventName: "Stop",
     hook_event_name: "Stop",
@@ -42,8 +42,8 @@ describe("readStopReply", () => {
   });
 
   it("reads a finished Grok turn, never its transcript, and skips a session close", () => {
-    const finishedTurn = grokStop("end_turn");
-    const sessionClose = grokStop("shutdown");
+    const finishedTurn = readGrokStop("end_turn");
+    const sessionClose = readGrokStop("shutdown");
 
     expect(readStopReply(finishedTurn)).toEqual({
       markdown: "Complete answer",
@@ -61,13 +61,13 @@ describe("readStopReply", () => {
 
 describe("replyFromTranscript", () => {
   it("joins every assistant text block after the latest user prompt in a Claude transcript", () => {
-    const transcript = fixture("claude-transcript.jsonl");
+    const transcript = readFixture("claude-transcript.jsonl");
 
     expect(replyFromTranscript(transcript)).toBe("First section\n\nSecond section\n\n- complete");
   });
 
   it("reads role/content transcripts and skips blank assistant text", () => {
-    const transcript = fixture("codex-transcript.jsonl");
+    const transcript = readFixture("codex-transcript.jsonl");
 
     expect(replyFromTranscript(transcript)).toBe("Fixed the build.");
   });

@@ -3,7 +3,7 @@
 
 import type { PvRecorder } from "@picovoice/pvrecorder-node";
 
-import { SAMPLE_RATE, samplesFromPcm } from "./clip-audio.js";
+import { readSamplesFromPcm, SAMPLE_RATE } from "./clip-audio.js";
 
 const createMicrophoneError = (error: unknown): Error => {
   const isErrorInstanceError = error instanceof Error;
@@ -16,7 +16,7 @@ const FRAME_SAMPLES = 512;
 const BUFFERED_FRAMES = 100;
 const DEFAULT_DEVICE = -1;
 
-const joined = (frames: ReadonlyArray<Int16Array>): Float32Array => {
+const joinFrames = (frames: ReadonlyArray<Int16Array>): Float32Array => {
   const length = frames.reduce((total, frame) => total + frame.length, 0);
   const pcm = new Int16Array(length);
   let offset = 0;
@@ -24,7 +24,7 @@ const joined = (frames: ReadonlyArray<Int16Array>): Float32Array => {
     pcm.set(frame, offset);
     offset += frame.length;
   }
-  return samplesFromPcm(pcm);
+  return readSamplesFromPcm(pcm);
 };
 
 // Frames arriving while not recording are dropped. A modifier press begins a clip that may still be a typing shortcut, and
@@ -51,7 +51,7 @@ export const makeClipBuffer = () => {
   const end = (): Float32Array => {
     recording = false;
     confirmed = false;
-    const captured = joined(frames);
+    const captured = joinFrames(frames);
     frames = [];
     return captured;
   };
@@ -63,11 +63,11 @@ export const makeClipBuffer = () => {
   };
 
   // At least one frame, because slice(-0) would return the whole clip.
-  const tail = (seconds: number): Float32Array => {
+  const readLastSeconds = (seconds: number): Float32Array => {
     const wanted = Math.ceil((seconds * SAMPLE_RATE) / FRAME_SAMPLES);
     const frameCount = Math.max(wanted, 1);
     const tailFrames = frames.slice(-frameCount);
-    return joined(tailFrames);
+    return joinFrames(tailFrames);
   };
 
   return {
@@ -75,7 +75,7 @@ export const makeClipBuffer = () => {
     append,
     end,
     cancel,
-    tail,
+    readLastSeconds: readLastSeconds,
     confirm: () => {
       confirmed = recording;
     },

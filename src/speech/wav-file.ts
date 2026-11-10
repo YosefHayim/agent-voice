@@ -1,7 +1,7 @@
-import { pcmFromSamples } from "#src/dictation/clip-audio.js";
+import { readPcmFromSamples } from "#src/dictation/clip-audio.js";
 
 export const encodeWav = (request: { readonly samples: Float32Array; readonly sampleRate: number }): Buffer => {
-  const pcm = pcmFromSamples(request.samples);
+  const pcm = readPcmFromSamples(request.samples);
   const bytes = Buffer.alloc(44 + pcm.length * 2);
   bytes.write("RIFF", 0, "ascii");
   bytes.writeUInt32LE(36 + pcm.length * 2, 4);
@@ -23,7 +23,7 @@ export const encodeWav = (request: { readonly samples: Float32Array; readonly sa
 
 type WavChunk = { readonly id: string; readonly start: number; readonly size: number };
 
-const wavChunks = (bytes: Buffer): ReadonlyArray<WavChunk> => {
+const listWavChunks = (bytes: Buffer): ReadonlyArray<WavChunk> => {
   const chunks: Array<WavChunk> = [];
   let offset = 12;
   while (offset + 8 <= bytes.length) {
@@ -42,7 +42,7 @@ export const decodeWav = (bytes: Buffer): { readonly sampleRate: number; readonl
     return undefined;
   }
 
-  const chunks = wavChunks(bytes);
+  const chunks = listWavChunks(bytes);
   const format = chunks.find((chunk) => chunk.id === "fmt ");
 
   const samples = chunks.find((chunk) => chunk.id === "data");

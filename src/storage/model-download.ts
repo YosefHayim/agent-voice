@@ -14,7 +14,7 @@ const progressStepBytes = 20_000_000;
 
 // A callback that throws errors the stream, which fails the copy as a network error would, so the `.partial` file
 // is still removed.
-const progressCounter = (onProgress: (receivedBytes: number) => void): TransformStream<Uint8Array, Uint8Array> => {
+const readProgressCounter = (onProgress: (receivedBytes: number) => void): TransformStream<Uint8Array, Uint8Array> => {
   let received = 0;
   let reported = 0;
   return new TransformStream({
@@ -43,7 +43,7 @@ const fetchIntoPlace = async (request: DownloadRequest): Promise<void> => {
   }
 
   try {
-    const counter = progressCounter(request.onProgress);
+    const counter = readProgressCounter(request.onProgress);
     const counted = reply.body.pipeThrough(counter);
     const file = createWriteStream(partial);
     // pipeline listens for errors on every stream before data flows, so a file that cannot be opened or written
@@ -58,7 +58,7 @@ const fetchIntoPlace = async (request: DownloadRequest): Promise<void> => {
 };
 
 // Device and inode, so a file renamed into place by another process reads as a different file.
-const fileIdentity = (filePath: string): string => {
+const readFileIdentity = (filePath: string): string => {
   const stats = statSync(filePath, { throwIfNoEntry: false });
 
   const isStatsMissing = stats === undefined;
@@ -81,10 +81,10 @@ const describeIssue = (error: unknown): string => {
 const downloadFileUnderLock = async (request: DownloadRequest): Promise<void> => {
   const lockPath = `${request.destination}.lock`;
   mkdirSync(path.dirname(request.destination), { recursive: true });
-  const before = fileIdentity(request.destination);
+  const before = readFileIdentity(request.destination);
   const releaseLock = await waitForLock(lockPath);
   try {
-    const current = fileIdentity(request.destination);
+    const current = readFileIdentity(request.destination);
 
     const isFinishedByAnother = current !== "" && current !== before;
     if (isFinishedByAnother) {

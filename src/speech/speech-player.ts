@@ -2,11 +2,11 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { stateFolder } from "#src/settings/agent-voice-home.js";
+import { readStateFolder } from "#src/settings/agent-voice-home.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { writePrivateFile } from "#src/storage/state-files.js";
-import { markdownToSpeech } from "./markdown-to-speech.js";
-import { chunkSpeech, SPEECH_CHUNK_CHARACTERS, speedForWordsPerMinute } from "./speech-chunks.js";
+import { convertMarkdownToSpeech } from "./markdown-to-speech.js";
+import { chunkSpeech, readSpeedFromWordsPerMinute, SPEECH_CHUNK_CHARACTERS } from "./speech-chunks.js";
 import type { SupertonicEngine } from "./supertonic.js";
 import { encodeWav } from "./wav-file.js";
 
@@ -44,18 +44,18 @@ export type SpeechPlayer = ReturnType<typeof makeSpeechPlayer>;
 
 type Voice = { readonly voice: Config["speechVoice"]; readonly wordsPerMinute: number };
 
-const speechPieces = (markdown: string): ReadonlyArray<string> => {
-  const speech = markdownToSpeech(markdown);
+const listSpeechPieces = (markdown: string): ReadonlyArray<string> => {
+  const speech = convertMarkdownToSpeech(markdown);
   return chunkSpeech(speech, SPEECH_CHUNK_CHARACTERS);
 };
 
-const pieceSynthesizer = (engine: SupertonicEngine, voice: Voice) => {
-  const speed = speedForWordsPerMinute(voice.wordsPerMinute);
+const createPieceSynthesizer = (engine: SupertonicEngine, voice: Voice) => {
+  const speed = readSpeedFromWordsPerMinute(voice.wordsPerMinute);
   return (text: string) => engine.synthesize({ text, voice: voice.voice, speed });
 };
 
 const chunkFile = (index: number): string => {
-  const audioFolder = stateFolder("audio");
+  const audioFolder = readStateFolder("audio");
   return path.join(audioFolder, `speech-${process.pid}-${index % 2}.wav`);
 };
 
@@ -66,8 +66,8 @@ export const speakMarkdown = async (request: {
   readonly markdown: string;
   readonly voice: Voice;
 }): Promise<"completed" | "stopped"> => {
-  const pieces = speechPieces(request.markdown);
-  const synthesize = pieceSynthesizer(request.engine, request.voice);
+  const pieces = listSpeechPieces(request.markdown);
+  const synthesize = createPieceSynthesizer(request.engine, request.voice);
   const synthesizePiece = (index: number) => synthesize(pieces[index] || "");
 
   // Always awaited before this function returns, so no render is left running after a stop or an error.
@@ -111,8 +111,8 @@ export const writeMarkdownWav = async (request: {
   readonly voice: Voice;
   readonly outputFile: string;
 }): Promise<number> => {
-  const pieces = speechPieces(request.markdown);
-  const synthesize = pieceSynthesizer(request.engine, request.voice);
+  const pieces = listSpeechPieces(request.markdown);
+  const synthesize = createPieceSynthesizer(request.engine, request.voice);
   const chunks: Float32Array[] = [];
   for (const piece of pieces) {
     const chunk = await synthesize(piece);

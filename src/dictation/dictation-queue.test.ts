@@ -36,7 +36,7 @@ afterEach(() => {
 });
 
 // Records what would be typed at the caret.
-const fakeKeyboard = (): { readonly keyboard: Keyboard; readonly typed: ReadonlyArray<string> } => {
+const createFakeKeyboard = (): { readonly keyboard: Keyboard; readonly typed: ReadonlyArray<string> } => {
   const typed: Array<string> = [];
   const keyboard: Keyboard = {
     holdKey: "shift",
@@ -56,10 +56,10 @@ const fakeKeyboard = (): { readonly keyboard: Keyboard; readonly typed: Readonly
   return { keyboard, typed };
 };
 
-const fakeTranscriber = (heard: string): Transcriber => ({
+const createFakeTranscriber = (heard: string): Transcriber => ({
   modelName: "fake",
   transcribe: async () => ({ text: heard, decodeMs: 1, inputLevel: 0.2, ranWhisper: true }),
-  caption: async () => null,
+  readCaption: async () => null,
   warmUp: async () => undefined,
   release: async () => undefined,
 });
@@ -69,10 +69,10 @@ const typingPollMilliseconds = 20;
 
 describe("dictation queue", () => {
   it("types dictation that was not refined at the caret, even when refined prompts go to cmux", async () => {
-    const { keyboard, typed } = fakeKeyboard();
+    const { keyboard, typed } = createFakeKeyboard();
     const shutdown = new AbortController();
     const queue = startDictationQueue({
-      transcriber: fakeTranscriber("yes do it"),
+      transcriber: createFakeTranscriber("yes do it"),
       keyboard,
       status: makeStatusWriter({ model: "fake", backend: "none", recording: () => false }),
       shutdown: shutdown.signal,

@@ -1,5 +1,5 @@
 import { readTextIfPresent, writeFileAtomically } from "#src/storage/state-files.js";
-import { configFilePath } from "./agent-voice-home.js";
+import { readConfigFilePath } from "./agent-voice-home.js";
 import { type Config, decodeConfig, defaultConfig } from "./config-schema.js";
 
 const readSavedText = (filePath: string): string | null => {
@@ -22,7 +22,7 @@ const decodeSavedText = (request: { readonly filePath: string; readonly text: st
 
 // A file that cannot be read is an error, never the defaults, so `config set` never replaces it.
 export const readConfig = (): Config => {
-  const filePath = configFilePath();
+  const filePath = readConfigFilePath();
   const savedFileContents = readSavedText(filePath);
 
   const isThereNoSavedFile = savedFileContents === null;
@@ -72,5 +72,5 @@ export const readConfigOrDefaults = (): Config => {
 
 export const saveConfig = (config: Config): void => {
   const savedFileContents = JSON.stringify(config, null, 2);
-  writeFileAtomically({ path: configFilePath(), contents: `${savedFileContents}\n` });
+  writeFileAtomically({ path: readConfigFilePath(), contents: `${savedFileContents}\n` });
 };

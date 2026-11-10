@@ -62,7 +62,7 @@ const SYMBOL_REPLACEMENTS: ReadonlyArray<readonly [string, string]> = [
 const replaceAll = (text: string, [from, to]: readonly [string, string]) => text.split(from).join(to);
 
 // The same clean-up the Supertonic package does before it maps characters to model IDs.
-export const supertonicText = (text: string): string => {
+export const readSupertonicText = (text: string): string => {
   const withoutEmoji = text.normalize("NFKD").replace(EMOJI, "");
   const cleaned = SYMBOL_REPLACEMENTS.reduce(replaceAll, withoutEmoji)
     .replace(/[♥☆♡©\\]/gu, "")
@@ -80,7 +80,7 @@ export const supertonicText = (text: string): string => {
 };
 
 // A character the model has no ID for is dropped instead of failing the reply.
-export const characterIds = (text: string, indexer: ReadonlyArray<number>): ReadonlyArray<number> =>
+export const listCharacterIds = (text: string, indexer: ReadonlyArray<number>): ReadonlyArray<number> =>
   [...text].flatMap((character) => {
     const codePoint = character.codePointAt(0) || 0;
 
@@ -95,7 +95,7 @@ export const characterIds = (text: string, indexer: ReadonlyArray<number>): Read
   });
 
 // 200 wpm is Supertonic's 1.0x, and the model only takes 0.7x to 2.0x.
-export const speedForWordsPerMinute = (wordsPerMinute: number): number => {
+export const readSpeedFromWordsPerMinute = (wordsPerMinute: number): number => {
   const speed = wordsPerMinute / 200;
   const notTooSlow = Math.max(speed, 0.7);
   return Math.min(notTooSlow, 2);

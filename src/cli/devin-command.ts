@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 
 import { watchDevinSession } from "#src/agents/devin-watcher.js";
-import { stateFolder } from "#src/settings/agent-voice-home.js";
+import { readStateFolder } from "#src/settings/agent-voice-home.js";
 import { makePrivateFolder } from "#src/storage/state-files.js";
 import { startWorkers } from "#src/workers/worker-processes.js";
 import type { CommandSpec } from "./command-spec.js";
@@ -18,9 +18,9 @@ const runDevin = (devinArguments: ReadonlyArray<string>): Promise<number> =>
     child.on("exit", (code) => finishRun(code ?? killedExitCode));
   });
 
-const sessionFolder = (): string => {
+const readSessionFolder = (): string => {
   const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
-  const devinFolder = stateFolder("devin");
+  const devinFolder = readStateFolder("devin");
   return path.join(devinFolder, stamp);
 };
 
@@ -33,14 +33,14 @@ export const devinCommand: CommandSpec = {
   run: async (parsedCommand) => {
     TerminalUI.printIntro("devin");
     await startWorkers();
-    const folder = sessionFolder();
+    const folder = readSessionFolder();
     // Devin writes the whole session here, so the folder is private.
     makePrivateFolder(folder);
     const exportFile = path.join(folder, "session.atif.json");
     TerminalUI.printDetail(`Reading finished turns aloud from Devin's ATIF export (${exportFile}).`);
     const devinArguments = ["--export", exportFile, ...parsedCommand.extraArguments];
-    const session = () => runDevin(devinArguments);
-    const exitCode = await watchDevinSession({ exportFile, session });
+    const readSession = () => runDevin(devinArguments);
+    const exitCode = await watchDevinSession({ exportFile, readSession: readSession });
     TerminalUI.printOutro(`Devin exited with ${String(exitCode)}; the watcher stopped.`);
     return 0;
   },

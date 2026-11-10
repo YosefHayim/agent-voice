@@ -27,7 +27,7 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-const homeFile = (name: string): string => path.join(home, name);
+const readHomeFile = (name: string): string => path.join(home, name);
 
 const isAlive = (pid: number): boolean => {
   try {
@@ -50,11 +50,11 @@ const startSleeper = async (trailing: ReadonlyArray<string>): Promise<number> =>
 };
 
 const writePidFile = (name: string, pid: number) => {
-  const pidPath = homeFile(name);
+  const pidPath = readHomeFile(name);
   writeFileSync(pidPath, `${pid}`);
 };
 
-const eventually = async (check: () => boolean, timeoutMs = 3_000): Promise<boolean> => {
+const waitUntilTrue = async (check: () => boolean, timeoutMs = 3_000): Promise<boolean> => {
   const deadline = Date.now() + timeoutMs;
   while (!check() && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -70,7 +70,7 @@ describe("worker pid files", () => {
     const worker = await startSleeper(["worker", "dictation"]);
     writePidFile("dictation.pid", worker);
     writePidFile("speech.pid", worker);
-    expect(await eventually(() => isWorkerRunning("dictation"))).toBe(true);
+    expect(await waitUntilTrue(() => isWorkerRunning("dictation"))).toBe(true);
     expect(isWorkerRunning("speech")).toBe(false);
   });
 
@@ -81,12 +81,12 @@ describe("worker pid files", () => {
     }
     const speech = await startSleeper(["worker", "speech"]);
     writePidFile("speech.pid", speech);
-    expect(await eventually(() => isWorkerRunning("speech"))).toBe(true);
+    expect(await waitUntilTrue(() => isWorkerRunning("speech"))).toBe(true);
 
     await stopWorkers();
 
-    const dictationPidFile = homeFile("dictation.pid");
-    expect(await eventually(() => !isAlive(speech))).toBe(true);
+    const dictationPidFile = readHomeFile("dictation.pid");
+    expect(await waitUntilTrue(() => !isAlive(speech))).toBe(true);
     expect(isAlive(stranger)).toBe(true);
     expect(existsSync(dictationPidFile)).toBe(false);
   });
@@ -133,12 +133,12 @@ describe("worker lock", () => {
   it.skipIf(!isMacOS)(
     "lets exactly one of eight racing starters own the lock, even over a lock left by a SIGKILLed owner",
     async () => {
-      const go = homeFile("go");
-      const lockFile = homeFile("dictation.lock");
-      const pidFile = homeFile("dictation.pid");
+      const go = readHomeFile("go");
+      const lockFile = readHomeFile("dictation.lock");
+      const pidFile = readHomeFile("dictation.pid");
       writeFileSync(go, "");
       const crashed = startStarter({ go, holdMs: 60_000 });
-      expect(await eventually(() => crashed.stdoutSoFar().includes("owner"), 20_000)).toBe(true);
+      expect(await waitUntilTrue(() => crashed.stdoutSoFar().includes("owner"), 20_000)).toBe(true);
       process.kill(crashed.pid, "SIGKILL");
       await crashed.exited;
       expect(existsSync(lockFile)).toBe(true);
@@ -146,9 +146,13 @@ describe("worker lock", () => {
       rmSync(go);
 
       const racers = Array.from({ length: 8 }, () => startStarter({ go, holdMs: 2_000 }));
-      expect(await eventually(() => racers.every((racer) => racer.stdoutSoFar().includes("ready")), 20_000)).toBe(true);
+      expect(await waitUntilTrue(() => racers.every((racer) => racer.stdoutSoFar().includes("ready")), 20_000)).toBe(
+        true,
+      );
       writeFileSync(go, "");
-      expect(await eventually(() => racers.some((racer) => racer.stdoutSoFar().includes("owner")), 20_000)).toBe(true);
+      expect(await waitUntilTrue(() => racers.some((racer) => racer.stdoutSoFar().includes("owner")), 20_000)).toBe(
+        true,
+      );
       const owner = racers.find((racer) => racer.stdoutSoFar().includes("owner"));
       expect(readFileSync(pidFile, "utf8")).toBe(String(owner?.pid));
 

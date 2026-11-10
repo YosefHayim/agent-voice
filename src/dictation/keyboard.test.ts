@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeTestFolder } from "#src/testing/test-folder.js";
 
-import { loadKeyboard, unicodeChunks, utf16Units } from "./keyboard.js";
+import { listUnicodeChunks, loadKeyboard, readUtf16Units } from "./keyboard.js";
 
 const nativeKeyboard = vi.hoisted(() => ({
   pressed: new Set<number>(),
@@ -56,21 +56,21 @@ afterEach(() => {
 });
 
 describe("configured native hold key", () => {
-  const rightOptionKeyboard = () => {
+  const createRightOptionKeyboard = () => {
     const configPath = path.join(keyboardHome, "config.json");
     writeFileSync(configPath, '{"dictationHoldKey":"right-option"}');
     return loadKeyboard();
   };
 
   it.each([0x38, 0x3c, 0x37, 0x3b])("does not start a Right Option hold for key %i", async (key) => {
-    const keyboard = await rightOptionKeyboard();
+    const keyboard = await createRightOptionKeyboard();
     nativeKeyboard.pressed.add(key);
     expect(keyboard.holdDown()).toBe(false);
     expect(keyboard.otherModifiersDown()).toBe(true);
   });
 
   it("reads the physical Right Option key and excludes it from shortcut keys", async () => {
-    const keyboard = await rightOptionKeyboard();
+    const keyboard = await createRightOptionKeyboard();
     nativeKeyboard.pressed.add(0x3d);
     nativeKeyboard.flags = 0x80040n;
     expect(keyboard.holdDown()).toBe(true);
@@ -84,7 +84,7 @@ describe("configured native hold key", () => {
   });
 
   it("detects Right Option when macOS aliases it to the Left Option key code", async () => {
-    const keyboard = await rightOptionKeyboard();
+    const keyboard = await createRightOptionKeyboard();
     nativeKeyboard.pressed.add(0x3a);
     nativeKeyboard.flags = 524608n;
     expect(keyboard.holdDown()).toBe(true);
@@ -95,7 +95,7 @@ describe("configured native hold key", () => {
   });
 
   it("distinguishes Left Option and both Option keys from Right Option alone", async () => {
-    const keyboard = await rightOptionKeyboard();
+    const keyboard = await createRightOptionKeyboard();
     nativeKeyboard.pressed.add(0x3a);
     nativeKeyboard.flags = 0x80120n;
     expect(keyboard.holdDown()).toBe(false);
@@ -106,13 +106,13 @@ describe("configured native hold key", () => {
   });
 
   it("ignores a stale side flag after the Option modifier is released", async () => {
-    const keyboard = await rightOptionKeyboard();
+    const keyboard = await createRightOptionKeyboard();
     nativeKeyboard.flags = 0x40n;
     expect(keyboard.holdDown()).toBe(false);
   });
 
   it("releases Right Option rather than Shift before inserting a transcript", async () => {
-    const keyboard = await rightOptionKeyboard();
+    const keyboard = await createRightOptionKeyboard();
     keyboard.releaseHoldKey();
     expect(nativeKeyboard.createKeyEvent).toHaveBeenCalledExactlyOnceWith(undefined, 0x3d, false);
   });
@@ -128,12 +128,12 @@ describe("configured native hold key", () => {
 
 describe("utf16Units", () => {
   it("keeps both halves of a surrogate pair, so a dictated emoji is posted whole", () => {
-    expect([...utf16Units("a😀")]).toEqual([0x61, 0xd83d, 0xde00]);
+    expect([...readUtf16Units("a😀")]).toEqual([0x61, 0xd83d, 0xde00]);
   });
 
   it("never splits a surrogate pair across chunks, and posts every unit of every chunk", () => {
     const text = `${"x".repeat(19)}😀 done`;
-    expect(unicodeChunks(text)).toEqual(["x".repeat(19), "😀 done"]);
-    expect(unicodeChunks(text).flatMap((chunk) => [...utf16Units(chunk)])).toEqual([...utf16Units(text)]);
+    expect(listUnicodeChunks(text)).toEqual(["x".repeat(19), "😀 done"]);
+    expect(listUnicodeChunks(text).flatMap((chunk) => [...readUtf16Units(chunk)])).toEqual([...readUtf16Units(text)]);
   });
 });

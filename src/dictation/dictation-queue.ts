@@ -11,7 +11,7 @@ import { appendDictationLog } from "#src/workers/worker-log.js";
 import type { StatusWriter } from "#src/workers/worker-status.js";
 import { typeAtCaret } from "./caret.js";
 import { SAMPLE_RATE } from "./clip-audio.js";
-import { formatDictation, parseReplacements, promptBoost } from "./dictation-format.js";
+import { createDictationText, parseReplacements, readPromptBoost } from "./dictation-format.js";
 import type { Keyboard } from "./keyboard.js";
 import type { Transcriber } from "./transcriber.js";
 import { cleanTranscript, isShortPhrase } from "./transcript-text.js";
@@ -73,7 +73,7 @@ const keepDictation = (request: {
   return { promptText: request.dictatedText, isRefined: false };
 };
 
-const refinedOrDictated = async (request: {
+const readRefinedOrDictated = async (request: {
   readonly pipeline: DictationPipeline;
   readonly config: Config;
   readonly dictated: string;
@@ -138,7 +138,7 @@ const typeDictation = async (request: {
   readonly text: string;
 }): Promise<string> => {
   const replacements = parseReplacements(request.config.dictationReplacements);
-  const formatted = formatDictation(request.text, replacements);
+  const formatted = createDictationText(request.text, replacements);
   await typeAtCaret({
     keyboard: request.pipeline.keyboard,
     text: formatted,
@@ -190,7 +190,7 @@ const decodeAndDeliverJob = async (pipeline: DictationPipeline, job: DictationJo
   const transcription = await pipeline.transcriber.transcribe({
     samples: job.samples,
     language: config.dictationLanguage,
-    prompt: promptBoost(replacements),
+    prompt: readPromptBoost(replacements),
   });
   const dictated = cleanTranscript(transcription.text) || cleanTranscript(job.fallbackCaption);
   const decodeMs = transcription.decodeMs.toFixed(1);
@@ -206,7 +206,7 @@ const decodeAndDeliverJob = async (pipeline: DictationPipeline, job: DictationJo
     return;
   }
 
-  const prompt = await refinedOrDictated({ pipeline, config, dictated, generation: job.generation });
+  const prompt = await readRefinedOrDictated({ pipeline, config, dictated, generation: job.generation });
   const delivered = await deliverPrompt({ pipeline, config, prompt });
   const totalMs = (performance.now() - started).toFixed(1);
   appendDictationLog(`delivered gen=${generation} total_ms=${totalMs} text=${JSON.stringify(delivered)}`);

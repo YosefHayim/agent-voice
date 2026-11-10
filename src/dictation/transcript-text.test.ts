@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { SAMPLE_RATE } from "./clip-audio.js";
 import {
-  capWordsForDuration,
   cleanTranscript,
   collapseRepeatedRuns,
   isShortPhrase,
+  limitWordsToDuration,
   rejectNoiseHallucination,
   tidyWhisperText,
 } from "./transcript-text.js";
@@ -13,7 +13,7 @@ import {
 describe("transcript text", () => {
   it("caps a hallucinated run on a short clip to the words it could hold", () => {
     const invented = "hello there thank you for watching please subscribe and like this video forever";
-    const capped = capWordsForDuration(invented, 8_000);
+    const capped = limitWordsToDuration(invented, 8_000);
 
     expect(capped.split(" ").length).toBeLessThanOrEqual(3);
     expect(capped.startsWith("hello")).toBe(true);
@@ -24,7 +24,7 @@ describe("transcript text", () => {
       "like sometimes when i'm holding the control it still doesn't properly stt everything i'm saying and sometimes it's just partial understand what i'm saying or not even getting it so i'm not sure if it's the mic so please check the logs and fix the silence gate and the token cap";
 
     expect(spoken.split(" ").length).toBeGreaterThanOrEqual(45);
-    expect(capWordsForDuration(spoken, SAMPLE_RATE * 20)).toBe(spoken);
+    expect(limitWordsToDuration(spoken, SAMPLE_RATE * 20)).toBe(spoken);
   });
 
   it("rejects one-word music hallucinations on short clips but keeps real words", () => {

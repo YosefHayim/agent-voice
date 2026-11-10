@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeTestFolder } from "#src/testing/test-folder.js";
-import { codexFailedModels, markCodexModelFailed, saveRefineChoice } from "./refine-choices.js";
+import { markCodexModelFailed, readCodexFailedModels, saveRefineChoice } from "./refine-choices.js";
 
 let home = "";
 
@@ -27,7 +27,7 @@ describe("Codex failed models", () => {
     expect(readFileSync(failedList, "utf8")).toBe("gpt-5.3-codex-spark\no4-mini\n");
 
     saveRefineChoice({ provider: "codex", model: "o4-mini", effort: "low" });
-    expect([...codexFailedModels()]).toEqual(["gpt-5.3-codex-spark"]);
+    expect([...readCodexFailedModels()]).toEqual(["gpt-5.3-codex-spark"]);
   });
 
   it("never replaces a list it cannot read with one that holds only the latest model", () => {
@@ -39,6 +39,6 @@ describe("Codex failed models", () => {
     saveRefineChoice({ provider: "codex", model: "o4-mini", effort: "low" });
 
     expect(readlinkSync(failedList)).toBe("refine-codex-failed.txt");
-    expect([...codexFailedModels()]).toEqual([]);
+    expect([...readCodexFailedModels()]).toEqual([]);
   });
 });

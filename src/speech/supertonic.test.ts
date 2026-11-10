@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { samplesFromPcm } from "#src/dictation/clip-audio.js";
+import { readSamplesFromPcm } from "#src/dictation/clip-audio.js";
 import { loadTranscriber } from "#src/dictation/transcriber.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
 import { writeMarkdownWav } from "./speech-player.js";
@@ -72,7 +72,7 @@ describe.skipIf(!hasSupertonic)("Supertonic speech (smoke)", () => {
     execFileSync("afconvert", ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", outputFile, resampledFile]);
     const resampledBytes = readFileSync(resampledFile);
     const resampled = decodeWav(resampledBytes);
-    const samples = samplesFromPcm(resampled?.pcm || new Int16Array());
+    const samples = readSamplesFromPcm(resampled?.pcm || new Int16Array());
     const transcriber = await loadTranscriber(whisperModel);
     const transcription = await transcriber.transcribe({ samples, language: "en", prompt: "" });
     await transcriber.release();

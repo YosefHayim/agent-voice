@@ -90,7 +90,7 @@ const isTestWorkerRunning = (): boolean => {
 };
 
 // The hook exits only after spawn returned, so the worker is listed from the first check until it finds the lock taken.
-const testWorkerExited = async (): Promise<boolean> => {
+const isTestWorkerExited = async (): Promise<boolean> => {
   const deadline = Date.now() + WORKER_EXIT_TIMEOUT_MS;
   while (isTestWorkerRunning() && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -101,7 +101,7 @@ const testWorkerExited = async (): Promise<boolean> => {
 const runReply = (args: ReadonlyArray<string>, stdin: string) =>
   runAgentVoice({ args: ["reply", ...args], stdin, environment: { ...process.env, AGENT_VOICE_HOME: home } });
 
-const queued = (): ReadonlyArray<unknown> => {
+const listQueued = (): ReadonlyArray<unknown> => {
   const inbox = path.join(home, "inbox");
 
   const isInboxAbsent = !existsSync(inbox);
@@ -127,7 +127,7 @@ describe("agent-voice reply (the agent Stop hook)", () => {
     expect(execution.status).toBe(0);
     expect(execution.stdout).toBe("");
     expect(execution.stderr).toBe("");
-    expect(queued()).toEqual([
+    expect(listQueued()).toEqual([
       expect.objectContaining({ markdown, origin: { kind: "terminal" }, source: "claude-code" }),
     ]);
   });
@@ -141,7 +141,7 @@ describe("agent-voice reply (the agent Stop hook)", () => {
     });
 
     expect(execution.status).toBe(0);
-    expect(queued()).toEqual([]);
+    expect(listQueued()).toEqual([]);
     const speechLog = path.join(home, "speech-worker.log");
     expect(existsSync(speechLog)).toBe(false);
   });
@@ -160,7 +160,7 @@ describe("agent-voice reply (the agent Stop hook)", () => {
       expect(execution.status).toBe(0);
       const dictationLog = path.join(home, "dictation-worker.log");
       expect(existsSync(dictationLog)).toBe(true);
-      expect(await testWorkerExited()).toBe(true);
+      expect(await isTestWorkerExited()).toBe(true);
     } finally {
       closeSync(lock);
     }
@@ -175,7 +175,7 @@ describe("agent-voice reply (the agent Stop hook)", () => {
 
     expect(execution.status).toBe(0);
     expect(execution.stdout).toBe("");
-    expect(queued()).toEqual([]);
+    expect(listQueued()).toEqual([]);
   });
 
   it("binds a Cmux reply to its surface and never stores the socket capability", async () => {
@@ -191,7 +191,7 @@ describe("agent-voice reply (the agent Stop hook)", () => {
     });
 
     expect(execution.status).toBe(0);
-    expect(queued()).toEqual([
+    expect(listQueued()).toEqual([
       expect.objectContaining({
         origin: {
           kind: "cmux",
@@ -201,27 +201,29 @@ describe("agent-voice reply (the agent Stop hook)", () => {
         },
       }),
     ]);
-    const queuedReplies = queued();
+    const queuedReplies = listQueued();
     const queuedText = JSON.stringify(queuedReplies);
     expect(queuedText).not.toContain("must-not-leak");
   });
 
   it("queues a finished Grok turn and ignores a session close", async () => {
-    const grokStop = (reason: string, lastAssistantMessage: string) =>
+    const readGrokStop = (reason: string, lastAssistantMessage: string) =>
       JSON.stringify({ hookEventName: "Stop", reason, lastAssistantMessage });
 
-    await runHook({ agent: "grok", stdin: grokStop("shutdown", "Closing") });
-    expect(queued()).toEqual([]);
+    await runHook({ agent: "grok", stdin: readGrokStop("shutdown", "Closing") });
+    expect(listQueued()).toEqual([]);
 
-    await runHook({ agent: "grok", stdin: grokStop("end_turn", "Complete answer") });
-    expect(queued()).toEqual([expect.objectContaining({ markdown: "Complete answer", source: "grok" })]);
+    await runHook({ agent: "grok", stdin: readGrokStop("end_turn", "Complete answer") });
+    expect(listQueued()).toEqual([expect.objectContaining({ markdown: "Complete answer", source: "grok" })]);
   });
 
   it("falls back to the transcript after the latest genuine user prompt", async () => {
     const transcript = fileURLToPath(new URL("./fixtures/claude-transcript.jsonl", import.meta.url));
     await runHook({ agent: "codex", stdin: JSON.stringify({ transcript_path: transcript }) });
 
-    expect(queued()).toEqual([expect.objectContaining({ markdown: "First section\n\nSecond section\n\n- complete" })]);
+    expect(listQueued()).toEqual([
+      expect.objectContaining({ markdown: "First section\n\nSecond section\n\n- complete" }),
+    ]);
   });
 
   it("exits 0 with no output and queues nothing when --agent is unknown, missing, empty, or has extra arguments", async () => {
@@ -243,11 +245,11 @@ describe("agent-voice reply (the agent Stop hook)", () => {
         "",
       ]);
     }
-    expect(queued()).toEqual([]);
+    expect(listQueued()).toEqual([]);
 
     const extra = await runReply(["--agent=codex", "--later-flag"], stdin);
     expect([extra.status, extra.stdout, extra.stderr]).toEqual([0, "", ""]);
-    expect(queued()).toHaveLength(1);
+    expect(listQueued()).toHaveLength(1);
   });
 
   it("exits 0 with no output for garbage input, a missing transcript, or a broken config", async () => {
@@ -259,6 +261,6 @@ describe("agent-voice reply (the agent Stop hook)", () => {
     const droppedReply = JSON.stringify({ last_assistant_message: "dropped, because the defaults are muted" });
     const broken = await runReply(["--agent", "codex"], droppedReply);
     expect([broken.status, broken.stdout, broken.stderr]).toEqual([0, "", ""]);
-    expect(queued()).toEqual([]);
+    expect(listQueued()).toEqual([]);
   });
 });

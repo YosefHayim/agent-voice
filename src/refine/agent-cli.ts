@@ -15,7 +15,7 @@ interface FoundCli {
 }
 
 // GUI launchers and agent hooks often start with a minimal PATH that hides user-local CLIs.
-const extraBinFolders = (): ReadonlyArray<string> => {
+const listExtraBinFolders = (): ReadonlyArray<string> => {
   const home = homedir();
   return [
     path.join(home, ".local", "bin"),
@@ -33,7 +33,7 @@ const extraBinFolders = (): ReadonlyArray<string> => {
 const searchPath = (): string => {
   const inheritedPath = process.env.PATH || "/usr/bin:/bin";
   const inheritedFolders = inheritedPath.split(":");
-  const extraFolders = extraBinFolders();
+  const extraFolders = listExtraBinFolders();
   const folders = new Set([...inheritedFolders, ...extraFolders]);
   return [...folders].filter((folder) => folder !== "").join(":");
 };
@@ -110,10 +110,10 @@ export const runCli = (request: {
     });
   });
 
-export const cliOutputText = (run: CliRun): string => run.stdout.trim() || run.stderr.trim();
+export const readCliOutputText = (run: CliRun): string => run.stdout.trim() || run.stderr.trim();
 
 // stderr comes first: partial stdout must never hide the error that explains the exit.
-export const cliFailureText = (run: CliRun): string =>
+export const readCliFailureText = (run: CliRun): string =>
   [run.stderr.trim(), run.stdout.trim()].filter((text) => text !== "").join("\n");
 
 export const containsAny = (text: string, markers: ReadonlyArray<string>): boolean => {
@@ -121,7 +121,7 @@ export const containsAny = (text: string, markers: ReadonlyArray<string>): boole
   return markers.some((marker) => lowercase.includes(marker));
 };
 
-export const nonBlankLines = (text: string): ReadonlyArray<string> =>
+export const listNonBlankLines = (text: string): ReadonlyArray<string> =>
   text
     .split("\n")
     .map((line) => line.trim())
@@ -136,7 +136,7 @@ export const runCliLines = async (request: {
 }): Promise<ReadonlyArray<string>> => {
   try {
     const run = await runCli(request);
-    return nonBlankLines(`${run.stdout}\n${run.stderr}`);
+    return listNonBlankLines(`${run.stdout}\n${run.stderr}`);
   } catch (error) {
     console.error({ executable: request.executable, error });
     return [];

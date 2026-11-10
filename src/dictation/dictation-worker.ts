@@ -15,7 +15,7 @@ import { HOLD_POLL_MS } from "./hold-key.js";
 import { type Keyboard, loadKeyboard } from "./keyboard.js";
 import { captionLoop, makeLiveCaption } from "./live-preview.js";
 import { type ClipBuffer, type Microphone, makeClipBuffer, openMicrophone } from "./microphone.js";
-import { loadTranscriber, type Transcriber, whisperBackend } from "./transcriber.js";
+import { loadTranscriber, readWhisperBackend, type Transcriber } from "./transcriber.js";
 import { ensureWhisperModel, selectWhisperModel } from "./whisper-models.js";
 
 const stopCheckMilliseconds = 100;
@@ -107,7 +107,7 @@ const runWithTranscriber = async (request: {
   const clip = makeClipBuffer();
   const status = makeStatusWriter({
     model: request.transcriber.modelName,
-    backend: whisperBackend(),
+    backend: readWhisperBackend(),
     recording: clip.isConfirmedHold,
   });
   const keyboard = await loadKeyboard();
@@ -123,7 +123,7 @@ const loadModelAndRun = async (): Promise<void> => {
   const settings = readConfigOrDefaults();
   const environment = readEnvironment();
   const model = selectWhisperModel({ environment, config: settings });
-  const loading = makeStatusWriter({ model: model.file, backend: whisperBackend(), recording: () => false });
+  const loading = makeStatusWriter({ model: model.file, backend: readWhisperBackend(), recording: () => false });
   loading.write("starting", `Loading ${model.label}`);
 
   const modelPath = await ensureWhisperModel({
@@ -164,7 +164,7 @@ export const runDictationWorker = async (): Promise<void> => {
   } catch (error) {
     const detail = describeError(error);
     appendDictationLog(`worker failed: ${detail}`);
-    const failed = makeStatusWriter({ model: "", backend: whisperBackend(), recording: () => false });
+    const failed = makeStatusWriter({ model: "", backend: readWhisperBackend(), recording: () => false });
     failed.write("unavailable", detail);
     throw error;
   } finally {

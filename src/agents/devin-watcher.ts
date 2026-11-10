@@ -39,7 +39,7 @@ const POLL_INTERVAL_MS = 200;
 const exitGraceMilliseconds = TURN_SETTLE_MS + 2 * POLL_INTERVAL_MS;
 
 // The agent messages after the latest user step, joined; the turn ID is the last agent step's ID.
-export const latestDevinTurn = (atif: AtifExport): DevinTurn => {
+export const readLatestDevinTurn = (atif: AtifExport): DevinTurn => {
   const lastUser = atif.steps.map((step) => step.source).lastIndexOf("user");
   const agentSteps = atif.steps
     .slice(lastUser + 1)
@@ -71,7 +71,7 @@ const readTurn = (exportFile: string): DevinTurn => {
     return noTurn;
   }
 
-  return latestDevinTurn(savedExport);
+  return readLatestDevinTurn(savedExport);
 };
 
 // Returns the turn now spoken. A turn that cannot be queued is logged and passed over, so the watcher keeps reading
@@ -143,12 +143,12 @@ const watchDevinExport = async (exportFile: string, shutdown: AbortSignal): Prom
 // The watcher stops with the session however it ends, a Devin that never started included.
 export const watchDevinSession = async <SessionResult>(request: {
   readonly exportFile: string;
-  readonly session: () => Promise<SessionResult>;
+  readonly readSession: () => Promise<SessionResult>;
 }): Promise<SessionResult> => {
   const shutdown = new AbortController();
   const watcher = watchDevinExport(request.exportFile, shutdown.signal);
   try {
-    const sessionResult = await request.session();
+    const sessionResult = await request.readSession();
     await sleep(exitGraceMilliseconds);
     return sessionResult;
   } finally {

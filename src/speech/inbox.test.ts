@@ -8,15 +8,15 @@ import { focusFrom } from "./cmux-focus.js";
 import {
   claimNextReply,
   completeReply,
-  contentIdentity,
-  contentToken,
   failReply,
   isSpeaking,
+  isSpeaksForFocus,
   type QueuedReply,
   queueReply,
+  readContentIdentity,
+  readContentToken,
+  readSurfaceIdentity,
   replyIdentity,
-  speaksForFocus,
-  surfaceIdentity,
 } from "./inbox.js";
 
 let home = "";
@@ -39,7 +39,7 @@ const reply = (agentReplyId: string): QueuedReply => ({
   source: "claude-code",
 });
 
-const cmuxOrigin = (surfaceId: string) =>
+const readCmuxOrigin = (surfaceId: string) =>
   ({ kind: "cmux", socketPath: path.join(home, "no-cmux.sock"), workspaceId: "W1", surfaceId }) as const;
 
 const claimNext = (mode: Config["speechMode"]) => claimNextReply(mode);
@@ -55,7 +55,7 @@ const claimReply = async () => {
   return claimed;
 };
 
-const inboxNames = (): ReadonlyArray<string> => {
+const listInboxNames = (): ReadonlyArray<string> => {
   const inbox = path.join(home, "inbox");
 
   const isInboxAbsent = !existsSync(inbox);
@@ -66,44 +66,44 @@ const inboxNames = (): ReadonlyArray<string> => {
   return readdirSync(inbox);
 };
 
-const permissions = (file: string): number => statSync(file).mode & 0o777;
+const readPermissions = (file: string): number => statSync(file).mode & 0o777;
 
-const filePermissions = (folder: string): ReadonlyArray<number> =>
+const listFilePermissions = (folder: string): ReadonlyArray<number> =>
   readdirSync(folder).map((name) => {
     const file = path.join(folder, name);
-    return permissions(file);
+    return readPermissions(file);
   });
 
 describe("reply identity", () => {
   it("gives the same text the same stable token", () => {
-    expect(contentToken("hello world")).toBe(contentToken("hello world"));
-    expect(contentToken("hello world")).not.toBe(contentToken("hello world!"));
-    expect(contentToken("hello world")).toMatch(/^[0-9a-f]{16}:11$/u);
+    expect(readContentToken("hello world")).toBe(readContentToken("hello world"));
+    expect(readContentToken("hello world")).not.toBe(readContentToken("hello world!"));
+    expect(readContentToken("hello world")).toMatch(/^[0-9a-f]{16}:11$/u);
   });
 
   it("splits identity by reply ID but shares one content key", () => {
     const plain = reply("");
     const withId = reply("different-id");
     expect(replyIdentity(plain)).not.toBe(replyIdentity(withId));
-    expect(contentIdentity(plain)).toBe(contentIdentity(withId));
-    expect(replyIdentity(plain)).toBe(contentIdentity(plain));
-    expect(replyIdentity(withId)).toBe(`claude-code:terminal:different-id:${contentToken("Same reply")}`);
+    expect(readContentIdentity(plain)).toBe(readContentIdentity(withId));
+    expect(replyIdentity(plain)).toBe(readContentIdentity(plain));
+    expect(replyIdentity(withId)).toBe(`claude-code:terminal:different-id:${readContentToken("Same reply")}`);
   });
 
   it("keys a Cmux reply by workspace and surface", () => {
-    const cmuxReply = { ...reply(""), origin: cmuxOrigin("S1") };
-    expect(surfaceIdentity(cmuxReply)).toBe("W1:S1");
+    const cmuxReply = { ...reply(""), origin: readCmuxOrigin("S1") };
+    expect(readSurfaceIdentity(cmuxReply)).toBe("W1:S1");
     const terminalReply = reply("");
-    expect(surfaceIdentity(terminalReply)).toBe("");
+    expect(readSurfaceIdentity(terminalReply)).toBe("");
   });
 });
 
 describe("Cmux focus", () => {
   it("speaks a held reply only while its surface is focused and Cmux is in front", () => {
-    expect(speaksForFocus("W1:S1", { kind: "surface", surface: "W1:S1" })).toBe(true);
-    expect(speaksForFocus("W1:S1", { kind: "surface", surface: "W1:S2" })).toBe(false);
-    expect(speaksForFocus("W1:S1", { kind: "away" })).toBe(false);
-    expect(speaksForFocus("W1:S1", { kind: "unknown" })).toBe(true);
+    expect(isSpeaksForFocus("W1:S1", { kind: "surface", surface: "W1:S1" })).toBe(true);
+    expect(isSpeaksForFocus("W1:S1", { kind: "surface", surface: "W1:S2" })).toBe(false);
+    expect(isSpeaksForFocus("W1:S1", { kind: "away" })).toBe(false);
+    expect(isSpeaksForFocus("W1:S1", { kind: "unknown" })).toBe(true);
   });
 
   it("counts a focused surface only while a Cmux window is key", () => {
@@ -137,24 +137,24 @@ describe("inbox", () => {
 
     queueReply({ markdown: "once", source: "codex", agentReplyId: "turn-9", origin: { kind: "terminal" } });
     const next = await claimNext("auto");
-    expect(inboxNames()).toEqual([]);
+    expect(listInboxNames()).toEqual([]);
     expect(next).toBeNull();
   });
 
   it("lets the newest reply from a Cmux surface supersede older ones, and speaks it when Cmux cannot be asked", async () => {
-    queueReply({ markdown: "older", source: "codex", agentReplyId: "1", origin: cmuxOrigin("S1") });
-    queueReply({ markdown: "newer", source: "codex", agentReplyId: "2", origin: cmuxOrigin("S1") });
+    queueReply({ markdown: "older", source: "codex", agentReplyId: "1", origin: readCmuxOrigin("S1") });
+    queueReply({ markdown: "newer", source: "codex", agentReplyId: "2", origin: readCmuxOrigin("S1") });
 
     const claimed = await claimReply();
     expect(claimed.reply.markdown).toBe("newer");
-    expect(inboxNames().filter((name) => name.endsWith(".json"))).toEqual([]);
+    expect(listInboxNames().filter((name) => name.endsWith(".json"))).toEqual([]);
   });
 
   it("empties the queue when speech is off", async () => {
     queueReply({ markdown: "missed while off", source: "grok", agentReplyId: "", origin: { kind: "terminal" } });
     const next = await claimNext("off");
     expect(next).toBeNull();
-    expect(inboxNames()).toEqual([]);
+    expect(listInboxNames()).toEqual([]);
   });
 
   it("deletes unreadable and expired files and moves a failed reply aside", async () => {
@@ -173,7 +173,7 @@ describe("inbox", () => {
     const failed = path.join(home, "failed");
     const seenFile = path.join(home, "seen.json");
     const seenText = readFileSync(seenFile, "utf8");
-    expect(inboxNames()).toEqual([]);
+    expect(listInboxNames()).toEqual([]);
     expect(readdirSync(failed)).toHaveLength(1);
     expect(JSON.parse(seenText)).toBeTruthy();
   });
@@ -185,12 +185,12 @@ describe("inbox", () => {
     chmodSync(inbox, 0o755);
 
     queueReply({ markdown: "the agent's reply", source: "codex", agentReplyId: "", origin: { kind: "terminal" } });
-    expect(permissions(inbox)).toBe(0o700);
-    expect(filePermissions(inbox)).toEqual([0o600]);
+    expect(readPermissions(inbox)).toBe(0o700);
+    expect(listFilePermissions(inbox)).toEqual([0o600]);
 
     const claimed = await claimReply();
     failReply(claimed.file);
-    expect(permissions(failed)).toBe(0o700);
-    expect(filePermissions(failed)).toEqual([0o600]);
+    expect(readPermissions(failed)).toBe(0o700);
+    expect(listFilePermissions(failed)).toEqual([0o600]);
   });
 });

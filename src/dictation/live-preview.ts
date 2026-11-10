@@ -57,8 +57,8 @@ const captionOnce = async (request: CaptionRequest): Promise<void> => {
   try {
     const config = readConfigOrDefaults();
     const clipNumber = request.clip.clipNumber();
-    const samples = request.clip.tail(CAPTION_TAIL_SECONDS);
-    const heard = await request.transcriber.caption({ samples, language: config.dictationLanguage });
+    const samples = request.clip.readLastSeconds(CAPTION_TAIL_SECONDS);
+    const heard = await request.transcriber.readCaption({ samples, language: config.dictationLanguage });
     const text = cleanTranscript(heard ?? "");
     // A pass that finishes after its hold ended and a new one began holds the old hold's words: drop it.
     const isSameHold = request.clip.isRecording() && request.clip.clipNumber() === clipNumber;

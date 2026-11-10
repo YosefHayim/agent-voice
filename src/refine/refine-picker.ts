@@ -3,13 +3,13 @@ import { type CliRun, dedupe, runCli } from "./agent-cli.js";
 import {
   CODEX_MODEL_FALLBACKS,
   CODEX_PICKER_MODELS,
-  codexCachedModels,
   type DiscoveredProvider,
   discoverProviders,
+  listCodexCachedModels,
   type ProviderId,
   REASONING_EFFORTS,
 } from "./provider-models.js";
-import { codexLastGoodModel, DEFAULT_REFINE_EFFORT, readSavedChoice } from "./refine-choices.js";
+import { DEFAULT_REFINE_EFFORT, readCodexLastGoodModel, readSavedChoice } from "./refine-choices.js";
 
 // ASCII hyphens: AppleScript "choose from list" can choke on em dashes.
 export const SKIP_REFINE_LABEL = "-- Skip refine (keep the dictated text) --";
@@ -170,9 +170,9 @@ export const listPickerModels = (request: {
     return dedupe([preferred, ...listed]);
   }
 
-  const lastGood = codexLastGoodModel();
+  const lastGood = readCodexLastGoodModel();
   const saved = readSavedCodexModel();
-  const cached = codexCachedModels();
+  const cached = listCodexCachedModels();
   return dedupe([preferred, lastGood, saved, ...listed, ...cached, ...CODEX_PICKER_MODELS, ...CODEX_MODEL_FALLBACKS]);
 };
 

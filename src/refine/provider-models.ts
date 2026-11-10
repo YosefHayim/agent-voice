@@ -4,8 +4,8 @@ import path from "node:path";
 import { z } from "zod";
 
 import { readJsonFile, readTextIfReadable } from "#src/storage/state-files.js";
-import { containsAny, dedupe, findFirstCli, nonBlankLines, runCliLines } from "./agent-cli.js";
-import { codexLastGoodModel } from "./refine-choices.js";
+import { containsAny, dedupe, findFirstCli, listNonBlankLines, runCliLines } from "./agent-cli.js";
+import { readCodexLastGoodModel } from "./refine-choices.js";
 
 export const providerIdSchema = z.enum(["codex", "claude", "gemini", "grok", "ollama", "opencode", "pi"]);
 
@@ -52,7 +52,7 @@ const listLines = (request: { readonly executable: string; readonly args: Readon
     signal: AbortSignal.timeout(LISTING_TIMEOUT_MS),
   });
 
-const helpLines = (executable: string) =>
+const listHelpLines = (executable: string) =>
   runCliLines({
     executable,
     args: ["--help"],
@@ -62,13 +62,14 @@ const helpLines = (executable: string) =>
 
 const findMatches = (line: string, pattern: RegExp): ReadonlyArray<string> => line.match(pattern) ?? [];
 
-const firstWord = (line: string): string => line.split(/\s+/u)[0] ?? "";
+const readFirstWord = (line: string): string => line.split(/\s+/u)[0] ?? "";
 
-const bareWord = (token: string): string => firstWord(token).replace(EDGE_BRACKETS, "");
+const readBareWord = (token: string): string => readFirstWord(token).replace(EDGE_BRACKETS, "");
 
-const topModels = (tokens: ReadonlyArray<string>): ReadonlyArray<string> => dedupe(tokens).slice(0, MAX_LISTED_MODELS);
+const listTopModels = (tokens: ReadonlyArray<string>): ReadonlyArray<string> =>
+  dedupe(tokens).slice(0, MAX_LISTED_MODELS);
 
-const codexFile = (name: string): string => {
+const readCodexFile = (name: string): string => {
   const home = homedir();
   return path.join(home, ".codex", name);
 };
@@ -90,11 +91,11 @@ const isVisibleModel = (model: CodexCachedModel): boolean => {
   return !HIDDEN_VISIBILITIES.includes(visibility);
 };
 
-const modelSlug = (model: CodexCachedModel): string => (model.slug || model.id || "").trim();
+const readModelSlug = (model: CodexCachedModel): string => (model.slug || model.id || "").trim();
 
 // The live account catalog the Codex CLI caches.
-export const codexCachedModels = (): ReadonlyArray<string> => {
-  const modelsCache = readJsonFile({ path: codexFile("models_cache.json"), schema: codexModelsCacheSchema });
+export const listCodexCachedModels = (): ReadonlyArray<string> => {
+  const modelsCache = readJsonFile({ path: readCodexFile("models_cache.json"), schema: codexModelsCacheSchema });
 
   const isCacheMissing = modelsCache === null;
   if (isCacheMissing) {
@@ -103,16 +104,16 @@ export const codexCachedModels = (): ReadonlyArray<string> => {
 
   return modelsCache.models
     .filter(isVisibleModel)
-    .map(modelSlug)
+    .map(readModelSlug)
     .filter((slug) => slug !== "");
 };
 
 const isModelSetting = (line: string): boolean =>
   line.startsWith("model") && !line.startsWith("model_") && line.includes("=");
 
-const codexConfiguredModel = (): ReadonlyArray<string> => {
-  const configToml = readTextIfReadable(codexFile("config.toml")) ?? "";
-  const modelLine = nonBlankLines(configToml).find(isModelSetting);
+const listCodexConfiguredModel = (): ReadonlyArray<string> => {
+  const configToml = readTextIfReadable(readCodexFile("config.toml")) ?? "";
+  const modelLine = listNonBlankLines(configToml).find(isModelSetting);
   const model = (modelLine || "")
     .split("=")
     .slice(1)
@@ -130,29 +131,29 @@ const codexConfiguredModel = (): ReadonlyArray<string> => {
 
 const listCodexModels = async (): Promise<ReadonlyArray<string>> =>
   dedupe([
-    ...codexConfiguredModel(),
-    ...codexCachedModels(),
-    codexLastGoodModel(),
+    ...listCodexConfiguredModel(),
+    ...listCodexCachedModels(),
+    readCodexLastGoodModel(),
     ...CODEX_PICKER_MODELS,
     ...CODEX_MODEL_FALLBACKS,
   ]);
 
-const ollamaModelNames = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
+const listOllamaModelNames = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
   lines
     .slice(1)
-    .map(firstWord)
+    .map(readFirstWord)
     .filter((name) => name !== "" && name.toUpperCase() !== "NAME");
 
 const listOllamaModels = async (): Promise<ReadonlyArray<string>> => {
   const ollamaListLines = await listLines({ executable: "ollama", args: ["list"] });
-  return ollamaModelNames(ollamaListLines);
+  return listOllamaModelNames(ollamaListLines);
 };
 
 const CLAUDE_FALLBACK = ["claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5", "sonnet", "opus", "haiku"];
 const CLAUDE_ALIASES = ["sonnet", "opus", "haiku"];
 const CLAUDE_LOGGED_OUT_MARKERS = ["not logged in", "please run /login", "please login"];
 
-const claudeModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
+const listClaudeModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
   lines
     .filter((line) => !line.toLowerCase().startsWith("usage") && !line.startsWith("-"))
     .flatMap((line) => [
@@ -170,7 +171,7 @@ const listClaudeModels = async (): Promise<ReadonlyArray<string>> => {
       return CLAUDE_FALLBACK;
     }
 
-    const tokens = claudeModelTokens(lines);
+    const tokens = listClaudeModelTokens(lines);
 
     const hasTokens = tokens.length > 0;
     if (hasTokens) {
@@ -182,7 +183,7 @@ const listClaudeModels = async (): Promise<ReadonlyArray<string>> => {
 };
 
 // agy prints IDs glued to their Title Case label: "gemini-3.6-flash-highGemini 3.6 Flash (High)".
-const unglueLabel = (label: string): string => (label.split(/(?<=[a-z0-9])(?=[A-Z][a-z])/u)[0] ?? "").trim();
+const readUnglueLabel = (label: string): string => (label.split(/(?<=[a-z0-9])(?=[A-Z][a-z])/u)[0] ?? "").trim();
 
 const GEMINI_FALLBACK = [
   "gemini-3.6-flash-low",
@@ -193,11 +194,11 @@ const GEMINI_FALLBACK = [
   "gemini-2.0-flash",
 ];
 
-const agyModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
+const listAgyModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
   lines
     .filter((line) => !/^(?:usage|fetching|error|options)/iu.test(line))
-    .map(unglueLabel)
-    .map(bareWord)
+    .map(readUnglueLabel)
+    .map(readBareWord)
     .filter((token) => /^(?:gemini-|claude-|gpt-)/u.test(token));
 
 // Only agy has a models command; gemini names its models in its help text.
@@ -208,7 +209,7 @@ const listAgyModels = async (cli: { readonly name: string; readonly path: string
   }
 
   const agyLines = await listLines({ executable: cli.path, args: ["models"] });
-  return agyModelTokens(agyLines);
+  return listAgyModelTokens(agyLines);
 };
 
 // Models of the CLI refine runs (gemini before agy): agy's list also holds Claude and GPT IDs that gemini rejects.
@@ -224,24 +225,24 @@ const listGeminiModels = async (): Promise<ReadonlyArray<string>> => {
 
   const hasAgyModels = agyModels.length > 0;
   if (hasAgyModels) {
-    return topModels(agyModels);
+    return listTopModels(agyModels);
   }
 
-  const help = await helpLines(cli.path);
-  const helpModels = help.flatMap((line) => findMatches(line, /gemini-[\w.-]+/gu).map(unglueLabel));
+  const help = await listHelpLines(cli.path);
+  const helpModels = help.flatMap((line) => findMatches(line, /gemini-[\w.-]+/gu).map(readUnglueLabel));
 
   const isHelpEmpty = helpModels.length === 0;
   if (isHelpEmpty) {
     return GEMINI_FALLBACK;
   }
 
-  return topModels(helpModels);
+  return listTopModels(helpModels);
 };
 
 const GROK_FALLBACK = ["grok-4.5", "grok-4", "grok-3", "grok-3-mini"];
 const GROK_MODEL = /\bgrok-[\w.-]+\b/gu;
 
-const grokListedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
+const listGrokListedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   const headingIndex = lines.findIndex((line) => line.toLowerCase().includes("available model"));
 
   const isHeadingMissing = headingIndex < 0;
@@ -252,16 +253,16 @@ const grokListedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> =
   return lines
     .slice(headingIndex + 1)
     .map((line) => line.replace(/^[\s*•-]+/u, ""))
-    .map(bareWord)
+    .map(readBareWord)
     .filter((token) => token.startsWith("grok-"));
 };
 
-const grokMentionedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
+const listGrokMentionedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
   lines.flatMap((line) => findMatches(line, GROK_MODEL));
 
-const grokModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
-  const listed = grokListedModels(lines);
-  const mentioned = grokMentionedModels(lines);
+const listGrokModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const listed = listGrokListedModels(lines);
+  const mentioned = listGrokMentionedModels(lines);
   return dedupe([...listed, ...mentioned]);
 };
 
@@ -278,15 +279,15 @@ const listGrokLines = async (): Promise<ReadonlyArray<string>> => {
 
 const listGrokModels = async (): Promise<ReadonlyArray<string>> => {
   const lines = await listGrokLines();
-  const tokens = grokModelTokens(lines);
+  const tokens = listGrokModelTokens(lines);
 
   const hasTokens = tokens.length > 0;
   if (hasTokens) {
     return tokens;
   }
 
-  const help = await helpLines("grok");
-  const helpModels = dedupe(grokMentionedModels(help));
+  const help = await listHelpLines("grok");
+  const helpModels = dedupe(listGrokMentionedModels(help));
 
   const isHelpEmpty = helpModels.length === 0;
   if (isHelpEmpty) {
@@ -296,7 +297,7 @@ const listGrokModels = async (): Promise<ReadonlyArray<string>> => {
   return helpModels;
 };
 
-const opencodeLineModels = (line: string): ReadonlyArray<string> => {
+const listOpencodeLineModels = (line: string): ReadonlyArray<string> => {
   const isModelLine = /^[\w.-]+\/[\w.-]+$/u.test(line);
   if (isModelLine) {
     return [line];
@@ -305,17 +306,17 @@ const opencodeLineModels = (line: string): ReadonlyArray<string> => {
   return findMatches(line, /[\w.-]+\/[\w.-]+/gu).filter((token) => !token.includes("http"));
 };
 
-const opencodeModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
-  lines.filter((line) => !/^(?:usage|error|options)/iu.test(line)).flatMap(opencodeLineModels);
+const listOpencodeModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
+  lines.filter((line) => !/^(?:usage|error|options)/iu.test(line)).flatMap(listOpencodeLineModels);
 
 const listOpencodeModels = async (): Promise<ReadonlyArray<string>> => {
   for (const args of [["models"], ["model", "list"]]) {
     const lines = await listLines({ executable: "opencode", args });
-    const found = opencodeModelTokens(lines);
+    const found = listOpencodeModelTokens(lines);
 
     const hasFound = found.length > 0;
     if (hasFound) {
-      return topModels(found);
+      return listTopModels(found);
     }
   }
 
@@ -328,7 +329,7 @@ const PI_TABLE_COLUMNS = ["context", "max-out", "thinking", "images"];
 const PI_HINT_MARKERS = ["login", "api key", "providers.md", "models.md"];
 const PI_LOGGED_OUT_MARKERS = ["no models available", "no api key", "use /login", "not logged in"];
 
-const piRank = (token: string): number => {
+const readPiRank = (token: string): number => {
   const lowercase = token.toLowerCase();
 
   const isOpenrouterInLowercase = lowercase.includes("openrouter");
@@ -346,9 +347,10 @@ const piRank = (token: string): number => {
   return rank;
 };
 
-const byPiRank = (left: string, right: string): number => piRank(left) - piRank(right) || left.localeCompare(right);
+const readByPiRank = (left: string, right: string): number =>
+  readPiRank(left) - readPiRank(right) || left.localeCompare(right);
 
-const piLineModels = (line: string): ReadonlyArray<string> => {
+const listPiLineModels = (line: string): ReadonlyArray<string> => {
   const slashTokens = findMatches(line, /\b[a-z][\w.-]*\/[\w.:-]+\b/giu).filter(
     (token) => !token.toLowerCase().includes("http"),
   );
@@ -372,11 +374,11 @@ const piLineModels = (line: string): ReadonlyArray<string> => {
   return [`${provider}/${model}`];
 };
 
-const piModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
+const listPiModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
   lines
     .filter((line) => !/^(?:usage|options|commands|pi |use |see:|error|provider)/iu.test(line))
     .filter((line) => !containsAny(line, PI_HINT_MARKERS))
-    .flatMap(piLineModels);
+    .flatMap(listPiLineModels);
 
 const rankPiModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   const listing = lines.join("\n");
@@ -386,9 +388,9 @@ const rankPiModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
     return ["default"];
   }
 
-  const tokens = piModelTokens(lines);
+  const tokens = listPiModelTokens(lines);
   const uniqueTokens = dedupe(tokens);
-  const ranked = [...uniqueTokens].sort(byPiRank);
+  const ranked = [...uniqueTokens].sort(readByPiRank);
 
   const isRankedEmpty = ranked.length <= 0;
   if (isRankedEmpty) {
@@ -398,11 +400,11 @@ const rankPiModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   return ranked.slice(0, MAX_LISTED_MODELS);
 };
 
-const piExecutable = (): string => findFirstCli(["pi", "pie"])?.path ?? "pi";
+const readPiExecutable = (): string => findFirstCli(["pi", "pie"])?.path ?? "pi";
 
 // provider/model IDs from the `pi --list-models` table ("openai-codex  gpt-5.4-mini  272K ..."), from pi or pie.
 const listPiModels = async (): Promise<ReadonlyArray<string>> => {
-  const executable = piExecutable();
+  const executable = readPiExecutable();
   const piLines = await listLines({ executable, args: ["--list-models"] });
   return rankPiModels(piLines);
 };
@@ -448,7 +450,7 @@ export const isProviderInstalled = (provider: ProviderId): boolean => {
   return cli !== null;
 };
 
-export const providerModels = async (provider: ProviderId): Promise<ReadonlyArray<string>> => {
+export const listProviderModels = async (provider: ProviderId): Promise<ReadonlyArray<string>> => {
   const spec = findProviderSpec(provider);
 
   const isUnknownProvider = spec === null;
@@ -459,7 +461,7 @@ export const providerModels = async (provider: ProviderId): Promise<ReadonlyArra
   return spec.listModels();
 };
 
-const withDefaultModel = (models: ReadonlyArray<string>): ReadonlyArray<string> => {
+const readModelsOrDefault = (models: ReadonlyArray<string>): ReadonlyArray<string> => {
   const hasNoModels = models.length === 0;
   if (hasNoModels) {
     return ["default"];
@@ -482,7 +484,7 @@ const describeProvider = async (spec: ProviderSpec): Promise<DiscoveredProvider 
     binary: cli.name,
     path: cli.path,
     effort: spec.effort,
-    models: withDefaultModel(models),
+    models: readModelsOrDefault(models),
   };
 };
 

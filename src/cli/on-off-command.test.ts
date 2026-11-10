@@ -25,30 +25,30 @@ const claudeSettings =
 
 const codexHooks = '{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"guard"}]}]}}\n';
 
-const inHome = (relative: string) => path.join(home, relative);
+const createHomePath = (relative: string) => path.join(home, relative);
 
 const read = (relative: string) => {
-  const file = inHome(relative);
+  const file = createHomePath(relative);
   return readFileSync(file, "utf8");
 };
 
 const write = (relative: string, contents: string) => {
-  const file = inHome(relative);
+  const file = createHomePath(relative);
   writeFileSync(file, contents);
 };
 
-const exists = (relative: string) => {
-  const file = inHome(relative);
+const hasFile = (relative: string) => {
+  const file = createHomePath(relative);
   return existsSync(file);
 };
 
 const remove = (relative: string) => {
-  const file = inHome(relative);
+  const file = createHomePath(relative);
   rmSync(file, { recursive: true });
 };
 
 const makeFolder = (relative: string) => {
-  const folder = inHome(relative);
+  const folder = createHomePath(relative);
   mkdirSync(folder, { recursive: true });
 };
 
@@ -62,8 +62,8 @@ beforeEach(() => {
   // `off` sweeps agent-voice workers by command line across the whole Mac; this ps lists none, so the test never
   // signals a process it did not start (an agent-voice the developer is running keeps running).
   makeFolder("bin");
-  psLog = inHome("ps.log");
-  const psScript = inHome("bin/ps");
+  psLog = createHomePath("ps.log");
+  const psScript = createHomePath("bin/ps");
   writeFileSync(psScript, `#!/bin/sh\necho "$@" >> '${psLog}'\n`, { mode: 0o755 });
 });
 
@@ -72,44 +72,44 @@ afterEach(() => {
 });
 
 // CLAUDE_CONFIG_DIR is cleared unless a test sets it, so a run inside Claude Code never edits the developer's own settings.
-const agentVoice = (args: ReadonlyArray<string>, claudeConfigFolder = "") =>
+const readAgentVoice = (args: ReadonlyArray<string>, claudeConfigFolder = "") =>
   runAgentVoice({
     args,
     environment: {
       ...process.env,
       HOME: home,
-      AGENT_VOICE_HOME: inHome(".agent-voice"),
+      AGENT_VOICE_HOME: createHomePath(".agent-voice"),
       CLAUDE_CONFIG_DIR: claudeConfigFolder,
-      PATH: `${inHome("bin")}:${process.env.PATH || ""}`,
+      PATH: `${createHomePath("bin")}:${process.env.PATH || ""}`,
     },
   });
 
 describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", () => {
   it("keeps settings backups private, tightening a backups folder an older build left open", async () => {
-    const agentVoiceFolder = inHome(".agent-voice");
-    const backups = inHome(".agent-voice/backups");
-    const claudeSettingsFile = inHome(".claude/settings.json");
+    const agentVoiceFolder = createHomePath(".agent-voice");
+    const backups = createHomePath(".agent-voice/backups");
+    const claudeSettingsFile = createHomePath(".claude/settings.json");
     mkdirSync(backups, { recursive: true });
     chmodSync(agentVoiceFolder, 0o755);
     chmodSync(backups, 0o755);
     chmodSync(claudeSettingsFile, 0o644);
 
-    const on = await agentVoice(["on", "--hooks-only"]);
+    const on = await readAgentVoice(["on", "--hooks-only"]);
     expect(on.status).toBe(0);
 
-    const permissions = (file: string) => statSync(file).mode & 0o777;
-    expect(permissions(agentVoiceFolder)).toBe(0o700);
-    expect(permissions(backups)).toBe(0o700);
+    const readPermissions = (file: string) => statSync(file).mode & 0o777;
+    expect(readPermissions(agentVoiceFolder)).toBe(0o700);
+    expect(readPermissions(backups)).toBe(0o700);
     for (const backup of readdirSync(backups)) {
       const backupFile = path.join(backups, backup);
-      expect(permissions(backupFile)).toBe(0o600);
+      expect(readPermissions(backupFile)).toBe(0o600);
     }
-    expect(permissions(claudeSettingsFile)).toBe(0o644);
+    expect(readPermissions(claudeSettingsFile)).toBe(0o644);
   });
 
   it("adds one reply hook per installed agent, backs files up, and removes exactly what it added", async () => {
-    const backups = inHome(".agent-voice/backups");
-    const on = await agentVoice(["on", "--hooks-only"]);
+    const backups = createHomePath(".agent-voice/backups");
+    const on = await readAgentVoice(["on", "--hooks-only"]);
     expect(on.status).toBe(0);
     expect(read(".claude/settings.json")).toContain("// keep this comment");
     expect(read(".claude/settings.json")).toContain("reply --agent claude-code");
@@ -117,20 +117,20 @@ describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", ()
     expect(read(".grok/hooks/agent-voice.json")).toContain("reply --agent grok");
     expect(readdirSync(backups)).toHaveLength(2);
 
-    const again = await agentVoice(["on", "--hooks-only"]);
+    const again = await readAgentVoice(["on", "--hooks-only"]);
     expect(again.stdout).toContain("already registered");
     expect(read(".claude/settings.json").match(/reply --agent claude-code/gu)).toHaveLength(1);
 
-    const statusRun = await agentVoice(["status", "--json"]);
+    const statusRun = await readAgentVoice(["status", "--json"]);
     const status = JSON.parse(statusRun.stdout);
     expect(status.hooks).toEqual(["claude-code", "codex", "grok"]);
 
-    const off = await agentVoice(["off"]);
+    const off = await readAgentVoice(["off"]);
     expect(off.status).toBe(0);
     expect(readFileSync(psLog, "utf8")).toContain("-ax");
     expect(read(".claude/settings.json")).toBe(claudeSettings);
     expect(read(".codex/hooks.json")).toBe(codexHooks);
-    expect(exists(".grok/hooks/agent-voice.json")).toBe(false);
+    expect(hasFile(".grok/hooks/agent-voice.json")).toBe(false);
   });
 
   it("adds the hook in every Claude Code config folder, replaces an entry left by a moved install, and removes it all without CLAUDE_CONFIG_DIR", async () => {
@@ -141,27 +141,27 @@ describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", ()
     write(".claude-work/settings.json", staleSettings);
     makeFolder(".claude-notes");
     makeFolder("work/.claude");
-    const customFolder = inHome("work/.claude");
-    const backups = inHome(".agent-voice/backups");
+    const customFolder = createHomePath("work/.claude");
+    const backups = createHomePath(".agent-voice/backups");
 
-    const on = await agentVoice(["on", "--hooks-only"], customFolder);
+    const on = await readAgentVoice(["on", "--hooks-only"], customFolder);
     expect(on.status).toBe(0);
     expect(read(".claude/settings.json")).toContain("reply --agent claude-code");
     expect(read(".claude-work/settings.json").match(/reply --agent claude-code/gu)).toHaveLength(1);
     expect(read(".claude-work/settings.json")).not.toContain("voxkey");
     expect(read("work/.claude/settings.json")).toContain("reply --agent claude-code");
-    expect(exists(".claude-notes/settings.json")).toBe(false);
+    expect(hasFile(".claude-notes/settings.json")).toBe(false);
     expect(readdirSync(backups)).toHaveLength(3);
 
-    const statusRun = await agentVoice(["status", "--json"]);
+    const statusRun = await readAgentVoice(["status", "--json"]);
     const status = JSON.parse(statusRun.stdout);
     expect(status.hooks).toEqual(["claude-code", "codex", "grok"]);
 
-    const off = await agentVoice(["off"]);
+    const off = await readAgentVoice(["off"]);
     expect(off.status).toBe(0);
     expect(read(".claude/settings.json")).toBe(claudeSettings);
     expect(read(".claude-work/settings.json")).not.toContain("reply --agent");
-    expect(exists("work/.claude/settings.json")).toBe(false);
+    expect(hasFile("work/.claude/settings.json")).toBe(false);
   });
 
   it("deletes a settings file agent-voice created once it is empty again, and keeps an empty file that was there before", async () => {
@@ -169,33 +169,33 @@ describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", ()
     remove(".claude/settings.json");
     write(".grok/other.json", "{}\n");
 
-    const firstOn = await agentVoice(["on", "--hooks-only"]);
+    const firstOn = await readAgentVoice(["on", "--hooks-only"]);
     expect(firstOn.status).toBe(0);
     expect(read(".codex/hooks.json")).toContain("reply --agent codex");
     expect(read(".claude/settings.json")).toContain("reply --agent claude-code");
 
-    const firstOff = await agentVoice(["off"]);
+    const firstOff = await readAgentVoice(["off"]);
     expect(firstOff.status).toBe(0);
-    expect(exists(".codex/hooks.json")).toBe(false);
-    expect(exists(".claude/settings.json")).toBe(false);
+    expect(hasFile(".codex/hooks.json")).toBe(false);
+    expect(hasFile(".claude/settings.json")).toBe(false);
     expect(read(".grok/other.json")).toBe("{}\n");
 
     write(".codex/hooks.json", "{}\n");
-    const secondOn = await agentVoice(["on", "--hooks-only"]);
+    const secondOn = await readAgentVoice(["on", "--hooks-only"]);
     expect(secondOn.status).toBe(0);
-    const secondOff = await agentVoice(["off"]);
+    const secondOff = await readAgentVoice(["off"]);
     expect(secondOff.status).toBe(0);
     expect(read(".codex/hooks.json")).toBe("{}\n");
   });
 
   it("leaves a settings file it cannot read exactly as it is, instead of replacing it", async () => {
     // A symlink to itself cannot be read by anyone; a mode-000 file can still be read by root.
-    const settings = inHome(".claude/settings.json");
-    const backups = inHome(".agent-voice/backups");
+    const settings = createHomePath(".claude/settings.json");
+    const backups = createHomePath(".agent-voice/backups");
     rmSync(settings);
     symlinkSync("settings.json", settings);
 
-    const on = await agentVoice(["on", "--hooks-only"]);
+    const on = await readAgentVoice(["on", "--hooks-only"]);
     expect(on.status).toBe(0);
     expect(on.stdout).toContain("could not be read");
     expect(readlinkSync(settings)).toBe("settings.json");
@@ -205,11 +205,11 @@ describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", ()
   it("does not claim there is no hook when the only agent's settings could not be read", async () => {
     remove(".codex");
     remove(".grok");
-    const settings = inHome(".claude/settings.json");
+    const settings = createHomePath(".claude/settings.json");
     rmSync(settings);
     symlinkSync("settings.json", settings);
 
-    const on = await agentVoice(["on", "--hooks-only"]);
+    const on = await readAgentVoice(["on", "--hooks-only"]);
     expect(on.status).toBe(0);
     expect(on.stdout).toContain("No agent hook was confirmed as registered");
     expect(on.stdout).not.toContain("No agent hook is registered");
@@ -220,7 +220,7 @@ describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", ()
     remove(".codex");
     remove(".grok");
 
-    const on = await agentVoice(["on", "--hooks-only"]);
+    const on = await readAgentVoice(["on", "--hooks-only"]);
     expect(on.status).toBe(0);
     expect(on.stdout).toContain("No agent hook was confirmed as registered");
     expect(on.stdout).not.toContain("Hooks registered");
@@ -230,7 +230,7 @@ describe("agent-voice on --hooks-only and agent-voice off in a scratch HOME", ()
     remove(".grok");
     write(".codex/hooks.json", "{ not json");
 
-    const on = await agentVoice(["on", "--hooks-only"]);
+    const on = await readAgentVoice(["on", "--hooks-only"]);
     expect(on.status).toBe(0);
     expect(on.stdout).toContain("Grok: not installed, skipped");
     expect(on.stdout).toContain("left unchanged");

@@ -17,7 +17,7 @@ afterEach(() => {
   rmSync(folder, { recursive: true, force: true });
 });
 
-const permissions = (file: string) => statSync(file).mode & 0o777;
+const readPermissions = (file: string) => statSync(file).mode & 0o777;
 
 describe("private files", () => {
   it("creates a file only the user can read, in folders only the user can open", () => {
@@ -27,8 +27,8 @@ describe("private files", () => {
 
     writePrivateFile({ path: audio, flags: "w", contents: wavStart });
 
-    expect(permissions(audio)).toBe(0o600);
-    expect(permissions(audioFolder)).toBe(0o700);
+    expect(readPermissions(audio)).toBe(0o600);
+    expect(readPermissions(audioFolder)).toBe(0o700);
     expect([...readFileSync(audio)]).toEqual([82, 73, 70, 70]);
   });
 
@@ -42,8 +42,8 @@ describe("private files", () => {
 
     writePrivateFile({ path: prompt, flags: "a", contents: "second draft\n" });
 
-    expect(permissions(prompt)).toBe(0o600);
-    expect(permissions(prompts)).toBe(0o700);
+    expect(readPermissions(prompt)).toBe(0o600);
+    expect(readPermissions(prompts)).toBe(0o700);
     expect(readFileSync(prompt, "utf8")).toBe("first draft\nsecond draft\n");
   });
 
@@ -54,7 +54,7 @@ describe("private files", () => {
 
     makePrivateFolder(inbox);
 
-    expect(permissions(inbox)).toBe(0o700);
+    expect(readPermissions(inbox)).toBe(0o700);
   });
 
   it("tightens agent-voice's own folders on an atomic write, and leaves a folder the user picked as it was", () => {
@@ -71,8 +71,8 @@ describe("private files", () => {
     writeFileAtomically({ path: lastGood, contents: "gpt-5\n" });
     writeFileAtomically({ path: chosenConfig, contents: "{}\n" });
 
-    expect(permissions(home)).toBe(0o700);
-    expect(permissions(lastGood)).toBe(0o600);
-    expect(permissions(chosen)).toBe(0o755);
+    expect(readPermissions(home)).toBe(0o700);
+    expect(readPermissions(lastGood)).toBe(0o600);
+    expect(readPermissions(chosen)).toBe(0o755);
   });
 });

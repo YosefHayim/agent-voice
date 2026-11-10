@@ -6,7 +6,7 @@ import path from "node:path";
 
 import type { Config } from "#src/settings/config-schema.js";
 import { appendDictationLog } from "#src/workers/worker-log.js";
-import { pcmFromSamples, prepareForWhisper, rootMeanSquare, syntheticSpeech } from "./clip-audio.js";
+import { prepareForWhisper, readPcmFromSamples, readRootMeanSquare, readSyntheticSpeech } from "./clip-audio.js";
 import { tidyWhisperText } from "./transcript-text.js";
 import type { TranscribeOptions, WhisperModule } from "./whisper-node.js";
 
@@ -23,7 +23,7 @@ export interface Transcriber {
   readonly modelName: string;
   readonly transcribe: (request: TranscribeRequest) => Promise<Transcription>;
   // Null when a final decode holds the model, so the caption pass is skipped.
-  readonly caption: (request: CaptionRequest) => Promise<string | null>;
+  readonly readCaption: (request: CaptionRequest) => Promise<string | null>;
   readonly warmUp: () => Promise<void>;
   readonly release: () => Promise<void>;
 }
@@ -35,13 +35,13 @@ type TranscribeRequest = CaptionRequest & { readonly prompt: string };
 type DecodeRequest = TranscribeRequest & { readonly threads: number };
 
 // whisper.node takes a plain ArrayBuffer of 16-bit mono samples at 16 kHz.
-const pcmBuffer = (pcm: Int16Array): ArrayBuffer => {
+const readPcmBuffer = (pcm: Int16Array): ArrayBuffer => {
   const buffer = new ArrayBuffer(pcm.byteLength);
   new Int16Array(buffer).set(pcm);
   return buffer;
 };
 
-const whisperOptions = (request: DecodeRequest): TranscribeOptions => {
+const readWhisperOptions = (request: DecodeRequest): TranscribeOptions => {
   const options = {
     language: request.language,
     temperature: 0,
@@ -67,17 +67,17 @@ const importWhisper = async (): Promise<WhisperModule> => {
   return loaded as WhisperModule;
 };
 
-const threadCount = (): number => {
+const readThreadCount = (): number => {
   const cores = availableParallelism();
   const atLeastTwo = Math.max(cores, 2);
   return Math.min(atLeastTwo, 8);
 };
 
-const THREADS = threadCount();
+const THREADS = readThreadCount();
 const CAPTION_THREADS = Math.min(THREADS, 4);
 
 // Failures keep the Whisper prefix, so a log line says which engine failed.
-const withWhisperErrors = async <Result>(task: () => Promise<Result>): Promise<Result> => {
+const wrapWhisperErrors = async <Result>(task: () => Promise<Result>): Promise<Result> => {
   try {
     return await task();
   } catch (error) {
@@ -148,16 +148,16 @@ const createDecodeLane = (): DecodeLane => {
 };
 
 export const loadTranscriber = async (modelPath: string): Promise<Transcriber> => {
-  const whisper = await withWhisperErrors(importWhisper);
-  await withWhisperErrors(() => whisper.toggleNativeLog(false));
-  const context = await withWhisperErrors(() =>
+  const whisper = await wrapWhisperErrors(importWhisper);
+  await wrapWhisperErrors(() => whisper.toggleNativeLog(false));
+  const context = await wrapWhisperErrors(() =>
     whisper.initWhisper({ filePath: modelPath, useGpu: true, useFlashAttn: true }),
   );
   const lane = createDecodeLane();
 
   const decode = async (request: DecodeRequest): Promise<Transcription> => {
     const started = performance.now();
-    const inputLevel = rootMeanSquare(request.samples);
+    const inputLevel = readRootMeanSquare(request.samples);
     const region = prepareForWhisper(request.samples);
 
     const isSilence = region === undefined;
@@ -165,10 +165,10 @@ export const loadTranscriber = async (modelPath: string): Promise<Transcriber> =
       return { text: "", decodeMs: performance.now() - started, inputLevel, ranWhisper: false };
     }
 
-    const pcm = pcmFromSamples(region);
-    const audio = pcmBuffer(pcm);
-    const options = whisperOptions(request);
-    const decoded = await withWhisperErrors(() => context.transcribeData(audio, options).promise);
+    const pcm = readPcmFromSamples(region);
+    const audio = readPcmBuffer(pcm);
+    const options = readWhisperOptions(request);
+    const decoded = await wrapWhisperErrors(() => context.transcribeData(audio, options).promise);
 
     return {
       text: tidyWhisperText(decoded.result, region.length),
@@ -183,7 +183,7 @@ export const loadTranscriber = async (modelPath: string): Promise<Transcriber> =
     lane.run(() => decode({ ...request, threads: THREADS }));
 
   // A caption pass is skipped while a final decode holds the model.
-  const caption = async (request: CaptionRequest): Promise<string | null> => {
+  const readCaption = async (request: CaptionRequest): Promise<string | null> => {
     const heard = await lane.runIfFree(() => decode({ ...request, prompt: "", threads: CAPTION_THREADS }));
 
     const isModelBusy = heard === null;
@@ -196,7 +196,7 @@ export const loadTranscriber = async (modelPath: string): Promise<Transcriber> =
 
   // Compiles the Metal kernels now, so the first real dictation is not a cold start; speech-like audio passes the VAD.
   const warmUp = async (): Promise<void> => {
-    const warmSamples = syntheticSpeech(1);
+    const warmSamples = readSyntheticSpeech(1);
     try {
       await transcribe({ samples: warmSamples, language: "en", prompt: "" });
     } catch (error) {
@@ -206,10 +206,10 @@ export const loadTranscriber = async (modelPath: string): Promise<Transcriber> =
 
   const release = (): Promise<void> => context.release();
 
-  return { modelName: path.basename(modelPath), transcribe, caption, warmUp, release };
+  return { modelName: path.basename(modelPath), transcribe, readCaption: readCaption, warmUp, release };
 };
 
-export const whisperBackend = (): string => {
+export const readWhisperBackend = (): string => {
   const isNotAppleSilicon = process.platform !== "darwin" || process.arch !== "arm64";
   if (isNotAppleSilicon) {
     return "whisper.cpp";

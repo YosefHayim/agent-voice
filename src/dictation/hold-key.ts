@@ -51,13 +51,13 @@ export const holdTransition = (state: HoldState, event: HoldEvent): HoldStep => 
 
 // Keys already held when a hold begins never count: macOS can report a key as held forever (seen with key code 0),
 // which would cancel every hold.
-export const newlyPressed = (heldAtHoldDown: bigint, heldNow: bigint): boolean => (heldNow & ~heldAtHoldDown) !== 0n;
+export const isNewlyPressed = (heldAtHoldDown: bigint, heldNow: bigint): boolean => (heldNow & ~heldAtHoldDown) !== 0n;
 
 type HoldDebounce = { readonly isDown: boolean; readonly downStreak: number; readonly upStreak: number };
 
 export const initialHoldDebounce: HoldDebounce = { isDown: false, downStreak: 0, upStreak: 0 };
 
-const nextStreaks = (debounce: HoldDebounce, sample: HoldSample) => {
+const readNextStreaks = (debounce: HoldDebounce, sample: HoldSample) => {
   const isSampleDown = sample === "down";
   if (isSampleDown) {
     return { downStreak: debounce.downStreak + 1, upStreak: 0 };
@@ -69,7 +69,7 @@ const nextStreaks = (debounce: HoldDebounce, sample: HoldSample) => {
 // 2 samples down (about 16 ms) and 4 samples up (about 32 ms), so a HID blip or another app probing modifiers
 // never ends a real hold mid-recording.
 export const debounceHold = (debounce: HoldDebounce, sample: HoldSample): readonly [HoldDebounce, HoldEdge] => {
-  const streaks = nextStreaks(debounce, sample);
+  const streaks = readNextStreaks(debounce, sample);
 
   const isPressed = streaks.downStreak >= 2 && !debounce.isDown;
   if (isPressed) {
@@ -88,7 +88,7 @@ type HoldTracker = { readonly debounce: HoldDebounce; readonly heldAtHoldDown: b
 
 export const initialHoldTracker: HoldTracker = { debounce: initialHoldDebounce, heldAtHoldDown: 0n };
 
-const edgeEvents = (edge: HoldEdge): ReadonlyArray<HoldEvent> => {
+const listEdgeEvents = (edge: HoldEdge): ReadonlyArray<HoldEvent> => {
   const isEdgeNone = edge === "none";
   if (isEdgeNone) {
     return [];
@@ -99,7 +99,7 @@ const edgeEvents = (edge: HoldEdge): ReadonlyArray<HoldEvent> => {
 
 // The keys held when the hold key first reads down are the baseline, so a key pressed while the down edge still
 // debounces counts as typing.
-const baselineKeys = (tracker: HoldTracker, heldNow: bigint): bigint => {
+const readBaselineKeys = (tracker: HoldTracker, heldNow: bigint): bigint => {
   const isPressStart = !tracker.debounce.isDown && tracker.debounce.downStreak === 0;
   if (isPressStart) {
     return heldNow;
@@ -115,7 +115,7 @@ export const sampleHold = (
   sample: { readonly hold: HoldSample; readonly otherKeys: () => bigint },
 ): readonly [HoldTracker, ReadonlyArray<HoldEvent>] => {
   const [debounce, edge] = debounceHold(tracker.debounce, sample.hold);
-  const holdEvents = edgeEvents(edge);
+  const holdEvents = listEdgeEvents(edge);
 
   const isSampleHoldUp = sample.hold === "up";
   if (isSampleHoldUp) {
@@ -123,10 +123,10 @@ export const sampleHold = (
   }
 
   const heldNow = sample.otherKeys();
-  const baseline = baselineKeys(tracker, heldNow);
+  const baseline = readBaselineKeys(tracker, heldNow);
   const next = { debounce, heldAtHoldDown: baseline & heldNow };
 
-  const isNotTyping = !debounce.isDown || !newlyPressed(baseline, heldNow);
+  const isNotTyping = !debounce.isDown || !isNewlyPressed(baseline, heldNow);
   if (isNotTyping) {
     return [next, holdEvents];
   }
@@ -136,7 +136,7 @@ export const sampleHold = (
 
 export type TapAction = "stopSpeaking" | "refineClipboard" | "toggleMute";
 
-export const doubleTapAction = (request: {
+export const readDoubleTapAction = (request: {
   readonly isSpeaking: boolean;
   readonly clipboardRefine: boolean;
 }): TapAction => {

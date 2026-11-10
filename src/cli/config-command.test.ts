@@ -21,7 +21,7 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-const agentVoice = (args: ReadonlyArray<string>) => {
+const readAgentVoice = (args: ReadonlyArray<string>) => {
   const { AGENT_VOICE_CONFIG_FILE: _ignored, AGENT_VOICE_DICTATION_MODEL: _forced, ...environment } = process.env;
   return runAgentVoice({
     args,
@@ -31,7 +31,7 @@ const agentVoice = (args: ReadonlyArray<string>) => {
 
 describe("agent-voice config errors", () => {
   it("go to stderr, so stdout carries only the command's own output", async () => {
-    const get = await agentVoice(["config", "get", "no-such-setting"]);
+    const get = await readAgentVoice(["config", "get", "no-such-setting"]);
 
     expect(get.status).toBe(2);
     expect(get.stdout).toBe("");
@@ -41,11 +41,11 @@ describe("agent-voice config errors", () => {
 
 describe("agent-voice dictation hold key", () => {
   it("persists Right Option and reports it in status", async () => {
-    const changed = await agentVoice(["config", "set", "dictation-hold-key", "right-option"]);
+    const changed = await readAgentVoice(["config", "set", "dictation-hold-key", "right-option"]);
     expect(changed.status).toBe(0);
-    const configured = await agentVoice(["config", "get", "dictation-hold-key"]);
+    const configured = await readAgentVoice(["config", "get", "dictation-hold-key"]);
     expect(configured.stdout.trim()).toBe('"right-option"');
-    const status = await agentVoice(["status", "--json"]);
+    const status = await readAgentVoice(["status", "--json"]);
     const parsedStatus = JSON.parse(status.stdout);
     expect(parsedStatus.dictation.hotkey).toBe("hold-right-option");
     expect(parsedStatus.dictation.running).toBe(false);
@@ -64,7 +64,7 @@ const startStandInSpeechWorker = async (marker: string) => {
   writeFileSync(pidFile, pid);
 };
 
-const speechStopped = async (marker: string) => {
+const isSpeechStopped = async (marker: string) => {
   const deadline = Date.now() + 3_000;
   while (!existsSync(marker) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -72,8 +72,8 @@ const speechStopped = async (marker: string) => {
   return existsSync(marker) && readFileSync(marker, "utf8") === "stopped";
 };
 
-const speechMuted = async () => {
-  const statusRun = await agentVoice(["status", "--json"]);
+const readSpeechMuted = async () => {
+  const statusRun = await readAgentVoice(["status", "--json"]);
   return JSON.parse(statusRun.stdout).speech.muted;
 };
 
@@ -82,57 +82,57 @@ describe("agent-voice config set speech-mode off", () => {
     const marker = path.join(home, "stopped");
     await startStandInSpeechWorker(marker);
 
-    const set = await agentVoice(["config", "set", "speech-mode", "off"]);
+    const set = await readAgentVoice(["config", "set", "speech-mode", "off"]);
 
     expect(set.status).toBe(0);
     expect(set.stdout).toContain("Speech stops");
-    expect(await speechStopped(marker)).toBe(true);
+    expect(await isSpeechStopped(marker)).toBe(true);
   });
 });
 
 describe("agent-voice speech-muted", () => {
   it("starts muted, and config set speech-muted false unmutes", async () => {
-    expect(await speechMuted()).toBe(true);
+    expect(await readSpeechMuted()).toBe(true);
 
-    const set = await agentVoice(["config", "set", "speech-muted", "false"]);
+    const set = await readAgentVoice(["config", "set", "speech-muted", "false"]);
 
     expect(set.status).toBe(0);
     expect(set.stdout).toContain("speech-muted = false");
-    expect(await speechMuted()).toBe(false);
+    expect(await readSpeechMuted()).toBe(false);
   });
 
   it("stops the reply being read now when muted again", async () => {
     const marker = path.join(home, "stopped");
     await startStandInSpeechWorker(marker);
     const configFile = path.join(home, ".agent-voice", "config.json");
-    const configText = JSON.stringify({ speechMuted: false });
+    const configText = JSON.stringify({ readSpeechMuted: false });
     writeFileSync(configFile, configText);
 
-    const set = await agentVoice(["config", "set", "speech-muted", "true"]);
+    const set = await readAgentVoice(["config", "set", "speech-muted", "true"]);
 
     expect(set.status).toBe(0);
     expect(set.stdout).toContain("Speech muted");
-    expect(await speechStopped(marker)).toBe(true);
+    expect(await isSpeechStopped(marker)).toBe(true);
   });
 });
 
-const dictationStatus = async () => {
-  const statusRun = await agentVoice(["status", "--json"]);
+const readDictationStatus = async () => {
+  const statusRun = await readAgentVoice(["status", "--json"]);
   return JSON.parse(statusRun.stdout).dictation;
 };
 
 describe("agent-voice config set dictation-model", () => {
   it("selects the model, shows it in status --json with its file path, and unset goes back to auto", async () => {
-    const before = await dictationStatus();
+    const before = await readDictationStatus();
     expect(before.modelKey).toBe("turbo-q5");
 
-    const set = await agentVoice(["config", "set", "dictation-model", "small.en"]);
+    const set = await readAgentVoice(["config", "set", "dictation-model", "small.en"]);
     expect(set.status).toBe(0);
     expect(set.stdout).toContain('dictation-model = "small"');
-    const get = await agentVoice(["config", "get", "dictation-model"]);
+    const get = await readAgentVoice(["config", "get", "dictation-model"]);
     expect(get.stdout).toContain('"small"');
 
-    const after = await dictationStatus();
+    const after = await readDictationStatus();
     const selected = after.models.filter((model: { selected: boolean }) => model.selected);
     expect(after.modelKey).toBe("small");
     expect(selected.map((model: { key: string }) => model.key)).toEqual(["small"]);
@@ -146,17 +146,17 @@ describe("agent-voice config set dictation-model", () => {
       selected: true,
     });
 
-    const unset = await agentVoice(["config", "unset", "dictation-model"]);
+    const unset = await readAgentVoice(["config", "unset", "dictation-model"]);
     expect(unset.status).toBe(0);
-    const reset = await dictationStatus();
+    const reset = await readDictationStatus();
     expect(reset.modelKey).toBe("turbo-q5");
   });
 });
 
 describe("agent-voice config describe", () => {
   it("prints every setting with its kind, choices, and value as one JSON document", async () => {
-    await agentVoice(["config", "set", "speech-voice", "M2"]);
-    const described = await agentVoice(["config", "describe"]);
+    await readAgentVoice(["config", "set", "speech-voice", "M2"]);
+    const described = await readAgentVoice(["config", "describe"]);
     const settings = JSON.parse(described.stdout);
     const voice = settings.find((setting: { name: string }) => setting.name === "speech-voice");
     const effort = settings.find((setting: { name: string }) => setting.name === "refine-effort");

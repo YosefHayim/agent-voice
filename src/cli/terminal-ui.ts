@@ -47,14 +47,14 @@ export const printDocument = (jsonDocument: unknown): void => {
   console.log(JSON.stringify(jsonDocument));
 };
 
-const underline = (title: string): string => {
+const readUnderline = (title: string): string => {
   const width = Math.min(title.length, 40);
   return "─".repeat(width);
 };
 
 export const printNote = (title: string, message: string): void => {
   console.log(`\n  ${title}`);
-  console.log(`  ${underline(title)}`);
+  console.log(`  ${readUnderline(title)}`);
 
   for (const line of message.split("\n")) {
     console.log(`  ${line}`);

@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   classifyTap,
   debounceHold,
-  doubleTapAction,
   type HoldAction,
   type HoldEvent,
   type HoldState,
   holdTransition,
   initialHoldDebounce,
   initialHoldTracker,
-  newlyPressed,
+  isNewlyPressed,
+  readDoubleTapAction,
   sampleHold,
 } from "./hold-key.js";
 
@@ -61,15 +61,15 @@ describe("newlyPressed", () => {
   const letter = 1n << 12n;
 
   it("ignores a key held before Shift went down", () => {
-    expect(newlyPressed(stuckKey, stuckKey)).toBe(false);
+    expect(isNewlyPressed(stuckKey, stuckKey)).toBe(false);
   });
 
   it("counts a new key pressed while Shift is held", () => {
-    expect(newlyPressed(stuckKey, stuckKey | letter)).toBe(true);
+    expect(isNewlyPressed(stuckKey, stuckKey | letter)).toBe(true);
   });
 
   it("sees no typing when no key is held", () => {
-    expect(newlyPressed(0n, 0n)).toBe(false);
+    expect(isNewlyPressed(0n, 0n)).toBe(false);
   });
 });
 
@@ -174,8 +174,8 @@ describe("taps", () => {
   });
 
   it("stops speech first, then refines the clipboard, else toggles the mute", () => {
-    expect(doubleTapAction({ isSpeaking: true, clipboardRefine: true })).toBe("stopSpeaking");
-    expect(doubleTapAction({ isSpeaking: false, clipboardRefine: true })).toBe("refineClipboard");
-    expect(doubleTapAction({ isSpeaking: false, clipboardRefine: false })).toBe("toggleMute");
+    expect(readDoubleTapAction({ isSpeaking: true, clipboardRefine: true })).toBe("stopSpeaking");
+    expect(readDoubleTapAction({ isSpeaking: false, clipboardRefine: true })).toBe("refineClipboard");
+    expect(readDoubleTapAction({ isSpeaking: false, clipboardRefine: false })).toBe("toggleMute");
   });
 });

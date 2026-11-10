@@ -3,7 +3,7 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 
-import { stateFolder } from "#src/settings/agent-voice-home.js";
+import { readStateFolder } from "#src/settings/agent-voice-home.js";
 import type { Config } from "#src/settings/config-schema.js";
 import type { AgentVoiceEnvironment } from "#src/settings/environment-variables.js";
 import { downloadFile } from "#src/storage/model-download.js";
@@ -20,49 +20,50 @@ interface WhisperModel {
   readonly approximateBytes: number;
 }
 
-const ggerganov = (file: string) => `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${file}?download=true`;
+const createModelUrl = (file: string) =>
+  `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${file}?download=true`;
 
 export const whisperModels: ReadonlyArray<WhisperModel> = [
   {
     key: "tiny",
     file: "ggml-tiny.en.bin",
     label: "Tiny English (fastest)",
-    url: ggerganov("ggml-tiny.en.bin"),
+    url: createModelUrl("ggml-tiny.en.bin"),
     approximateBytes: 78_000_000,
   },
   {
     key: "base",
     file: "ggml-base.en.bin",
     label: "Base English",
-    url: ggerganov("ggml-base.en.bin"),
+    url: createModelUrl("ggml-base.en.bin"),
     approximateBytes: 148_000_000,
   },
   {
     key: "small",
     file: "ggml-small.en.bin",
     label: "Small English",
-    url: ggerganov("ggml-small.en.bin"),
+    url: createModelUrl("ggml-small.en.bin"),
     approximateBytes: 488_000_000,
   },
   {
     key: "turbo-q5",
     file: "ggml-large-v3-turbo-q5_0.bin",
     label: "Turbo V3 small (q5_0)",
-    url: ggerganov("ggml-large-v3-turbo-q5_0.bin"),
+    url: createModelUrl("ggml-large-v3-turbo-q5_0.bin"),
     approximateBytes: 574_000_000,
   },
   {
     key: "turbo-q8",
     file: "ggml-large-v3-turbo-q8_0.bin",
     label: "Turbo V3 medium (q8_0)",
-    url: ggerganov("ggml-large-v3-turbo-q8_0.bin"),
+    url: createModelUrl("ggml-large-v3-turbo-q8_0.bin"),
     approximateBytes: 874_000_000,
   },
   {
     key: "turbo",
     file: "ggml-large-v3-turbo.bin",
     label: "Turbo V3 large",
-    url: ggerganov("ggml-large-v3-turbo.bin"),
+    url: createModelUrl("ggml-large-v3-turbo.bin"),
     approximateBytes: 1_624_000_000,
   },
   {
@@ -126,8 +127,8 @@ export const selectWhisperModel = (request: {
   return pickWhisperModel("turbo-q5");
 };
 
-export const whisperModelPath = (model: WhisperModel): string => {
-  const modelsFolder = stateFolder("models");
+export const readWhisperModelPath = (model: WhisperModel): string => {
+  const modelsFolder = readStateFolder("models");
   return path.join(modelsFolder, model.file);
 };
 
@@ -135,7 +136,7 @@ export const whisperModelPath = (model: WhisperModel): string => {
 const failedDownloadBytes = 1_000_000;
 
 export const isWhisperModelPresent = (model: WhisperModel): boolean => {
-  const file = whisperModelPath(model);
+  const file = readWhisperModelPath(model);
 
   const isFileAbsent = !existsSync(file);
   if (isFileAbsent) {
@@ -151,7 +152,7 @@ export const ensureWhisperModel = async (request: {
   readonly model: WhisperModel;
   readonly onProgress: (receivedBytes: number) => void;
 }): Promise<string> => {
-  const modelPath = whisperModelPath(request.model);
+  const modelPath = readWhisperModelPath(request.model);
 
   const isModelPresent = isWhisperModelPresent(request.model);
   if (isModelPresent) {

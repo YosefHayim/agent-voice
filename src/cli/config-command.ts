@@ -9,7 +9,7 @@ import {
   configSettings,
   defaultConfig,
   parseSettingValue,
-  withSettingValue,
+  setSettingValue,
 } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { isWorkerRunning, startSpeechWorker, stopSpeech } from "#src/workers/worker-processes.js";
@@ -171,7 +171,7 @@ const saveSetting = async (request: {
   readonly answer: ConfigValue | null;
 }): Promise<void> => {
   const previous = readConfig();
-  const next = withSettingValue({ config: previous, key: request.setting.key, value: request.answer });
+  const next = setSettingValue({ config: previous, key: request.setting.key, value: request.answer });
   saveConfig(next);
   TerminalUI.printSuccess(`${request.setting.name} = ${describeSettingValue(next, request.setting)}`);
   await applyChange(previous, next);
@@ -335,7 +335,7 @@ const pickRefineCommand: CommandSpec = {
 
     const effort = REASONING_EFFORTS.find((name) => name === picked.effort);
     const pickedSettings = { ...settings, refineProvider: picked.provider, refineModel: picked.model };
-    const next = withSettingValue({ config: pickedSettings, key: "refineEffort", value: effort ?? null });
+    const next = setSettingValue({ config: pickedSettings, key: "refineEffort", value: effort ?? null });
     saveConfig(next);
     saveRefineChoice(picked);
     TerminalUI.printSuccess(describePickedTarget(picked, effort));

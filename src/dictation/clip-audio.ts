@@ -15,7 +15,7 @@ export const NORMALIZE_PEAK = 0.45;
 const MAX_NORMALIZE_GAIN = 50;
 const TURN = 2 * Math.PI;
 
-export const rootMeanSquare = (samples: Float32Array): number => {
+export const readRootMeanSquare = (samples: Float32Array): number => {
   const isSamplesEmpty = samples.length === 0;
   if (isSamplesEmpty) {
     return 0;
@@ -25,24 +25,25 @@ export const rootMeanSquare = (samples: Float32Array): number => {
   return Math.sqrt(sumOfSquares / samples.length);
 };
 
-export const peakOf = (samples: Float32Array): number =>
+export const readPeak = (samples: Float32Array): number =>
   samples.reduce((peak, sample) => {
     const loudness = Math.abs(sample);
     return Math.max(peak, loudness);
   }, 0);
 
-export const samplesFromPcm = (pcm: Int16Array): Float32Array => Float32Array.from(pcm, (sample) => sample / 32_768);
+export const readSamplesFromPcm = (pcm: Int16Array): Float32Array =>
+  Float32Array.from(pcm, (sample) => sample / 32_768);
 
-const pcmSample = (sample: number): number => {
+const readPcmSample = (sample: number): number => {
   const scaled = Math.round(sample * 32_767);
   const belowCeiling = Math.min(32_767, scaled);
   return Math.max(-32_768, belowCeiling);
 };
 
-export const pcmFromSamples = (samples: Float32Array): Int16Array => Int16Array.from(samples, pcmSample);
+export const readPcmFromSamples = (samples: Float32Array): Int16Array => Int16Array.from(samples, readPcmSample);
 
-export const peakNormalize = (samples: Float32Array, targetPeak: number): Float32Array => {
-  const peak = peakOf(samples);
+export const scaleSamplesToPeak = (samples: Float32Array, targetPeak: number): Float32Array => {
+  const peak = readPeak(samples);
 
   const silentPeakLimit = 1e-6;
   const isPeakSilent = peak < silentPeakLimit;
@@ -61,16 +62,16 @@ export const peakNormalize = (samples: Float32Array, targetPeak: number): Float3
   return samples.map((sample) => sample * gain);
 };
 
-const frameEnergies = (samples: Float32Array): ReadonlyArray<number> => {
+const listFrameEnergies = (samples: Float32Array): ReadonlyArray<number> => {
   const frameCount = Math.floor(samples.length / VAD_FRAME);
   return Array.from({ length: frameCount }, (_unused, frame) => {
     const frameSamples = samples.subarray(frame * VAD_FRAME, (frame + 1) * VAD_FRAME);
-    return rootMeanSquare(frameSamples);
+    return readRootMeanSquare(frameSamples);
   });
 };
 
 // Softer than median x 2.2 so continuous soft speech still marks most frames voiced; the floor stays above silence.
-const voicedThreshold = (energies: ReadonlyArray<number>): number => {
+const readVoicedThreshold = (energies: ReadonlyArray<number>): number => {
   const sorted = [...energies].sort((left, right) => left - right);
   const medianIndex = Math.floor(sorted.length / 2);
   const ninetiethIndex = Math.floor((sorted.length * 9) / 10);
@@ -82,7 +83,7 @@ const voicedThreshold = (energies: ReadonlyArray<number>): number => {
 };
 
 const keepIfLoud = (samples: Float32Array, minimumRms: number): Float32Array | undefined => {
-  const isNotLoud = rootMeanSquare(samples) < minimumRms;
+  const isNotLoud = readRootMeanSquare(samples) < minimumRms;
   if (isNotLoud) {
     return undefined;
   }
@@ -96,8 +97,8 @@ export const extractSpeechRegion = (samples: Float32Array): Float32Array | undef
     return keepIfLoud(samples, SILENCE_RMS);
   }
 
-  const energies = frameEnergies(samples);
-  const threshold = voicedThreshold(energies);
+  const energies = listFrameEnergies(samples);
+  const threshold = readVoicedThreshold(energies);
   const voiced = energies.map((energy) => energy >= threshold);
 
   const voicedCount = voiced.filter(Boolean).length;
@@ -123,9 +124,9 @@ export const extractSpeechRegion = (samples: Float32Array): Float32Array | undef
 };
 
 export const prepareForWhisper = (samples: Float32Array): Float32Array | undefined => {
-  const normalized = peakNormalize(samples, NORMALIZE_PEAK);
+  const normalized = scaleSamplesToPeak(samples, NORMALIZE_PEAK);
 
-  const isSilence = rootMeanSquare(normalized) < SILENCE_RMS;
+  const isSilence = readRootMeanSquare(normalized) < SILENCE_RMS;
   if (isSilence) {
     return undefined;
   }
@@ -140,7 +141,7 @@ export const prepareForWhisper = (samples: Float32Array): Float32Array | undefin
   return region;
 };
 
-const speechSample = (index: number): number => {
+const readSpeechSample = (index: number): number => {
   const time = index / SAMPLE_RATE;
   const syllable = Math.sin(time * 5 * TURN);
   const envelope = 0.08 + 0.12 * (0.5 + 0.5 * syllable);
@@ -151,8 +152,8 @@ const speechSample = (index: number): number => {
 };
 
 // A 5 Hz syllable envelope over three tones, so the voice detector keeps it during warm-up and the bench.
-export const syntheticSpeech = (seconds: number): Float32Array => {
+export const readSyntheticSpeech = (seconds: number): Float32Array => {
   const requestedLength = Math.round(seconds * SAMPLE_RATE);
   const length = Math.max(requestedLength, SAMPLE_RATE / 4);
-  return Float32Array.from({ length }, (_unused, index) => speechSample(index));
+  return Float32Array.from({ length }, (_unused, index) => readSpeechSample(index));
 };

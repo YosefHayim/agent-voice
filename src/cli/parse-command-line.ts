@@ -3,7 +3,7 @@ import { parseArgs } from "node:util";
 import { describeError } from "#src/error-message.js";
 import { commandSpecs } from "./command-list.js";
 import type { CommandSpec, ExitCode, FlagSpec, ParsedCommand, ParsedFlags, PositionalSpec } from "./command-spec.js";
-import { renderCommandHelp, renderRootHelp } from "./render-help.js";
+import { createCommandHelp, createRootHelp } from "./render-help.js";
 
 export type CommandRoute =
   | { readonly kind: "help"; readonly helpMessage: string }
@@ -16,14 +16,14 @@ export type CommandRoute =
       readonly parsedCommand: ParsedCommand;
     };
 
-const rootHelpRoute = (): CommandRoute => ({ kind: "help", helpMessage: renderRootHelp(commandSpecs) });
+const createRootHelpRoute = (): CommandRoute => ({ kind: "help", helpMessage: createRootHelp(commandSpecs) });
 
-const commandHelpRoute = (commandPath: string, command: CommandSpec): CommandRoute => ({
+const createCommandHelpRoute = (commandPath: string, command: CommandSpec): CommandRoute => ({
   kind: "help",
-  helpMessage: renderCommandHelp(commandPath, command),
+  helpMessage: createCommandHelp(commandPath, command),
 });
 
-const parseTypeOf = (flag: FlagSpec): "boolean" | "string" => {
+const readFlagType = (flag: FlagSpec): "boolean" | "string" => {
   const isBooleanFlag = flag.kind === "boolean";
   if (isBooleanFlag) {
     return "boolean";
@@ -32,9 +32,9 @@ const parseTypeOf = (flag: FlagSpec): "boolean" | "string" => {
   return "string";
 };
 
-const toParseOptions = (flags: Readonly<Record<string, FlagSpec>>) => {
+const createParseOptions = (flags: Readonly<Record<string, FlagSpec>>) => {
   const optionEntries = Object.entries(flags).map(
-    ([flagName, flag]) => [flagName, { type: parseTypeOf(flag) }] as const,
+    ([flagName, flag]) => [flagName, { type: readFlagType(flag) }] as const,
   );
   return Object.fromEntries(optionEntries);
 };
@@ -115,7 +115,7 @@ const routeLeaf = (request: {
 
   const isRunMissing = run == null;
   if (isRunMissing) {
-    return commandHelpRoute(commandPath, command);
+    return createCommandHelpRoute(commandPath, command);
   }
 
   const isPassthrough = command.isPassthrough === true;
@@ -126,12 +126,12 @@ const routeLeaf = (request: {
 
   const isHelpRequest = restWords.includes("--help") || restWords.includes("-h");
   if (isHelpRequest) {
-    return commandHelpRoute(commandPath, command);
+    return createCommandHelpRoute(commandPath, command);
   }
 
   const parsedArguments = parseArgs({
     args: [...restWords],
-    options: toParseOptions(command.flags),
+    options: createParseOptions(command.flags),
     allowPositionals: true,
     strict: true,
   });
@@ -155,7 +155,7 @@ const routeWithin = (request: {
   const isGroupHelpRequested = isNoWordLeft || isHelpWord;
   if (isGroupHelpRequested) {
     const isRequestGroupMissing = request.group == null;
-    return isRequestGroupMissing ? rootHelpRoute() : commandHelpRoute(request.commandPath, request.group);
+    return isRequestGroupMissing ? createRootHelpRoute() : createCommandHelpRoute(request.commandPath, request.group);
   }
 
   const isNoGroupGiven = request.group == null;
@@ -185,7 +185,7 @@ const routeCommandWords = (commandWords: ReadonlyArray<string>): CommandRoute =>
 
   const isRootHelpRequested = isNoWordGiven || isHelpWord;
   if (isRootHelpRequested) {
-    return rootHelpRoute();
+    return createRootHelpRoute();
   }
 
   const isVersionWord = firstWord === "--version";

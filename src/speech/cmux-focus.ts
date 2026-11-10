@@ -107,7 +107,7 @@ const isWindowKey = (windows: unknown): boolean => {
   return checkedWindows.data.windows.some((window) => window.key === true);
 };
 
-const focusedIdsFrom = (identity: unknown): z.infer<typeof identitySchema>["focused"] => {
+const readFocusedIdsFrom = (identity: unknown): z.infer<typeof identitySchema>["focused"] => {
   const checkedIdentity = identitySchema.safeParse(identity);
 
   const isIdentityInvalid = !checkedIdentity.success;
@@ -121,7 +121,7 @@ const focusedIdsFrom = (identity: unknown): z.infer<typeof identitySchema>["focu
 // A Cmux window is `key` only while Cmux is the frontmost app.
 export const focusFrom = (windows: unknown, identity: unknown): CmuxFocus => {
   const isFrontmost = isWindowKey(windows);
-  const focused = focusedIdsFrom(identity);
+  const focused = readFocusedIdsFrom(identity);
   const workspace = focused?.workspace_id ?? "";
   const surface = focused?.surface_id ?? "";
 
@@ -133,7 +133,7 @@ export const focusFrom = (windows: unknown, identity: unknown): CmuxFocus => {
   return { kind: "surface", surface: `${workspace}:${surface}` };
 };
 
-export const cmuxFocus = async (socketPath: string): Promise<CmuxFocus> => {
+export const readCmuxFocus = async (socketPath: string): Promise<CmuxFocus> => {
   const windowsReply = await askCmux({ socketPath, method: "window.list" });
   const identityReply = await askCmux({ socketPath, method: "system.identify" });
 

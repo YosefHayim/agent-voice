@@ -38,11 +38,11 @@ afterEach(async () => {
 
 const engine: SupertonicEngine = { sampleRate: 44_100, synthesize: async () => new Float32Array(441) };
 
-const silentPlayer = () => ({ ...makeSpeechPlayer(), play: vi.fn(async () => undefined) });
+const createSilentPlayer = () => ({ ...makeSpeechPlayer(), play: vi.fn(async () => undefined) });
 
 describe("speakNextReply", () => {
   it("plays a queued reply", async () => {
-    const player = silentPlayer();
+    const player = createSilentPlayer();
     queueReply({ markdown: "Done.", source: "claude-code", agentReplyId: "r1", origin: { kind: "terminal" } });
 
     await speakNextReply(engine, player);
@@ -51,7 +51,7 @@ describe("speakNextReply", () => {
   });
 
   it("keeps a reply silent when a stop comes in while it is being claimed", async () => {
-    const player = silentPlayer();
+    const player = createSilentPlayer();
     const socketPath = makeTestSocketPath(home);
     // The stop lands during the Cmux focus check; with no reply line the focus is unknown, so the reply is claimed.
     server = createServer((connection) => {

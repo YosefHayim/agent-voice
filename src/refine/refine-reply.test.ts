@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   checkRefinedPrompt,
+  isAuthFailureText,
+  isCliHelpText,
+  isFailedModelOutputText,
   isModelUnavailableError,
   isQuotaOrLimitError,
-  looksLikeAuthFailure,
-  looksLikeCliHelp,
-  looksLikeFailedModelOutput,
-  promptLiterals,
+  listPromptLiterals,
   replyTextFromJson,
 } from "./refine-reply.js";
 
@@ -35,20 +35,20 @@ const verdictRows: ReadonlyArray<readonly [string, (text: string) => boolean, st
     "Set the monthly budget, fix the billing page, and show the disk quota on the RPM and TPM charts.",
     false,
   ],
-  ["auth", looksLikeAuthFailure, "No API key found for the selected model.\nUse /login", true],
+  ["auth", isAuthFailureText, "No API key found for the selected model.\nUse /login", true],
   [
     "failed output",
-    looksLikeFailedModelOutput,
+    isFailedModelOutputText,
     "Not signed in. To authenticate without a browser, run:\n  grok login",
     true,
   ],
-  ["auth", looksLikeAuthFailure, "Ship the fix for STT refine", false],
-  ["failed output", looksLikeFailedModelOutput, '402: {"message":"requires more credits","code":402}', true],
-  ["failed output", looksLikeFailedModelOutput, '{"error":{"message":"bad"}}', true],
-  ["failed output", looksLikeFailedModelOutput, "", true],
-  ["failed output", looksLikeFailedModelOutput, "Fix the STT refine help paste bug.", false],
-  ["CLI help", looksLikeCliHelp, openCodeHelpDump, true],
-  ["CLI help", looksLikeCliHelp, "Ship the fix for STT refine", false],
+  ["auth", isAuthFailureText, "Ship the fix for STT refine", false],
+  ["failed output", isFailedModelOutputText, '402: {"message":"requires more credits","code":402}', true],
+  ["failed output", isFailedModelOutputText, '{"error":{"message":"bad"}}', true],
+  ["failed output", isFailedModelOutputText, "", true],
+  ["failed output", isFailedModelOutputText, "Fix the STT refine help paste bug.", false],
+  ["CLI help", isCliHelpText, openCodeHelpDump, true],
+  ["CLI help", isCliHelpText, "Ship the fix for STT refine", false],
 ];
 
 const verdicts = verdictRows.map(([kind, judge, text, expected]) => ({ kind, judge, text, expected }));
@@ -84,17 +84,17 @@ describe("refine reply checks", () => {
   });
 
   it("finds each literal once, earlier patterns first", () => {
-    expect(promptLiterals("open `src/app.ts` then ./run.sh and 'quoted'")).toEqual([
+    expect(listPromptLiterals("open `src/app.ts` then ./run.sh and 'quoted'")).toEqual([
       "`src/app.ts`",
       "./run.sh",
       "'quoted'",
     ]);
-    expect(promptLiterals("word/like and abc/def/ghi")).toEqual(["word/like", "abc/def/ghi"]);
+    expect(listPromptLiterals("word/like and abc/def/ghi")).toEqual(["word/like", "abc/def/ghi"]);
   });
 
   it("protects a quote that contains a URL or a path as a whole, so the model cannot reword it", () => {
     const draft = 'reply with "see https://x.dev/docs for details" exactly';
-    expect(promptLiterals(draft)).toEqual(['"see https://x.dev/docs for details"']);
+    expect(listPromptLiterals(draft)).toEqual(['"see https://x.dev/docs for details"']);
 
     const reworded = checkRefinedPrompt({ draft, refined: 'Reply with "read https://x.dev/docs for details".' });
     expect(reworded).toMatchObject({ status: "rejected", rejection: { reason: "droppedLiteral" } });

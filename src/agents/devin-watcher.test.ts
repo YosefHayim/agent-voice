@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sleep } from "#src/sleep.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
-import { latestDevinTurn, watchDevinSession } from "./devin-watcher.js";
+import { readLatestDevinTurn, watchDevinSession } from "./devin-watcher.js";
 
 let home = "";
 
@@ -22,7 +22,7 @@ afterEach(() => {
 describe("latestDevinTurn", () => {
   it("joins the agent messages after the latest user step and names the turn by the last agent step", () => {
     expect(
-      latestDevinTurn({
+      readLatestDevinTurn({
         steps: [
           { step_id: "old-user", source: "user", message: "Earlier request" },
           { step_id: "old-agent", source: "agent", message: "Earlier answer" },
@@ -37,7 +37,7 @@ describe("latestDevinTurn", () => {
   });
 
   it("has no turn before the agent answers", () => {
-    expect(latestDevinTurn({ steps: [{ step_id: "u", source: "user", message: "hi" }] })).toEqual({
+    expect(readLatestDevinTurn({ steps: [{ step_id: "u", source: "user", message: "hi" }] })).toEqual({
       markdown: "",
       turnId: "",
     });
@@ -58,7 +58,7 @@ describe("watchDevinSession", () => {
     writeFileSync(atifPath, atifText);
   };
 
-  const queuedMarkdown = (): ReadonlyArray<string> => {
+  const listQueuedMarkdown = (): ReadonlyArray<string> => {
     const inbox = path.join(home, "inbox");
 
     const isInboxAbsent = !existsSync(inbox);
@@ -75,7 +75,7 @@ describe("watchDevinSession", () => {
 
   it("keeps reading turns after a turn fails to queue, and queues the turn written as Devin exits", async () => {
     const blockedInbox = path.join(home, "inbox");
-    const session = async () => {
+    const readSession = async () => {
       await sleep(100);
       writeFileSync(blockedInbox, "a file where the inbox folder should be");
       writeTurn("turn-1", "First answer");
@@ -85,18 +85,18 @@ describe("watchDevinSession", () => {
       return 0;
     };
 
-    const exitCode = await watchDevinSession({ exportFile: exportFile(), session });
+    const exitCode = await watchDevinSession({ exportFile: exportFile(), readSession: readSession });
 
     expect(exitCode).toBe(0);
-    expect(queuedMarkdown()).toEqual(["Second answer"]);
+    expect(listQueuedMarkdown()).toEqual(["Second answer"]);
   });
 
   it("stops watching when Devin fails to start, even while the caller keeps running", async () => {
-    const failingSession = async (): Promise<never> => {
+    const readFailingSession = async (): Promise<never> => {
       throw new Error("devin was not found");
     };
 
-    await expect(watchDevinSession({ exportFile: exportFile(), session: failingSession })).rejects.toThrow(
+    await expect(watchDevinSession({ exportFile: exportFile(), readSession: readFailingSession })).rejects.toThrow(
       "devin was not found",
     );
     // A watcher still running would read this turn and queue it.
@@ -104,6 +104,6 @@ describe("watchDevinSession", () => {
     writeTurn("late-turn", "A turn no watcher should read");
     await sleep(1500);
 
-    expect(queuedMarkdown()).toEqual([]);
+    expect(listQueuedMarkdown()).toEqual([]);
   });
 });

@@ -1,11 +1,11 @@
-import { registeredSettingsFiles } from "#src/agents/hook-registration.js";
+import { listRegisteredSettingsFiles } from "#src/agents/hook-registration.js";
 import {
   isWhisperModelPresent,
+  readWhisperModelPath,
   selectWhisperModel,
-  whisperModelPath,
   whisperModels,
 } from "#src/dictation/whisper-models.js";
-import { agentVoiceHome, configFilePath } from "#src/settings/agent-voice-home.js";
+import { readAgentVoiceHome, readConfigFilePath } from "#src/settings/agent-voice-home.js";
 import { readConfigOrDefaults } from "#src/settings/config-file.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
@@ -63,17 +63,17 @@ interface AgentVoiceStatus {
   readonly hooks: ReadonlyArray<string>;
 }
 
-const modelEntries = (selectedKey: string): ReadonlyArray<ModelEntry> =>
+const listModelEntries = (selectedKey: string): ReadonlyArray<ModelEntry> =>
   whisperModels.map((model) => ({
     key: model.key,
     label: model.label,
     megabytes: Math.round(model.approximateBytes / BYTES_PER_MEGABYTE),
-    path: whisperModelPath(model),
+    path: readWhisperModelPath(model),
     present: isWhisperModelPresent(model),
     selected: model.key === selectedKey,
   }));
 
-const dictationStatus = (settings: Config): DictationStatus => {
+const readDictationStatus = (settings: Config): DictationStatus => {
   const selected = selectWhisperModel({ environment: readEnvironment(), config: settings });
   const isRunning = isWorkerRunning("dictation");
   const pid = readPid("dictation.pid") ?? undefined;
@@ -87,7 +87,7 @@ const dictationStatus = (settings: Config): DictationStatus => {
     backend: saved.backend,
     language: settings.dictationLanguage,
     modelKey: selected.key,
-    models: modelEntries(selected.key),
+    models: listModelEntries(selected.key),
     hotkey: `hold-${settings.dictationHoldKey}`,
   };
 
@@ -100,8 +100,8 @@ const dictationStatus = (settings: Config): DictationStatus => {
 };
 
 // Several Claude Code accounts count as one agent.
-const registeredAgents = (): ReadonlyArray<string> => {
-  const agents = registeredSettingsFiles().map((settingsFile) => settingsFile.agent);
+const listRegisteredAgents = (): ReadonlyArray<string> => {
+  const agents = listRegisteredSettingsFiles().map((settingsFile) => settingsFile.agent);
   const uniqueAgents = new Set(agents);
   return [...uniqueAgents];
 };
@@ -109,9 +109,9 @@ const registeredAgents = (): ReadonlyArray<string> => {
 const readCurrentStatus = (): AgentVoiceStatus => {
   const settings = readConfigOrDefaults();
   return {
-    home: agentVoiceHome(),
-    configFile: configFilePath(),
-    dictation: dictationStatus(settings),
+    home: readAgentVoiceHome(),
+    configFile: readConfigFilePath(),
+    dictation: readDictationStatus(settings),
     speech: {
       running: isWorkerRunning("speech"),
       mode: settings.speechMode,
@@ -124,11 +124,11 @@ const readCurrentStatus = (): AgentVoiceStatus => {
       model: settings.refineModel || "",
       sendTo: settings.refineSendTo,
     },
-    hooks: registeredAgents(),
+    hooks: listRegisteredAgents(),
   };
 };
 
-const dictationLine = (dictation: DictationStatus): string => {
+const readDictationLine = (dictation: DictationStatus): string => {
   const isDictationNotRunning = !dictation.running;
   if (isDictationNotRunning) {
     return "off";
@@ -144,12 +144,12 @@ const dictationLine = (dictation: DictationStatus): string => {
   return `${line} · ${dictation.detail}`;
 };
 
-const modelLine = (dictation: DictationStatus): string => {
+const readModelLine = (dictation: DictationStatus): string => {
   const model = dictation.model || "(not loaded)";
   return `${model} ${dictation.backend} · language ${dictation.language} · selected ${dictation.modelKey}`;
 };
 
-const speechLine = (speech: SpeechStatus): string => {
+const readSpeechLine = (speech: SpeechStatus): string => {
   const isSpeechOn = speech.running;
   const line = `${isSpeechOn ? "on" : "off"} · mode ${speech.mode} · voice ${speech.voice}`;
 
@@ -160,7 +160,7 @@ const speechLine = (speech: SpeechStatus): string => {
   return line;
 };
 
-const refineLine = (refine: RefineStatus): string => {
+const readRefineLine = (refine: RefineStatus): string => {
   const isRefineModeOff = refine.mode === "off";
   if (isRefineModeOff) {
     return "off";
@@ -170,7 +170,7 @@ const refineLine = (refine: RefineStatus): string => {
   return `${refine.mode} · ${refine.provider}/${model} → ${refine.sendTo}`;
 };
 
-const hooksLine = (hooks: ReadonlyArray<string>): string => {
+const readHooksLine = (hooks: ReadonlyArray<string>): string => {
   const isHooksEmpty = hooks.length === 0;
   if (isHooksEmpty) {
     return "none (run agent-voice on)";
@@ -179,13 +179,13 @@ const hooksLine = (hooks: ReadonlyArray<string>): string => {
   return hooks.join(", ");
 };
 
-const statusMessage = (status: AgentVoiceStatus): string =>
+const readStatusMessage = (status: AgentVoiceStatus): string =>
   [
-    `dictation   ${dictationLine(status.dictation)}`,
-    `model       ${modelLine(status.dictation)}`,
-    `speech      ${speechLine(status.speech)}`,
-    `refine      ${refineLine(status.refine)}`,
-    `hooks       ${hooksLine(status.hooks)}`,
+    `dictation   ${readDictationLine(status.dictation)}`,
+    `model       ${readModelLine(status.dictation)}`,
+    `speech      ${readSpeechLine(status.speech)}`,
+    `refine      ${readRefineLine(status.refine)}`,
+    `hooks       ${readHooksLine(status.hooks)}`,
     `config      ${status.configFile}`,
   ].join("\n");
 
@@ -205,7 +205,7 @@ export const statusCommand: CommandSpec = {
       return 0;
     }
 
-    TerminalUI.printNote("agent-voice status", statusMessage(status));
+    TerminalUI.printNote("agent-voice status", readStatusMessage(status));
     return 0;
   },
 };

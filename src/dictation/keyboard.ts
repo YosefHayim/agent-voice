@@ -52,7 +52,7 @@ const COMMAND_FLAG = 0x0010_0000n;
 const UNICODE_CHUNK_UNITS = 20;
 
 // Iterating by character keeps a surrogate pair inside one chunk.
-export const unicodeChunks = (text: string): ReadonlyArray<string> => {
+export const listUnicodeChunks = (text: string): ReadonlyArray<string> => {
   const chunks: Array<string> = [];
   for (const character of text) {
     const last = chunks.at(-1);
@@ -69,11 +69,11 @@ export const unicodeChunks = (text: string): ReadonlyArray<string> => {
 };
 
 // Every UTF-16 code unit, so an emoji or other character outside the BMP keeps both surrogates.
-export const utf16Units = (chunk: string): Uint16Array =>
+export const readUtf16Units = (chunk: string): Uint16Array =>
   Uint16Array.from({ length: chunk.length }, (_unused, index) => chunk.charCodeAt(index));
 
 // macOS silently drops a chunk that starts with a newline, so a zero-width space leads it.
-const postableChunk = (chunk: string): string => {
+const readPostableChunk = (chunk: string): string => {
   const startsWithNewline = /^[\r\n]/u.test(chunk);
 
   const isNotStartingWithNewline = !startsWithNewline;
@@ -151,7 +151,7 @@ export const loadKeyboard = async (): Promise<Keyboard> => {
   // Flags are cleared, so a modifier still held by the hand cannot alter the typed text.
   const postUnicode = (chunk: string) => {
     const event = createKeyEvent(source, 0, true);
-    const units = utf16Units(chunk);
+    const units = readUtf16Units(chunk);
     setUnicode(event, units.length, units);
     setFlags(event, 0n);
     postEvent(HID_EVENT_TAP, event);
@@ -159,14 +159,14 @@ export const loadKeyboard = async (): Promise<Keyboard> => {
   };
 
   const typeUnicode = (text: string) => {
-    for (const chunk of unicodeChunks(text)) {
+    for (const chunk of listUnicodeChunks(text)) {
       const isChunkTabIndented = chunk.startsWith("\t");
       if (isChunkTabIndented) {
         pressKey(TAB_KEY, 0n);
       }
 
       const withoutTab = chunk.replace(/^\t/u, "");
-      const postable = postableChunk(withoutTab);
+      const postable = readPostableChunk(withoutTab);
       postUnicode(postable);
     }
   };
