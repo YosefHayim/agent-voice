@@ -3,7 +3,7 @@ import { listRegisteredSettingsFiles } from "#src/agents/hook-registration.js";
 import { listHookSettingsFiles } from "#src/agents/hook-settings-files.js";
 import { type Keyboard, loadKeyboard } from "#src/dictation/keyboard.js";
 import { WHISPER_PACKAGE } from "#src/dictation/transcriber.js";
-import { isWhisperModelPresent, readWhisperModelPath, selectWhisperModel } from "#src/dictation/whisper-models.js";
+import { isWhisperModelDownloaded, readWhisperModelPath, selectWhisperModel } from "#src/dictation/whisper-models.js";
 import { describeError } from "#src/error-message.js";
 import { findCli, runCli } from "#src/refine/agent-cli.js";
 import { type DiscoveredProvider, discoverProviders } from "#src/refine/provider-models.js";
@@ -208,7 +208,7 @@ const checkWhisperModel = (settings: Settings): DoctorCheck => {
   const environment = readEnvironment();
   const model = selectWhisperModel({ environment, config: settings });
 
-  const isModelAbsent = !isWhisperModelPresent(model);
+  const isModelAbsent = !isWhisperModelDownloaded(model);
   if (isModelAbsent) {
     return {
       name: "Whisper model",

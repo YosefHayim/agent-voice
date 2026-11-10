@@ -13,7 +13,7 @@ import {
   findCli,
   listNonBlankLines,
   parseDocumentOrNull,
-  readCliFailureString,
+  readCliFailureReason,
   runCli,
 } from "./agent-cli.js";
 
@@ -45,9 +45,9 @@ const readPlainObject = (field: unknown): Readonly<Record<string, unknown>> | nu
   return checked.data;
 };
 
-const readNonEmptyString = (field: unknown): string | null => {
-  const isNotNonEmptyString = typeof field !== "string" || field === "";
-  if (isNotNonEmptyString) {
+const readNonEmptyField = (field: unknown): string | null => {
+  const isFieldBlank = typeof field !== "string" || field === "";
+  if (isFieldBlank) {
     return null;
   }
 
@@ -55,7 +55,7 @@ const readNonEmptyString = (field: unknown): string | null => {
 };
 
 // The first key whose value is a non-empty string.
-const readFirstString = (field: unknown, keys: ReadonlyArray<string>): string | null => {
+const readFirstFilledField = (field: unknown, keys: ReadonlyArray<string>): string | null => {
   const stored = readPlainObject(field);
 
   const isNotPlainObject = stored === null;
@@ -64,7 +64,7 @@ const readFirstString = (field: unknown, keys: ReadonlyArray<string>): string | 
   }
 
   for (const key of keys) {
-    const found = readNonEmptyString(stored[key]);
+    const found = readNonEmptyField(stored[key]);
 
     const isFound = found !== null;
     if (isFound) {
@@ -118,7 +118,7 @@ const runCmuxDocument = async (request: {
 
   const isFailedExit = cliRun.exitCode !== 0;
   if (isFailedExit) {
-    const detail = readCliFailureString(cliRun) || "failed";
+    const detail = readCliFailureReason(cliRun) || "failed";
     throw createCmuxError(request.step, detail);
   }
 
@@ -164,7 +164,7 @@ const pressEnterKey = async (surface: string): Promise<void> => {
   }
 };
 
-const sendStringToSurface = async (request: {
+const sendMessageToSurface = async (request: {
   readonly surface: string;
   readonly text: string;
   readonly pressEnter: boolean;
@@ -221,17 +221,18 @@ const listWorkspaces = async (): Promise<ReadonlyArray<unknown>> => {
 const readFocusedWorkspaceId = async (): Promise<string> => {
   try {
     const focus = await identifyFocus();
-    return readFirstString(focus, ["workspace_id", "workspace_ref"]) ?? "";
+    return readFirstFilledField(focus, ["workspace_id", "workspace_ref"]) ?? "";
   } catch (error) {
     console.error({ step: "identify", error });
     return "";
   }
 };
 
-const readWorkspaceDirectory = (workspace: unknown): string | null => readFirstString(workspace, ["current_directory"]);
+const readWorkspaceDirectory = (workspace: unknown): string | null =>
+  readFirstFilledField(workspace, ["current_directory"]);
 
 const isFocusedWorkspace = (workspace: unknown, focusId: string): boolean => {
-  const id = readFirstString(workspace, ["id", "workspace_id", "ref"]) ?? "";
+  const id = readFirstFilledField(workspace, ["id", "workspace_id", "ref"]) ?? "";
 
   const isUnknownWorkspace = id === "" || focusId === "";
   if (isUnknownWorkspace) {
@@ -278,7 +279,7 @@ const readDeliveryFolder = async (): Promise<string> => {
 };
 
 // Safe inside a single-quoted shell string: ' becomes '\''.
-export const quoteShellWord = (plainString: string): string => `'${plainString.replaceAll("'", "'\\''")}'`;
+export const quoteShellWord = (word: string): string => `'${word.replaceAll("'", "'\\''")}'`;
 
 // One pass, so a folder with spaces or `$(...)` stays one literal word, and text inserted by one placeholder is never expanded again.
 export const expandCommandTemplate = (request: {
@@ -297,8 +298,8 @@ export const expandCommandTemplate = (request: {
   );
 };
 
-export const readWorkspaceTitle = (plainString: string): string => {
-  const firstLine = plainString.split("\n")[0] || "";
+export const readWorkspaceTitle = (word: string): string => {
+  const firstLine = word.split("\n")[0] || "";
   const characters = [...firstLine.trim()];
   const shortLine = characters.slice(0, 40).join("");
 
@@ -310,10 +311,10 @@ export const readWorkspaceTitle = (plainString: string): string => {
   return `refine: ${shortLine}`;
 };
 
-const writePromptFile = (promptString: string): string => {
+const writePromptFile = (prompt: string): string => {
   const promptsFolder = readStatusFolder("prompts");
   const promptFile = path.join(promptsFolder, `prompt-${randomUUID()}.txt`);
-  writePrivateFile({ path: promptFile, flags: "w", contents: `${promptString}\n` });
+  writePrivateFile({ path: promptFile, flags: "w", contents: `${prompt}\n` });
   return promptFile;
 };
 
@@ -342,7 +343,7 @@ const runInNewWorkspace = async (request: {
     args: [...createArgumentList, "--command", command, "--json"],
     step: "workspace create",
   });
-  const workspace = readFirstString(created, ["workspace_ref", "workspace_id"]) ?? "?";
+  const workspace = readFirstFilledField(created, ["workspace_ref", "workspace_id"]) ?? "?";
   return `cmux-new ran a command in workspace ${workspace}`;
 };
 
@@ -356,7 +357,7 @@ const pasteInNewWorkspace = async (request: {
 }): Promise<string> => {
   const createArgumentList = createWorkspaceArgumentList({ promptText: request.promptText, folder: request.folder });
   const created = await runCmuxDocument({ args: [...createArgumentList, "--json"], step: "workspace create" });
-  const surface = readFirstString(created, ["surface_id", "surface_ref"]);
+  const surface = readFirstFilledField(created, ["surface_id", "surface_ref"]);
 
   const hasNoSurface = surface === null;
   if (hasNoSurface) {
@@ -364,7 +365,7 @@ const pasteInNewWorkspace = async (request: {
   }
 
   await sleep(surfaceReadyDelayMilliseconds);
-  await sendStringToSurface({ surface, text: request.promptText, pressEnter: request.pressEnter });
+  await sendMessageToSurface({ surface, text: request.promptText, pressEnter: request.pressEnter });
   return `cmux-new pasted into surface ${surface}`;
 };
 
@@ -392,14 +393,14 @@ const deliverToFocusedSurface = async (request: {
   readonly config: Settings;
 }): Promise<string> => {
   const focus = await identifyFocus();
-  const surface = readFirstString(focus, ["surface_id", "surface_ref"]);
+  const surface = readFirstFilledField(focus, ["surface_id", "surface_ref"]);
 
   const hasNoSurface = surface === null;
   if (hasNoSurface) {
     throw createCmuxError("identify", "no focused surface");
   }
 
-  await sendStringToSurface({
+  await sendMessageToSurface({
     surface,
     text: request.promptText,
     pressEnter: request.config.refineCmuxPressEnter,
@@ -412,12 +413,12 @@ export const deliverToCmux = async (request: {
   readonly promptText: string;
   readonly config: Settings;
 }): Promise<string> => {
-  const promptString = request.promptText.trim();
+  const prompt = request.promptText.trim();
   switch (request.config.refineSendTo) {
     case "cmux-new":
-      return deliverToNewWorkspace({ promptText: promptString, config: request.config });
+      return deliverToNewWorkspace({ promptText: prompt, config: request.config });
     case "cmux-resume":
-      return deliverToFocusedSurface({ promptText: promptString, config: request.config });
+      return deliverToFocusedSurface({ promptText: prompt, config: request.config });
     case "caret":
       throw createCmuxError("deliver", "caret delivery types at the caret");
   }

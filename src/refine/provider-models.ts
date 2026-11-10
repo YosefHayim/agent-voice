@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { z } from "zod";
 
-import { readDocumentFile, readStringIfReadable } from "#src/storage/state-files.js";
+import { readDocumentFile, readFileIfReadable } from "#src/storage/state-files.js";
 import { containsAny, dedupe, findFirstCli, listNonBlankLines, runCliLines } from "./agent-cli.js";
 import { readCodexLastGoodModel } from "./refine-choices.js";
 
@@ -60,7 +60,7 @@ const listHelpLines = (executable: string) =>
     signal: AbortSignal.timeout(HELP_TIMEOUT_MS),
   });
 
-const findHits = (line: string, pattern: RegExp): ReadonlyArray<string> => line.match(pattern) ?? [];
+const findPatternTokens = (line: string, pattern: RegExp): ReadonlyArray<string> => line.match(pattern) ?? [];
 
 const readFirstWord = (line: string): string => line.split(/\s+/u)[0] ?? "";
 
@@ -112,7 +112,7 @@ const isModelSetting = (line: string): boolean =>
   line.startsWith("model") && !line.startsWith("model_") && line.includes("=");
 
 const listCodexConfiguredModel = (): ReadonlyArray<string> => {
-  const settingsToml = readStringIfReadable(readCodexFile("config.toml")) ?? "";
+  const settingsToml = readFileIfReadable(readCodexFile("config.toml")) ?? "";
   const modelLine = listNonBlankLines(settingsToml).find(isModelSetting);
   const model = (modelLine || "")
     .split("=")
@@ -157,7 +157,7 @@ const listClaudeModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<stri
   lines
     .filter((line) => !line.toLowerCase().startsWith("usage") && !line.startsWith("-"))
     .flatMap((line) => [
-      ...findHits(line, /\bclaude-[\w.-]+\b/gu),
+      ...findPatternTokens(line, /\bclaude-[\w.-]+\b/gu),
       ...line.split(/[\s,|]+/u).filter((part) => CLAUDE_ALIASES.includes(part)),
     ]);
 
@@ -229,7 +229,7 @@ const listGeminiModels = async (): Promise<ReadonlyArray<string>> => {
   }
 
   const help = await listHelpLines(cli.path);
-  const helpModels = help.flatMap((line) => findHits(line, /gemini-[\w.-]+/gu).map(readUnglueLabel));
+  const helpModels = help.flatMap((line) => findPatternTokens(line, /gemini-[\w.-]+/gu).map(readUnglueLabel));
 
   const isHelpEmpty = helpModels.length === 0;
   if (isHelpEmpty) {
@@ -258,7 +258,7 @@ const listGrokListedModels = (lines: ReadonlyArray<string>): ReadonlyArray<strin
 };
 
 const listGrokMentionedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
-  lines.flatMap((line) => findHits(line, GROK_MODEL));
+  lines.flatMap((line) => findPatternTokens(line, GROK_MODEL));
 
 const listGrokModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   const listed = listGrokListedModels(lines);
@@ -303,7 +303,7 @@ const listOpencodeLineModels = (line: string): ReadonlyArray<string> => {
     return [line];
   }
 
-  return findHits(line, /[\w.-]+\/[\w.-]+/gu).filter((token) => !token.includes("http"));
+  return findPatternTokens(line, /[\w.-]+\/[\w.-]+/gu).filter((token) => !token.includes("http"));
 };
 
 const listOpencodeModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
@@ -351,7 +351,7 @@ const readByPiRank = (left: string, right: string): number =>
   readPiRank(left) - readPiRank(right) || left.localeCompare(right);
 
 const listPiLineModels = (line: string): ReadonlyArray<string> => {
-  const slashTokens = findHits(line, /\b[a-z][\w.-]*\/[\w.:-]+\b/giu).filter(
+  const slashTokens = findPatternTokens(line, /\b[a-z][\w.-]*\/[\w.:-]+\b/giu).filter(
     (token) => !token.toLowerCase().includes("http"),
   );
 

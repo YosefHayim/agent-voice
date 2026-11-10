@@ -8,8 +8,8 @@ import { holdLock, type ReleaseLock, removeFreeLock } from "#src/storage/file-lo
 import {
   makePrivateFolder,
   openPrivateFile,
-  readStringIfReadable,
-  removeIfPresent,
+  readFileIfReadable,
+  removeFileIfExists,
   touchFile,
 } from "#src/storage/state-files.js";
 import { readWorkerStatus, writeWorkerStatus } from "./worker-status.js";
@@ -61,14 +61,14 @@ const isUsablePid = (pid: number): boolean => Number.isInteger(pid) && pid > 1;
 
 // The pid file's text as a pid, or null when the file is missing, empty, or not a number.
 export const readPid = (name: PidFileName): number | null => {
-  const pidString = readStringIfReadable(readStatusFile(name));
+  const pidFileReading = readFileIfReadable(readStatusFile(name));
 
-  const isThereNoPidString = pidString === null;
-  if (isThereNoPidString) {
+  const isPidFileMissing = pidFileReading === null;
+  if (isPidFileMissing) {
     return null;
   }
 
-  const pid = Number(pidString.trim());
+  const pid = Number(pidFileReading.trim());
   return isUsablePid(pid) ? pid : null;
 };
 
@@ -95,15 +95,15 @@ const isNamedProcess = (name: PidFileName, commandLine: string): boolean => {
 const isRunningAs = (name: PidFileName, pid: number): boolean => {
   const psLine = runPs(["-o", "state=,args=", "-p", String(pid)]);
 
-  const psLineHit = PS_LINE_PATTERN.exec(psLine);
+  const parsedPsLine = PS_LINE_PATTERN.exec(psLine);
 
-  const isProcessMissing = psLineHit === null;
+  const isProcessMissing = parsedPsLine === null;
   if (isProcessMissing) {
     return false;
   }
 
-  const processStatus = psLineHit[1] || "";
-  const commandLine = psLineHit[2] || "";
+  const processStatus = parsedPsLine[1] || "";
+  const commandLine = parsedPsLine[2] || "";
   return !processStatus.startsWith("Z") && isNamedProcess(name, commandLine);
 };
 
@@ -176,7 +176,7 @@ const removeOwnPidFile = (kind: WorkerKind): void => {
   const isOwnPid = savedPid === process.pid;
   if (isOwnPid) {
     const pidPath = readStatusFile(pidName);
-    removeIfPresent(pidPath);
+    removeFileIfExists(pidPath);
   }
 };
 
@@ -241,8 +241,8 @@ export const stopRequested = (): boolean => {
 
 const readLastLogLines = (kind: WorkerKind): string => {
   const logPath = readWorkerLogPath(kind);
-  const logString = readStringIfReadable(logPath) ?? "";
-  return logString.trimEnd().split("\n").slice(-6).join("\n");
+  const logFileReading = readFileIfReadable(logPath) ?? "";
+  return logFileReading.trimEnd().split("\n").slice(-6).join("\n");
 };
 
 const waitUntil = async (request: { readonly done: () => boolean; readonly timeoutMs: number }): Promise<void> => {
@@ -275,7 +275,7 @@ export const stopWorkers = async (): Promise<void> => {
   }
   for (const name of ["dictation.pid", "speech.pid", "pill.pid", "stop"] as const) {
     const filePath = readStatusFile(name);
-    removeIfPresent(filePath);
+    removeFileIfExists(filePath);
   }
   // A lock some worker still holds (say one that started after the pids were read) must stay, or a second could start.
   for (const kind of ["dictation", "speech"] as const) {
@@ -289,8 +289,8 @@ export const stopWorkers = async (): Promise<void> => {
 const listStrayAgentVoiceProcesses = (): ReadonlyArray<number> => {
   const processList = runPs(["-ax", "-o", "pid=,args="]);
   return processList.split("\n").flatMap((line) => {
-    const psLineHit = PS_LINE_PATTERN.exec(line);
-    const commandLine = psLineHit?.[2] || "";
+    const parsedPsLine = PS_LINE_PATTERN.exec(line);
+    const commandLine = parsedPsLine?.[2] || "";
     const isWorker = commandLine.includes("agent-voice") && WORKER_COMMAND.test(commandLine);
 
     const isNotStray = !isWorker && !isPillCommand(commandLine);
@@ -328,7 +328,7 @@ export const startWorkers = async (): Promise<"started" | "already running"> => 
   }
 
   const stopPath = readStatusFile("stop");
-  removeIfPresent(stopPath);
+  removeFileIfExists(stopPath);
   writeWorkerStatus({
     stage: "starting",
     detail: "Loading the dictation model",

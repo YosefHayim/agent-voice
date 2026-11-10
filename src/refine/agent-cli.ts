@@ -110,10 +110,10 @@ export const runCli = (request: {
     });
   });
 
-export const readCliPrintoutString = (run: CliRun): string => run.stdout.trim() || run.stderr.trim();
+export const readCliReply = (run: CliRun): string => run.stdout.trim() || run.stderr.trim();
 
 // stderr comes first: partial stdout must never hide the error that explains the exit.
-export const readCliFailureString = (run: CliRun): string =>
+export const readCliFailureReason = (run: CliRun): string =>
   [run.stderr.trim(), run.stdout.trim()].filter((string) => string !== "").join("\n");
 
 export const containsAny = (string: string, markers: ReadonlyArray<string>): boolean => {

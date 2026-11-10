@@ -1,6 +1,6 @@
 import { listRegisteredSettingsFiles } from "#src/agents/hook-registration.js";
 import {
-  isWhisperModelPresent,
+  isWhisperModelDownloaded,
   readWhisperModelPath,
   selectWhisperModel,
   whisperModels,
@@ -69,7 +69,7 @@ const listModelLines = (selectedKey: string): ReadonlyArray<ModelLine> =>
     label: model.label,
     megabytes: Math.round(model.approximateBytes / BYTES_PER_MEGABYTE),
     path: readWhisperModelPath(model),
-    present: isWhisperModelPresent(model),
+    present: isWhisperModelDownloaded(model),
     selected: model.key === selectedKey,
   }));
 

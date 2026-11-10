@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { chunkSpeech, listCharacterIds, readSpeedFromWordsPerMinute, readSupertonicString } from "./speech-chunks.js";
+import { chunkSpeech, listCharacterIds, readSpeedFromWordsPerMinute, readSupertonicSpeech } from "./speech-chunks.js";
 import { decodeWav, encodeWav } from "./wav-file.js";
 
 describe("chunkSpeech", () => {
@@ -21,13 +21,13 @@ describe("chunkSpeech", () => {
 
 describe("supertonicText", () => {
   it("normalizes symbols, spacing, and quotes, ends with a period, and adds the language tags", () => {
-    expect(readSupertonicString("Use foo_bar — see “docs” @ home , ok")).toBe(
+    expect(readSupertonicSpeech("Use foo_bar — see “docs” @ home , ok")).toBe(
       '<en>Use foo bar - see "docs" at home, ok.</en>',
     );
   });
 
   it("keeps existing end punctuation and removes emoji", () => {
-    expect(readSupertonicString("Done! 🎉")).toBe("<en>Done!</en>");
+    expect(readSupertonicSpeech("Done! 🎉")).toBe("<en>Done!</en>");
   });
 });
 

@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 
 import { readAgentVoiceHome, readStatusFile } from "#src/settings/agent-voice-home.js";
-import { removeIfPresent } from "#src/storage/state-files.js";
+import { removeFileIfExists } from "#src/storage/state-files.js";
 import { readRunningPid, sendSignalToGroup, writePid } from "./worker-processes.js";
 
 // A bottom-centre panel that shows the dictation stage from status.json. It is a JavaScript for Automation script
@@ -221,5 +221,5 @@ export const stopPill = (): void => {
   }
 
   const pidPath = readStatusFile("pill.pid");
-  removeIfPresent(pidPath);
+  removeFileIfExists(pidPath);
 };

@@ -85,8 +85,8 @@ const listReplacementPair = (line: string): ReadonlyArray<readonly [string, stri
 };
 
 // A blank or one-sided pair is skipped, and a later pair for the same heard words wins.
-export const parseReplacements = (replacementString: string): ReadonlyMap<string, string> => {
-  const pairs = replacementString.split(";").flatMap(listReplacementPair);
+export const parseReplacements = (replacementWords: string): ReadonlyMap<string, string> => {
+  const pairs = replacementWords.split(";").flatMap(listReplacementPair);
   return new Map(pairs);
 };
 
@@ -114,7 +114,7 @@ const listReplacementPhrases = (replacements: ReadonlyMap<string, string>): Read
     .filter((phrase) => phrase.words.length > 0 && phrase.written !== "")
     .sort((left, right) => right.words.length - left.words.length);
 
-const hasHitAt = (request: {
+const hasPhraseAt = (request: {
   readonly words: ReadonlyArray<string>;
   readonly index: number;
   readonly phrase: ReadonlyArray<string>;
@@ -123,10 +123,12 @@ const hasHitAt = (request: {
   request.phrase.every((word, offset) => request.words[request.index + offset] === word);
 
 const readCommandAt = (spoken: Spoken, index: number): SpokenCommand | undefined =>
-  SPOKEN_COMMANDS.find((spokenCommand) => hasHitAt({ words: spoken.canonical, index, phrase: spokenCommand.phrase }));
+  SPOKEN_COMMANDS.find((spokenCommand) =>
+    hasPhraseAt({ words: spoken.canonical, index, phrase: spokenCommand.phrase }),
+  );
 
 const readReplacementAt = (spoken: Spoken, index: number): Phrase | undefined =>
-  spoken.phrases.find((phrase) => hasHitAt({ words: spoken.canonical, index, phrase: phrase.words }));
+  spoken.phrases.find((phrase) => hasPhraseAt({ words: spoken.canonical, index, phrase: phrase.words }));
 
 // "literal" types the next command or replacement phrase, or one word, as plain words.
 const readLiteralLength = (spoken: Spoken, index: number): number => {
@@ -221,7 +223,7 @@ const readBreakLine = (formatStatus: FormatStatus, lineBreak: string): FormatSta
   needsSpace: false,
 });
 
-const readStringOnFreshLine = (formatStatus: FormatStatus): string => {
+const readFreshLineDictation = (formatStatus: FormatStatus): string => {
   if (formatStatus.atLineStart) {
     return formatStatus.text;
   }
@@ -230,7 +232,7 @@ const readStringOnFreshLine = (formatStatus: FormatStatus): string => {
 };
 
 const startListLine = (formatStatus: FormatStatus, marker: string): FormatStatus => {
-  const string = readStringOnFreshLine(formatStatus);
+  const string = readFreshLineDictation(formatStatus);
   return { ...formatStatus, text: `${string}${marker}`, atLineStart: false, capitalizeNext: true, needsSpace: false };
 };
 
@@ -270,7 +272,7 @@ const pushPiece = (formatStatus: FormatStatus, piece: Piece): FormatStatus => {
 };
 
 // Ends with a space when the next utterance should start a new word, and is empty when nothing should be typed.
-const readFinishedString = (formatStatus: FormatStatus): string => {
+const readFinishedDictation = (formatStatus: FormatStatus): string => {
   const endsWithWord = formatStatus.text !== "" && formatStatus.needsSpace;
 
   const isNotEndingWithWord = !endsWithWord;
@@ -281,11 +283,11 @@ const readFinishedString = (formatStatus: FormatStatus): string => {
   return `${formatStatus.text} `;
 };
 
-export const createDictationString = (transcript: string, replacements: ReadonlyMap<string, string>): string => {
+export const createDictationTranscript = (transcript: string, replacements: ReadonlyMap<string, string>): string => {
   const words = transcript.split(/\s+/u).filter((word) => word !== "");
   const canonical = words.map(readCanonicalWord);
   const phrases = listReplacementPhrases(replacements);
   const pieces = listPiecesFrom({ words, canonical, phrases }, 0);
   const formatStatus = pieces.reduce(pushPiece, initialFormat);
-  return readFinishedString(formatStatus);
+  return readFinishedDictation(formatStatus);
 };

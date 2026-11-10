@@ -22,8 +22,8 @@ let home = "";
 
 const writeSettings = (settings: { readonly speechMuted: boolean }) => {
   const settingsPath = path.join(home, "config.json");
-  const settingsString = JSON.stringify(settings);
-  writeFileSync(settingsPath, settingsString);
+  const serializedSettings = JSON.stringify(settings);
+  writeFileSync(settingsPath, serializedSettings);
 };
 
 beforeEach(() => {

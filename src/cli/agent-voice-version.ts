@@ -23,7 +23,7 @@ const findPackageDocumentPath = (folder: string): string => {
 // The folder depth differs between `src/cli` and the compiled `dist/src/cli`, so the file is found by walking up.
 const cliFolder = path.dirname(fileURLToPath(import.meta.url));
 const packageDocumentPath = findPackageDocumentPath(cliFolder);
-const packageDocumentString = readFileSync(packageDocumentPath, "utf8");
-const packageDocument: PackageDocument = JSON.parse(packageDocumentString);
+const packageDocumentFile = readFileSync(packageDocumentPath, "utf8");
+const packageDocument: PackageDocument = JSON.parse(packageDocumentFile);
 
 export const agentVoiceVersion = packageDocument.version;

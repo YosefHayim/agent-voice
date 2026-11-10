@@ -4,7 +4,7 @@ import { type HookChange, registerReplyHooks } from "#src/agents/hook-registrati
 import { holdKeyLabels } from "#src/dictation/hold-key.js";
 import {
   ensureWhisperModel,
-  isWhisperModelPresent,
+  isWhisperModelDownloaded,
   readWhisperModelPath,
   selectWhisperModel,
 } from "#src/dictation/whisper-models.js";
@@ -98,7 +98,7 @@ export const prepareModels = async (settings: Settings): Promise<void> => {
   const environment = readEnvironment();
   const model = selectWhisperModel({ environment, config: settings });
 
-  const isModelAbsent = !isWhisperModelPresent(model);
+  const isModelAbsent = !isWhisperModelDownloaded(model);
   if (isModelAbsent) {
     TerminalUI.printStep(`Downloading ${model.label} (~${readMegabytes(model.approximateBytes)})`);
     const modelDownloading = ensureWhisperModel({ model, onProgress: () => undefined });

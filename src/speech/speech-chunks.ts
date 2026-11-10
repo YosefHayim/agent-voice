@@ -6,7 +6,9 @@ const SENTENCE_END = /[.!?](?:\s|$)/gu;
 // The last sentence end that fits, else the last space, else a hard cut at the limit.
 const chunkEnd = (remaining: string, maxCharacters: number): number => {
   const window = remaining.slice(0, maxCharacters + 1);
-  const sentenceEnds = [...window.matchAll(SENTENCE_END)].map((regexHit) => regexHit.index + regexHit[0].length);
+  const sentenceEnds = [...window.matchAll(SENTENCE_END)].map(
+    (sentenceEnd) => sentenceEnd.index + sentenceEnd[0].length,
+  );
   const splitAt = sentenceEnds.at(-1) || window.lastIndexOf(" ") + 1;
 
   const fits = splitAt > 0 && splitAt <= maxCharacters;
@@ -62,7 +64,7 @@ const SYMBOL_REPLACEMENTS: ReadonlyArray<readonly [string, string]> = [
 const replaceAll = (string: string, [from, to]: readonly [string, string]) => string.split(from).join(to);
 
 // The same clean-up the Supertonic package does before it maps characters to model IDs.
-export const readSupertonicString = (string: string): string => {
+export const readSupertonicSpeech = (string: string): string => {
   const withoutEmoji = string.normalize("NFKD").replace(EMOJI, "");
   const cleaned = SYMBOL_REPLACEMENTS.reduce(replaceAll, withoutEmoji)
     .replace(/[♥☆♡©\\]/gu, "")

@@ -135,7 +135,7 @@ export const readWhisperModelPath = (model: WhisperModel): string => {
 // A file under 1 MB is a failed download, not a model.
 const failedDownloadBytes = 1_000_000;
 
-export const isWhisperModelPresent = (model: WhisperModel): boolean => {
+export const isWhisperModelDownloaded = (model: WhisperModel): boolean => {
   const file = readWhisperModelPath(model);
 
   const isFileAbsent = !existsSync(file);
@@ -154,8 +154,8 @@ export const ensureWhisperModel = async (request: {
 }): Promise<string> => {
   const modelPath = readWhisperModelPath(request.model);
 
-  const isModelPresent = isWhisperModelPresent(request.model);
-  if (isModelPresent) {
+  const isModelDownloaded = isWhisperModelDownloaded(request.model);
+  if (isModelDownloaded) {
     return modelPath;
   }
 

@@ -2,8 +2,8 @@ import { z } from "zod";
 import { readStatusFile } from "#src/settings/agent-voice-home.js";
 import {
   readDocumentFile,
-  readStringIfPresent,
-  readStringIfReadable,
+  readFileIfExists,
+  readFileIfReadable,
   writeDocumentAtomically,
   writeFileAtomically,
 } from "#src/storage/state-files.js";
@@ -32,11 +32,11 @@ export const readSavedChoice = (): SavedChoice | null =>
 
 export const readCodexLastGoodModel = (): string => {
   const lastGoodFile = readStatusFile(CODEX_LAST_GOOD_FILE);
-  return (readStringIfReadable(lastGoodFile) ?? "").trim();
+  return (readFileIfReadable(lastGoodFile) ?? "").trim();
 };
 
-const readModelSet = (fileString: string | null): ReadonlySet<string> => {
-  const models = listNonBlankLines(fileString ?? "");
+const readModelSet = (modelListFileReading: string | null): ReadonlySet<string> => {
+  const models = listNonBlankLines(modelListFileReading ?? "");
   return new Set(models);
 };
 
@@ -44,7 +44,7 @@ const readModelSet = (fileString: string | null): ReadonlySet<string> => {
 const readCodexFailedModelsOrNull = (): ReadonlySet<string> | null => {
   const failedFile = readStatusFile(CODEX_FAILED_FILE);
   try {
-    return readModelSet(readStringIfPresent(failedFile));
+    return readModelSet(readFileIfExists(failedFile));
   } catch {
     return null;
   }

@@ -75,10 +75,10 @@ export const rejectNoiseHallucination = (string: string, sampleCount: number): s
   const lowercase = clean.toLowerCase();
   const lettersOnly = lowercase.replace(/[^\p{L}\p{N}\s]/gu, "");
   const words = splitWords(lettersOnly);
-  const bareString = words.join(" ");
-  const isNoiseWord = words.length === 1 && seconds < 2.5 && SINGLE_WORD_NOISE.has(bareString);
+  const bareWords = words.join(" ");
+  const isNoiseWord = words.length === 1 && seconds < 2.5 && SINGLE_WORD_NOISE.has(bareWords);
 
-  const isNoisePhrase = seconds < 4 && words.length <= 8 && NOISE_PHRASES.some((phrase) => bareString.includes(phrase));
+  const isNoisePhrase = seconds < 4 && words.length <= 8 && NOISE_PHRASES.some((phrase) => bareWords.includes(phrase));
 
   const isNoise = isNoiseWord || isNoisePhrase;
   if (isNoise) {
@@ -88,7 +88,7 @@ export const rejectNoiseHallucination = (string: string, sampleCount: number): s
   return clean;
 };
 
-export const tidyWhisperString = (string: string, sampleCount: number): string => {
+export const tidyWhisperTranscript = (string: string, sampleCount: number): string => {
   const trimmed = string.trim();
   const capped = limitWordsToDuration(trimmed, sampleCount);
   const collapsed = collapseRepeatedRuns(capped);

@@ -103,8 +103,8 @@ const listTranscriptMessage = (line: string): ReadonlyArray<ChatMessage> => {
 };
 
 const listMessageBlocks = (message: ChatMessage): ReadonlyArray<MessageBlock> => {
-  const isPlainString = typeof message.content === "string";
-  if (isPlainString) {
+  const isPlainMessage = typeof message.content === "string";
+  if (isPlainMessage) {
     return [{ type: "text", text: message.content }];
   }
 
@@ -117,7 +117,7 @@ const isUserPrompt = (message: ChatMessage): boolean => {
   return message.role === "user" && blocks.every((block) => block.type !== "tool_result");
 };
 
-const listAssistantStrings = (message: ChatMessage): ReadonlyArray<string> => {
+const listAssistantReplies = (message: ChatMessage): ReadonlyArray<string> => {
   const isMessageRoleNotAssistant = message.role !== "assistant";
   if (isMessageRoleNotAssistant) {
     return [];
@@ -133,5 +133,5 @@ export const replyFromTranscript = (transcript: string): string => {
   const promptFlags = messages.map(isUserPrompt);
   const lastPromptIndex = promptFlags.lastIndexOf(true);
   const replyMessages = messages.slice(lastPromptIndex + 1);
-  return replyMessages.flatMap(listAssistantStrings).join("\n\n");
+  return replyMessages.flatMap(listAssistantReplies).join("\n\n");
 };

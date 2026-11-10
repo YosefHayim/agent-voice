@@ -105,8 +105,8 @@ describe("agent-voice speech-muted", () => {
     const marker = path.join(home, "stopped");
     await startStandInSpeechWorker(marker);
     const settingsFile = path.join(home, ".agent-voice", "config.json");
-    const settingsString = JSON.stringify({ readSpeechMuted: false });
-    writeFileSync(settingsFile, settingsString);
+    const serializedSettings = JSON.stringify({ readSpeechMuted: false });
+    writeFileSync(settingsFile, serializedSettings);
 
     const set = await readAgentVoice(["config", "set", "speech-muted", "true"]);
 

@@ -14,7 +14,7 @@ import {
 } from "./refine-choices.js";
 import { isPickerEnabled, pickRefineTargetWithDialogs, SKIP_REFINE_LABEL } from "./refine-picker.js";
 import { readNamedModel, refineWithProvider } from "./refine-providers.js";
-import { isFailedModelPrintoutString, isModelUnavailableError } from "./refine-reply.js";
+import { isFailedModelReply, isModelUnavailableError } from "./refine-reply.js";
 
 // Bounds so a dictation release never hangs on rotation.
 const MAX_MODELS_PER_PROVIDER = 6;
@@ -37,8 +37,7 @@ const LAST_RESORT_MODEL: Readonly<Record<ProviderId, string>> = {
 // Generic failures (network, CLI errors) still move on to the next candidate.
 const ROTATE_MARKERS = ["failed", "error", "timeout", "timed out", "connection", "refused", "not found", "empty"];
 
-export const canRotate = (detail: string): boolean =>
-  isFailedModelPrintoutString(detail) || containsAny(detail, ROTATE_MARKERS);
+export const canRotate = (detail: string): boolean => isFailedModelReply(detail) || containsAny(detail, ROTATE_MARKERS);
 
 // Models that already failed for this account go last, so a ChatGPT-account rejection (~3 s) is not paid every time.
 export const listCodexModelCandidates = (request: {

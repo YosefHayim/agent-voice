@@ -291,7 +291,7 @@ export const settingDefinitions: ReadonlyArray<SettingDefinition> = [
 
 export type SettingsField = string | number | boolean;
 
-const parseNumberString = (trimmed: string): number => {
+const parseNumberWord = (trimmed: string): number => {
   const number = Number(trimmed);
 
   const isNotANumber = trimmed === "" || Number.isNaN(number);
@@ -302,7 +302,7 @@ const parseNumberString = (trimmed: string): number => {
   return number;
 };
 
-const parseBooleanString = (trimmed: string): boolean => {
+const parseBooleanWord = (trimmed: string): boolean => {
   const isTrue = trimmed === "true";
   const isFalse = trimmed === "false";
 
@@ -331,9 +331,9 @@ export const parseSettingField = (request: {
 
   switch (request.setting.kind) {
     case "number":
-      return parseNumberString(trimmed);
+      return parseNumberWord(trimmed);
     case "boolean":
-      return parseBooleanString(trimmed);
+      return parseBooleanWord(trimmed);
     case "text":
       return request.enteredWords;
   }

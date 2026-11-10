@@ -156,8 +156,8 @@ const readHookCommand = (hook: Node): string => {
   }
 
   const commandField: unknown = getNodeValue(commandNode);
-  const isCommandString = typeof commandField === "string";
-  return isCommandString ? commandField : "";
+  const isCommandSet = typeof commandField === "string";
+  return isCommandSet ? commandField : "";
 };
 
 const findReplyHook = (root: Node, hits: (command: string) => boolean): ReplyHookLocation | null => {
@@ -273,7 +273,7 @@ const appendReplyHook = (code: string, command: string): string => {
   });
 };
 
-const readSettingsString = (code: string): string => {
+const pickSettingsDocument = (code: string): string => {
   const isBlank = code.trim() === "";
   if (isBlank) {
     return "{}\n";
@@ -310,7 +310,7 @@ export const addReplyHook = (request: {
   readonly command: string;
   readonly agent: AgentId;
 }): SettingsEdit => {
-  const code = readSettingsString(request.source);
+  const code = pickSettingsDocument(request.source);
   const root = parseSettings(code);
   const existing = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
 

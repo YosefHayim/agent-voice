@@ -36,9 +36,9 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-const writeSettings = (settingsString: string): void => {
+const writeSettings = (serializedSettings: string): void => {
   const settingsPath = path.join(home, "config.json");
-  writeFileSync(settingsPath, settingsString);
+  writeFileSync(settingsPath, serializedSettings);
 };
 
 const runHook = (request: {
@@ -48,11 +48,11 @@ const runHook = (request: {
   readonly speechMuted?: boolean;
   readonly environment?: Readonly<Record<string, string>>;
 }) => {
-  const settingsString = JSON.stringify({
+  const serializedSettings = JSON.stringify({
     speechMode: request.speechMode || "auto",
     speechMuted: request.speechMuted === true,
   });
-  writeSettings(settingsString);
+  writeSettings(serializedSettings);
   return runAgentVoice({
     args: ["reply", "--agent", request.agent],
     stdin: request.stdin,
@@ -111,8 +111,8 @@ const listQueued = (): ReadonlyArray<unknown> => {
 
   return readdirSync(inbox).map((name) => {
     const replyPath = path.join(inbox, name);
-    const replyString = readFileSync(replyPath, "utf8");
-    return JSON.parse(replyString);
+    const replyFileReading = readFileSync(replyPath, "utf8");
+    return JSON.parse(replyFileReading);
   });
 };
 
@@ -202,8 +202,8 @@ describe("agent-voice reply (the agent Stop hook)", () => {
       }),
     ]);
     const queuedReplies = listQueued();
-    const queuedString = JSON.stringify(queuedReplies);
-    expect(queuedString).not.toContain("must-not-leak");
+    const queuedRepliesDocument = JSON.stringify(queuedReplies);
+    expect(queuedRepliesDocument).not.toContain("must-not-leak");
   });
 
   it("queues a finished Grok turn and ignores a session close", async () => {
@@ -227,8 +227,8 @@ describe("agent-voice reply (the agent Stop hook)", () => {
   });
 
   it("exits 0 with no output and queues nothing when --agent is unknown, missing, empty, or has extra arguments", async () => {
-    const settingsString = JSON.stringify({ speechMode: "auto", speechMuted: false });
-    writeSettings(settingsString);
+    const serializedSettings = JSON.stringify({ speechMode: "auto", speechMuted: false });
+    writeSettings(serializedSettings);
     const stdin = JSON.stringify({ last_assistant_message: "Should not be queued" });
     for (const argumentList of [
       ["--agent", "nosuch"],

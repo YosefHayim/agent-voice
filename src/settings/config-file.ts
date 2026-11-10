@@ -1,16 +1,16 @@
-import { readStringIfPresent, writeFileAtomically } from "#src/storage/state-files.js";
+import { readFileIfExists, writeFileAtomically } from "#src/storage/state-files.js";
 import { readSettingsFilePath } from "./agent-voice-home.js";
 import { decodeSettings, defaultSettings, type Settings } from "./config-schema.js";
 
-const readSavedString = (filePath: string): string | null => {
+const readSavedFile = (filePath: string): string | null => {
   try {
-    return readStringIfPresent(filePath);
+    return readFileIfExists(filePath);
   } catch (error) {
     throw new Error(`${filePath} is not a valid agent-voice config: ${String(error)}`, { cause: error });
   }
 };
 
-const decodeSavedString = (request: { readonly filePath: string; readonly text: string }): Settings => {
+const decodeSavedSettings = (request: { readonly filePath: string; readonly text: string }): Settings => {
   try {
     return decodeSettings(JSON.parse(request.text));
   } catch (error) {
@@ -23,14 +23,14 @@ const decodeSavedString = (request: { readonly filePath: string; readonly text: 
 // A file that cannot be read is an error, never the defaults, so `config set` never replaces it.
 export const readSettings = (): Settings => {
   const filePath = readSettingsFilePath();
-  const savedFileMessages = readSavedString(filePath);
+  const savedFileMessages = readSavedFile(filePath);
 
   const isThereNoSavedFile = savedFileMessages === null;
   if (isThereNoSavedFile) {
     return defaultSettings;
   }
 
-  return decodeSavedString({ filePath, text: savedFileMessages });
+  return decodeSavedSettings({ filePath, text: savedFileMessages });
 };
 
 // A broken file is a reading the caller checks, so the Stop hook can stay silent while workers log it.

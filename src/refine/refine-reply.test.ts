@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   checkRefinedPrompt,
-  isAuthFailureString,
-  isCliHelpString,
-  isFailedModelPrintoutString,
+  isAuthFailureMessage,
+  isCliHelpScreen,
+  isFailedModelReply,
   isModelUnavailableError,
   isQuotaOrLimitError,
   listPromptLiterals,
-  replyStringFromDocument,
+  readReplyFromDocument,
 } from "./refine-reply.js";
 
 const openCodeHelpDump =
@@ -35,20 +35,15 @@ const storedVerdictList: ReadonlyArray<readonly [string, (string: string) => boo
     "Set the monthly budget, fix the billing page, and show the disk quota on the RPM and TPM charts.",
     false,
   ],
-  ["auth", isAuthFailureString, "No API key found for the selected model.\nUse /login", true],
-  [
-    "failed output",
-    isFailedModelPrintoutString,
-    "Not signed in. To authenticate without a browser, run:\n  grok login",
-    true,
-  ],
-  ["auth", isAuthFailureString, "Ship the fix for STT refine", false],
-  ["failed output", isFailedModelPrintoutString, '402: {"message":"requires more credits","code":402}', true],
-  ["failed output", isFailedModelPrintoutString, '{"error":{"message":"bad"}}', true],
-  ["failed output", isFailedModelPrintoutString, "", true],
-  ["failed output", isFailedModelPrintoutString, "Fix the STT refine help paste bug.", false],
-  ["CLI help", isCliHelpString, openCodeHelpDump, true],
-  ["CLI help", isCliHelpString, "Ship the fix for STT refine", false],
+  ["auth", isAuthFailureMessage, "No API key found for the selected model.\nUse /login", true],
+  ["failed output", isFailedModelReply, "Not signed in. To authenticate without a browser, run:\n  grok login", true],
+  ["auth", isAuthFailureMessage, "Ship the fix for STT refine", false],
+  ["failed output", isFailedModelReply, '402: {"message":"requires more credits","code":402}', true],
+  ["failed output", isFailedModelReply, '{"error":{"message":"bad"}}', true],
+  ["failed output", isFailedModelReply, "", true],
+  ["failed output", isFailedModelReply, "Fix the STT refine help paste bug.", false],
+  ["CLI help", isCliHelpScreen, openCodeHelpDump, true],
+  ["CLI help", isCliHelpScreen, "Ship the fix for STT refine", false],
 ];
 
 const verdicts = storedVerdictList.map(([kind, judge, text, expected]) => ({ kind, judge, text, expected }));
@@ -108,21 +103,21 @@ describe("replyTextFromJson", () => {
       '{"type":"text","part":{"type":"text","text":"Ship the fix for STT refine"}}',
       '{"type":"step_finish","part":{"type":"step-finish","reason":"stop"}}',
     ].join("\n");
-    expect(replyStringFromDocument(jsonl)).toBe("Ship the fix for STT refine");
+    expect(readReplyFromDocument(jsonl)).toBe("Ship the fix for STT refine");
   });
 
   it("prefers the longest cumulative streamed part", () => {
     const jsonl = ['{"part":{"text":"Ship"}}', '{"part":{"text":"Ship the fix"}}'].join("\n");
-    expect(replyStringFromDocument(jsonl)).toBe("Ship the fix");
+    expect(readReplyFromDocument(jsonl)).toBe("Ship the fix");
   });
 
   it("reads one whole JSON document, a JSON string, Claude content blocks, and the last JSONL message", () => {
-    expect(replyStringFromDocument('{"result":"  Done.  "}')).toBe("Done.");
-    expect(replyStringFromDocument('"plain"')).toBe("plain");
-    expect(replyStringFromDocument('{"content":[{"type":"text","text":"A"},{"type":"text","text":"B"}]}')).toBe("A\nB");
-    expect(replyStringFromDocument('{"response":{"text":"nested"}}')).toBe("nested");
+    expect(readReplyFromDocument('{"result":"  Done.  "}')).toBe("Done.");
+    expect(readReplyFromDocument('"plain"')).toBe("plain");
+    expect(readReplyFromDocument('{"content":[{"type":"text","text":"A"},{"type":"text","text":"B"}]}')).toBe("A\nB");
+    expect(readReplyFromDocument('{"response":{"text":"nested"}}')).toBe("nested");
     const messageLines = ['{"message":{"content":"first"}}', '{"message":{"content":[{"text":"second"}]}}'].join("\n");
-    expect(replyStringFromDocument(messageLines)).toBe("second");
-    expect(replyStringFromDocument("not json")).toBe("");
+    expect(readReplyFromDocument(messageLines)).toBe("second");
+    expect(readReplyFromDocument("not json")).toBe("");
   });
 });

@@ -7,7 +7,7 @@ import path from "node:path";
 import type { Settings } from "#src/settings/config-schema.js";
 import { appendDictationLog } from "#src/workers/worker-log.js";
 import { prepareForWhisper, readPcmFromSamples, readRootMeanSquare, readSyntheticSpeech } from "./clip-audio.js";
-import { tidyWhisperString } from "./transcript-text.js";
+import { tidyWhisperTranscript } from "./transcript-text.js";
 import type { TranscribeOptions, WhisperModule } from "./whisper-node.js";
 
 export interface Transcription {
@@ -171,7 +171,7 @@ export const loadTranscriber = async (modelPath: string): Promise<Transcriber> =
     const decoded = await wrapWhisperErrors(() => whisperHandle.transcribeData(audio, transcribeOptions).promise);
 
     return {
-      text: tidyWhisperString(decoded.result, region.length),
+      text: tidyWhisperTranscript(decoded.result, region.length),
       decodeMs: performance.now() - started,
       inputLevel,
       ranWhisper: true,

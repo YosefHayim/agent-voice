@@ -32,9 +32,9 @@ describe("config file", () => {
 
     saveSettings(hebrewSettings);
     const settingsPath = path.join(home, "config.json");
-    const savedString = readFileSync(settingsPath, "utf8");
+    const savedSettingsFileReading = readFileSync(settingsPath, "utf8");
 
-    expect(JSON.parse(savedString)).toMatchObject({
+    expect(JSON.parse(savedSettingsFileReading)).toMatchObject({
       dictationLanguage: "he",
       refineModel: "grok-4.5",
       speechVoice: "F4",

@@ -33,11 +33,10 @@ export const isPickerEnabled = (): boolean => {
   return environment.AGENT_VOICE_REFINE_PICKER && environment.CI === "" && process.platform === "darwin";
 };
 
-const escapeAppleScriptString = (plainString: string): string =>
-  plainString.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"');
+const escapeAppleScriptLiteral = (word: string): string => word.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"');
 
 const createAppleScriptList = (labels: ReadonlyArray<string>): string => {
-  const quotedLabels = labels.map((label) => `"${escapeAppleScriptString(label)}"`);
+  const quotedLabels = labels.map((label) => `"${escapeAppleScriptLiteral(label)}"`);
   return `{${quotedLabels.join(", ")}}`;
 };
 
@@ -85,7 +84,7 @@ const chooseFromList = async (request: {
   }
 
   const labelList = createAppleScriptList(orderedLabels);
-  const prompt = escapeAppleScriptString(request.prompt);
+  const prompt = escapeAppleScriptLiteral(request.prompt);
   const script = `try
   set theList to ${labelList}
   set theChoice to choose from list theList with title "${PICKER_TITLE}" with prompt "${prompt}" default items {item 1 of theList} OK button name "Use" cancel button name "Cancel"
@@ -106,9 +105,9 @@ end try`;
 };
 
 const showAlert = async (request: { readonly title: string; readonly message: string }): Promise<void> => {
-  const title = escapeAppleScriptString(request.title);
+  const title = escapeAppleScriptLiteral(request.title);
   const shortMessage = request.message.slice(0, 900);
-  const message = escapeAppleScriptString(shortMessage);
+  const message = escapeAppleScriptLiteral(shortMessage);
   const script = `try\n  display alert "${title}" message "${message}" as warning buttons {"OK"} default button "OK"\nend try`;
   try {
     await runOsascript(script, ALERT_TIMEOUT_MS);

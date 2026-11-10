@@ -46,8 +46,8 @@ export const readLatestDevinTurn = (atif: AtifExport): DevinTurn => {
     .filter((step) => step.source === "agent")
     .flatMap((step) => {
       const stepMessage = step.message;
-      const isMessageString = typeof stepMessage === "string";
-      const message = isMessageString ? stepMessage.trim() : "";
+      const isStepMessageGiven = typeof stepMessage === "string";
+      const message = isStepMessageGiven ? stepMessage.trim() : "";
 
       const isMessageEmpty = message === "";
       if (isMessageEmpty) {

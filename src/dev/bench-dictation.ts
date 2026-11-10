@@ -17,8 +17,8 @@ const { values: fields } = parseArgs({
   },
 });
 
-const listCommaSeparatedList = (commaSeparatedString: string) =>
-  commaSeparatedString
+const listCommaSeparatedList = (commaSeparatedNames: string) =>
+  commaSeparatedNames
     .split(",")
     .map((word) => word.trim())
     .filter((word) => word !== "");

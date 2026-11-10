@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decodeWav } from "#src/speech/wav-file.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
 import { readSamplesFromPcm } from "./clip-audio.js";
-import { createDictationString } from "./dictation-format.js";
+import { createDictationTranscript } from "./dictation-format.js";
 import { loadTranscriber } from "./transcriber.js";
 
 // Smoke tests only read a Whisper model already in ~/.agent-voice/models and never download one.
@@ -68,7 +68,7 @@ describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisp
     await transcriber.warmUp();
     const transcription = await transcriber.transcribe({ samples, language: "en", prompt: "worktrees" });
     await transcriber.release();
-    const formatted = createDictationString(transcription.text, new Map());
+    const formatted = createDictationTranscript(transcription.text, new Map());
 
     expect(transcription.ranWhisper).toBe(true);
     expect(transcription.text.toLowerCase()).toMatch(/folder.*push every/u);

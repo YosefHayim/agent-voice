@@ -88,7 +88,7 @@ export const writeDocumentAtomically = (request: { readonly path: string; readon
 
 // Only a missing file is null; any other read failure is thrown, so a caller that writes the file back never
 // mistakes an unreadable file for a missing one.
-export const readStringIfPresent = (filePath: string): string | null => {
+export const readFileIfExists = (filePath: string): string | null => {
   try {
     return readFileSync(filePath, "utf8");
   } catch (error) {
@@ -102,9 +102,9 @@ export const readStringIfPresent = (filePath: string): string | null => {
 };
 
 // For files agent-voice only reads, never writes back: an unreadable file counts as missing.
-export const readStringIfReadable = (filePath: string): string | null => {
+export const readFileIfReadable = (filePath: string): string | null => {
   try {
-    return readStringIfPresent(filePath);
+    return readFileIfExists(filePath);
   } catch {
     // Read-only files: any failure to read means there is nothing to use, so the caller falls back to its default.
     return null;
@@ -112,7 +112,7 @@ export const readStringIfReadable = (filePath: string): string | null => {
 };
 
 // A file that is not JSON, or does not match the schema, reads as null.
-const parseDocumentString = <Field>(fileMessages: string, schema: ZodType<Field>): Field | null => {
+const parseDocumentFile = <Field>(fileMessages: string, schema: ZodType<Field>): Field | null => {
   try {
     const documentField: unknown = JSON.parse(fileMessages);
     const checkedReply = schema.safeParse(documentField);
@@ -127,17 +127,17 @@ export const readDocumentFile = <Value>(request: {
   readonly path: string;
   readonly schema: ZodType<Value>;
 }): Value | null => {
-  const fileMessages = readStringIfReadable(request.path);
+  const fileMessages = readFileIfReadable(request.path);
 
   const isThereNoFileMessages = fileMessages === null;
   if (isThereNoFileMessages) {
     return null;
   }
 
-  return parseDocumentString(fileMessages, request.schema);
+  return parseDocumentFile(fileMessages, request.schema);
 };
 
-export const removeIfPresent = (filePath: string): void => rmSync(filePath, { force: true });
+export const removeFileIfExists = (filePath: string): void => rmSync(filePath, { force: true });
 
 export const touchFile = (filePath: string): void => {
   makeParentFolder(filePath);

@@ -3,23 +3,23 @@ import path from "node:path";
 
 import { z } from "zod";
 import { readStatusFolder } from "#src/settings/agent-voice-home.js";
-import { makePrivateFolder, readStringIfReadable, removeIfPresent } from "#src/storage/state-files.js";
+import { makePrivateFolder, readFileIfReadable, removeFileIfExists } from "#src/storage/state-files.js";
 import {
   type CliRun,
   findFirstCli,
   listNonBlankLines,
-  readCliFailureString,
-  readCliPrintoutString,
+  readCliFailureReason,
+  readCliReply,
   runCli,
 } from "./agent-cli.js";
 import type { ProviderId } from "./provider-models.js";
 import {
   checkRefinedPrompt,
-  createRefineRequestString,
+  createRefinePrompt,
   describeRefineReplyRejection,
-  isCliHelpString,
-  isFailedModelPrintoutString,
-  replyStringFromDocument,
+  isCliHelpScreen,
+  isFailedModelReply,
+  readReplyFromDocument,
 } from "./refine-reply.js";
 
 export interface RefineAttempt {
@@ -74,8 +74,8 @@ const requireCleanExit = (attempt: RefineAttempt, cliRun: CliRun): CliRun => {
     return cliRun;
   }
 
-  const failureString = readCliFailureString(cliRun) || `${attempt.provider} exited with ${String(cliRun.exitCode)}`;
-  return failAttempt(failureString);
+  const failureReason = readCliFailureReason(cliRun) || `${attempt.provider} exited with ${String(cliRun.exitCode)}`;
+  return failAttempt(failureReason);
 };
 
 const runSucceeded = async (attempt: RefineAttempt, invocation: Invocation, signal: AbortSignal): Promise<CliRun> => {
@@ -106,7 +106,7 @@ export const readNamedModel = (model: string, defaults: ReadonlyArray<string>): 
 };
 
 const readDocumentOrPlainReply = (cliRun: CliRun): string =>
-  replyStringFromDocument(cliRun.stdout) || readCliPrintoutString(cliRun);
+  readReplyFromDocument(cliRun.stdout) || readCliReply(cliRun);
 
 const readCodexEffortSetting = (effort: string): string => {
   const isEffortEmpty = effort === "";
@@ -119,7 +119,7 @@ const readCodexEffortSetting = (effort: string): string => {
 
 const listCodexArgumentList = (attempt: RefineAttempt, replyFile: string): ReadonlyArray<string> => {
   const effortSetting = readCodexEffortSetting(attempt.effort);
-  const prompt = createRefineRequestString(attempt.draft);
+  const prompt = createRefinePrompt(attempt.draft);
   return [
     "exec",
     ...listOptionalFlag("-c", effortSetting),
@@ -137,14 +137,14 @@ const listCodexArgumentList = (attempt: RefineAttempt, replyFile: string): Reado
   ];
 };
 
-const readFileReplyString = (replyFile: string): string => {
-  const string = readStringIfReadable(replyFile) ?? "";
+const readReplyFile = (replyFile: string): string => {
+  const string = readFileIfReadable(replyFile) ?? "";
   return string.trim();
 };
 
 const readCodexPrintoutReply = (cliRun: CliRun): string => {
-  const printoutString = readDocumentOrPlainReply(cliRun);
-  const replyLines = listNonBlankLines(printoutString).filter(
+  const cliRunReply = readDocumentOrPlainReply(cliRun);
+  const replyLines = listNonBlankLines(cliRunReply).filter(
     (line) => !/^(?:ERROR:|warning:)/u.test(line) && !line.includes("invalid_request_error"),
   );
   return replyLines.at(-1) ?? "";
@@ -154,16 +154,16 @@ const readCodexPrintoutReply = (cliRun: CliRun): string => {
 const readCodexLastReply = (cliRun: CliRun, fileReply: string): string => {
   const isFailedRun = cliRun.exitCode !== 0 && fileReply === "";
   if (isFailedRun) {
-    const failureString = readCliFailureString(cliRun) || "codex exec failed";
-    return failAttempt(failureString);
+    const failureReason = readCliFailureReason(cliRun) || "codex exec failed";
+    return failAttempt(failureReason);
   }
 
   const reply = fileReply || readCodexPrintoutReply(cliRun);
 
   const isReplyEmpty = reply === "";
   if (isReplyEmpty) {
-    const printoutString = readCliPrintoutString(cliRun);
-    return failAttempt(printoutString || "codex refine returned empty output");
+    const cliRunReply = readCliReply(cliRun);
+    return failAttempt(cliRunReply || "codex refine returned empty output");
   }
 
   return reply;
@@ -177,15 +177,15 @@ const readCodexReply = async (attempt: RefineAttempt, executable: string, signal
   const argumentList = listCodexArgumentList(attempt, replyFile);
   try {
     const cliRun = await run(attempt, { executable, args: argumentList }, signal);
-    const fileReply = readFileReplyString(replyFile);
+    const fileReply = readReplyFile(replyFile);
     return readCodexLastReply(cliRun, fileReply);
   } finally {
-    removeIfPresent(replyFile);
+    removeFileIfExists(replyFile);
   }
 };
 
 const readGrokReply = async (attempt: RefineAttempt, executable: string, signal: AbortSignal): Promise<string> => {
-  const prompt = createRefineRequestString(attempt.draft);
+  const prompt = createRefinePrompt(attempt.draft);
   const model = attempt.model.trim();
   const argumentList = [
     "-p",
@@ -201,15 +201,15 @@ const readGrokReply = async (attempt: RefineAttempt, executable: string, signal:
     ...listOptionalFlag("--reasoning-effort", attempt.effort),
   ];
   const cliRun = await runSucceeded(attempt, { executable, args: argumentList }, signal);
-  return readCliPrintoutString(cliRun);
+  return readCliReply(cliRun);
 };
 
 // Ollama answers with JSON; a body that is not that JSON has no reply, the same as an empty one.
 const ollamaGenerateSchema = z.object({ response: z.string().optional() });
 
-const parseOllamaFields = (messageString: string): z.infer<typeof ollamaGenerateSchema> | null => {
+const parseOllamaFields = (ollamaLine: string): z.infer<typeof ollamaGenerateSchema> | null => {
   try {
-    const parsed: unknown = JSON.parse(messageString);
+    const parsed: unknown = JSON.parse(ollamaLine);
     const checked = ollamaGenerateSchema.safeParse(parsed);
 
     const isCheckFailed = !checked.success;
@@ -223,8 +223,8 @@ const parseOllamaFields = (messageString: string): z.infer<typeof ollamaGenerate
   }
 };
 
-const readGeneratedString = (messageString: string): string => {
-  const parsedFields = parseOllamaFields(messageString);
+const readGeneratedReply = (ollamaLine: string): string => {
+  const parsedFields = parseOllamaFields(ollamaLine);
   return (parsedFields?.response ?? "").trim();
 };
 
@@ -233,11 +233,11 @@ const askOllamaOverHttp = async (attempt: RefineAttempt, model: string): Promise
     const httpReply = await fetch(OLLAMA_GENERATE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, prompt: createRefineRequestString(attempt.draft), stream: false }),
+      body: JSON.stringify({ model, prompt: createRefinePrompt(attempt.draft), stream: false }),
       signal: AbortSignal.timeout(AGENT_TIMEOUT_MS),
     });
-    const messageString = await httpReply.text();
-    return readGeneratedString(messageString);
+    const ollamaLine = await httpReply.text();
+    return readGeneratedReply(ollamaLine);
   } catch (error) {
     return failAttempt(`ollama HTTP refine failed: ${String(error)}`);
   }
@@ -245,10 +245,10 @@ const askOllamaOverHttp = async (attempt: RefineAttempt, model: string): Promise
 
 const readOllamaReply = async (attempt: RefineAttempt, executable: string, signal: AbortSignal): Promise<string> => {
   const model = attempt.model.trim() || "llama3.2";
-  const prompt = createRefineRequestString(attempt.draft);
+  const prompt = createRefinePrompt(attempt.draft);
   const cliRun = await run(attempt, { executable, args: ["run", model, prompt] }, signal);
 
-  const cliReply = readCliPrintoutString(cliRun);
+  const cliReply = readCliReply(cliRun);
 
   const isCliReplyNotEmpty = cliReply !== "";
   if (isCliReplyNotEmpty) {
@@ -285,7 +285,7 @@ const readOpencodeReply = async (attempt: RefineAttempt, executable: string, sig
   const effort = attempt.effort.toLowerCase();
   const variant = OPENCODE_VARIANTS.get(effort) ?? "";
   const model = readNamedModel(attempt.model, ["default", "opencode", "auto"]);
-  const prompt = createRefineRequestString(attempt.draft);
+  const prompt = createRefinePrompt(attempt.draft);
   const argumentList = [
     "run",
     "--format",
@@ -298,7 +298,7 @@ const readOpencodeReply = async (attempt: RefineAttempt, executable: string, sig
 
   const reply = readDocumentOrPlainReply(cliRun);
 
-  const isCliHelpReply = isCliHelpString(reply);
+  const isCliHelpReply = isCliHelpScreen(reply);
   if (isCliHelpReply) {
     return failAttempt(OPENCODE_HELP_DETAIL);
   }
@@ -307,7 +307,7 @@ const readOpencodeReply = async (attempt: RefineAttempt, executable: string, sig
 };
 
 const readClaudeReply = async (attempt: RefineAttempt, executable: string, signal: AbortSignal): Promise<string> => {
-  const prompt = createRefineRequestString(attempt.draft);
+  const prompt = createRefinePrompt(attempt.draft);
   const model = attempt.model.trim();
   const argumentList = ["-p", prompt, "--output-format", "text", ...listOptionalFlag("--model", model)];
   const cliRun = await runSucceeded(attempt, { executable, args: argumentList }, signal);
@@ -331,7 +331,7 @@ const listAgyArgumentList = (attempt: RefineAttempt): ReadonlyArray<string> => {
   const model = readNamedModel(attempt.model, GEMINI_DEFAULT_MODELS);
   const effort = attempt.effort.toLowerCase();
   const agyEffort = AGY_EFFORTS.get(effort) ?? "";
-  const prompt = createRefineRequestString(attempt.draft);
+  const prompt = createRefinePrompt(attempt.draft);
   return [
     "--output-format",
     "json",
@@ -344,7 +344,7 @@ const listAgyArgumentList = (attempt: RefineAttempt): ReadonlyArray<string> => {
 
 const listGeminiArgumentList = (attempt: RefineAttempt): ReadonlyArray<string> => {
   const model = readNamedModel(attempt.model, GEMINI_DEFAULT_MODELS);
-  const prompt = createRefineRequestString(attempt.draft);
+  const prompt = createRefinePrompt(attempt.draft);
   return ["-p", prompt, ...listOptionalFlag("-m", model)];
 };
 
@@ -387,7 +387,7 @@ const readPiReply = async (attempt: RefineAttempt, executable: string, signal: A
   const effort = attempt.effort.toLowerCase();
   const thinking = readPiThinking(effort);
   const model = readNamedModel(attempt.model, ["default", "pi-latest"]);
-  const prompt = createRefineRequestString(attempt.draft);
+  const prompt = createRefinePrompt(attempt.draft);
   const argumentList = [
     "--no-tools",
     "--no-session",
@@ -424,7 +424,7 @@ const readProviderReply = (attempt: RefineAttempt, signal: AbortSignal): Promise
 };
 
 const readCheckedReply = (attempt: RefineAttempt, reply: string): string => {
-  const isFailedPrintout = isFailedModelPrintoutString(reply);
+  const isFailedPrintout = isFailedModelReply(reply);
   if (isFailedPrintout) {
     return failAttempt(reply || `${attempt.provider} refine failed`);
   }

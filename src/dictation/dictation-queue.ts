@@ -11,7 +11,7 @@ import { appendDictationLog } from "#src/workers/worker-log.js";
 import type { StatusWriter } from "#src/workers/worker-status.js";
 import { typeAtCaret } from "./caret.js";
 import { SAMPLE_RATE } from "./clip-audio.js";
-import { createDictationString, parseReplacements, readPromptBoost } from "./dictation-format.js";
+import { createDictationTranscript, parseReplacements, readPromptBoost } from "./dictation-format.js";
 import type { Keyboard } from "./keyboard.js";
 import type { Transcriber } from "./transcriber.js";
 import { cleanTranscript, isShortPhrase } from "./transcript-text.js";
@@ -106,10 +106,10 @@ const readRefinedOrDictated = async (request: {
     log: appendDictationLog,
   });
   try {
-    const refinedString = await waitForRefine(refining);
+    const refinedTranscript = await waitForRefine(refining);
     const elapsed = (performance.now() - started).toFixed(0);
 
-    const isWaitElapsed = refinedString === null;
+    const isWaitElapsed = refinedTranscript === null;
     if (isWaitElapsed) {
       return keepDictation({
         dictatedText: request.dictated,
@@ -119,13 +119,13 @@ const readRefinedOrDictated = async (request: {
       });
     }
 
-    const isReplyEmpty = refinedString.trim() === "";
+    const isReplyEmpty = refinedTranscript.trim() === "";
     if (isReplyEmpty) {
       return keepDictation({ dictatedText: request.dictated, generation, elapsed, why: "empty reply" });
     }
 
-    appendDictationLog(`refine gen=${generation} refine_ms=${elapsed} refined=${JSON.stringify(refinedString)}`);
-    return { promptText: refinedString, isRefined: true };
+    appendDictationLog(`refine gen=${generation} refine_ms=${elapsed} refined=${JSON.stringify(refinedTranscript)}`);
+    return { promptText: refinedTranscript, isRefined: true };
   } catch (error) {
     const elapsed = (performance.now() - started).toFixed(0);
     return keepDictation({ dictatedText: request.dictated, generation, elapsed, why: describeError(error) });
@@ -138,7 +138,7 @@ const typeDictation = async (request: {
   readonly text: string;
 }): Promise<string> => {
   const replacements = parseReplacements(request.config.dictationReplacements);
-  const formatted = createDictationString(request.text, replacements);
+  const formatted = createDictationTranscript(request.text, replacements);
   await typeAtCaret({
     keyboard: request.pipeline.keyboard,
     text: formatted,

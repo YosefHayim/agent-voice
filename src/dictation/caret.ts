@@ -78,7 +78,7 @@ const pressCommandV = async (keyboard: Keyboard): Promise<void> => {
 };
 
 // The pasteboard is read back before Command-V, because a raced pbcopy would paste something else.
-const pasteString = async (keyboard: Keyboard, string: string): Promise<void> => {
+const pasteThroughClipboard = async (keyboard: Keyboard, string: string): Promise<void> => {
   const previous = await readPreviousClipboard();
   await writeClipboard(string);
   const copied = await readClipboard();
@@ -108,7 +108,7 @@ const readPreviousClipboard = async (): Promise<string | null> => {
   }
 };
 
-const putString = async (keyboard: Keyboard, string: string): Promise<void> => {
+const typeOrPasteWords = async (keyboard: Keyboard, string: string): Promise<void> => {
   const length = [...string].length;
 
   const isShortEnoughToType = length <= CLIPBOARD_CHARACTERS;
@@ -119,7 +119,7 @@ const putString = async (keyboard: Keyboard, string: string): Promise<void> => {
   }
 
   try {
-    await pasteString(keyboard, string);
+    await pasteThroughClipboard(keyboard, string);
     appendDictationLog(`type_path chars=${String(length)} clipboard`);
   } catch (error) {
     appendDictationLog(`type_path chars=${String(length)} paste failed, typing instead: ${String(error)}`);
@@ -132,13 +132,13 @@ export const typeAtCaret = async (request: {
   readonly text: string;
   readonly pressEnter: boolean;
 }): Promise<void> => {
-  const isThereNoString = request.text === "";
-  if (isThereNoString) {
+  const isNothingToType = request.text === "";
+  if (isNothingToType) {
     return;
   }
 
   await waitForHoldUp(request.keyboard, 900);
-  await putString(request.keyboard, request.text);
+  await typeOrPasteWords(request.keyboard, request.text);
 
   const isPressEnterOff = !request.pressEnter;
   if (isPressEnterOff) {

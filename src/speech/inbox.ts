@@ -8,7 +8,7 @@ import type { Settings } from "#src/settings/config-schema.js";
 import {
   makePrivateFolder,
   readDocumentFile,
-  removeIfPresent,
+  removeFileIfExists,
   writeDocumentAtomically,
 } from "#src/storage/state-files.js";
 import { type CmuxFocus, readCmuxFocus } from "./cmux-focus.js";
@@ -128,7 +128,7 @@ const listInboxFiles = (extension: ".json" | ".speaking"): ReadonlyArray<string>
 export const removeInboxFiles = (extensions: ReadonlyArray<".json" | ".speaking">): void => {
   const files = extensions.flatMap(listInboxFiles);
   for (const file of files) {
-    removeIfPresent(file);
+    removeFileIfExists(file);
   }
 };
 
@@ -217,7 +217,7 @@ const listPendingReplies = (): ReadonlyArray<PendingReply> => {
 
     const isThereNoReply = storedReply === null || !isSpeakable(storedReply);
     if (isThereNoReply) {
-      removeIfPresent(file);
+      removeFileIfExists(file);
       return [];
     }
 
@@ -287,7 +287,7 @@ export const claimNextReply = async (mode: Settings["speechMode"]): Promise<Pend
   for (const candidate of pending) {
     const isStale = isSuperseded(pending, candidate) || hasBeenSpoken(seen, candidate.reply);
     if (isStale) {
-      removeIfPresent(candidate.file);
+      removeFileIfExists(candidate.file);
       continue;
     }
 
@@ -311,7 +311,7 @@ export const claimNextReply = async (mode: Settings["speechMode"]): Promise<Pend
   return null;
 };
 
-export const completeReply = (claimedFile: string): void => removeIfPresent(claimedFile);
+export const completeReply = (claimedFile: string): void => removeFileIfExists(claimedFile);
 
 export const failReply = (claimedFile: string): void => {
   const failedFolder = readStatusFolder("failed");

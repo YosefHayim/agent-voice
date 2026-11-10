@@ -8,7 +8,7 @@ import { readStatusFile, readStatusFolder } from "#src/settings/agent-voice-home
 import {
   makePrivateFolder,
   readDocumentFile,
-  readStringIfPresent,
+  readFileIfExists,
   writeDocumentAtomically,
 } from "#src/storage/state-files.js";
 import { readAgentVoiceInvocation } from "#src/workers/worker-processes.js";
@@ -106,7 +106,7 @@ const readFailedChange = (settings: HookSettingsFile, error: unknown): HookChang
 // Reading an unreadable file as missing would replace the user's settings with a hook-only file.
 const readSettings = (settings: HookSettingsFile): string | null => {
   try {
-    return readStringIfPresent(settings.file);
+    return readFileIfExists(settings.file);
   } catch (error) {
     throw new Error(`the settings file could not be read (${String(error)})`, { cause: error });
   }
@@ -175,8 +175,8 @@ const registerOne = (settings: HookSettingsFile): HookChange => {
 const unregisterInstalled = (settings: HookSettingsFile): HookChange => {
   const current = readSettings(settings);
 
-  const isThereNoSettingsString = current === null;
-  if (isThereNoSettingsString) {
+  const isSettingsFileMissing = current === null;
+  if (isSettingsFileMissing) {
     return readHookChange(settings, "absent");
   }
 
@@ -214,8 +214,8 @@ const hasReplyHook = (settings: HookSettingsFile): boolean => {
   try {
     const current = readSettings(settings);
 
-    const isThereNoSettingsString = current === null;
-    if (isThereNoSettingsString) {
+    const isSettingsFileMissing = current === null;
+    if (isSettingsFileMissing) {
       return false;
     }
 

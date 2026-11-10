@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { describeError } from "#src/error-message.js";
 import type { Settings } from "#src/settings/config-schema.js";
-import { listCharacterIds, readSupertonicString } from "./speech-chunks.js";
+import { listCharacterIds, readSupertonicSpeech } from "./speech-chunks.js";
 
 export interface SynthesizeRequest {
   readonly text: string;
@@ -125,8 +125,8 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
 
   // Mono samples at `sampleRate` for one chunk of speech text.
   const synthesize = async (request: SynthesizeRequest): Promise<Float32Array> => {
-    const modelString = readSupertonicString(request.text);
-    const ids = listCharacterIds(modelString, indexer);
+    const supertonicSpeech = readSupertonicSpeech(request.text);
+    const ids = listCharacterIds(supertonicSpeech, indexer);
 
     const isNoIds = ids.length === 0;
     if (isNoIds) {

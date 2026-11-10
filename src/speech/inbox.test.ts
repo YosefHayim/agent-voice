@@ -172,10 +172,10 @@ describe("inbox", () => {
     failReply(claimed.file);
     const failed = path.join(home, "failed");
     const seenFile = path.join(home, "seen.json");
-    const seenString = readFileSync(seenFile, "utf8");
+    const seenFileReading = readFileSync(seenFile, "utf8");
     expect(listInboxNames()).toEqual([]);
     expect(readdirSync(failed)).toHaveLength(1);
-    expect(JSON.parse(seenString)).toBeTruthy();
+    expect(JSON.parse(seenFileReading)).toBeTruthy();
   });
 
   it("keeps queued and failed replies readable by the user alone, tightening an inbox made looser before", async () => {

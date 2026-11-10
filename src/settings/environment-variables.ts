@@ -25,15 +25,15 @@ const isSwitchOn = (string: string | undefined): boolean => {
   return !offWords.includes(word);
 };
 
-const trimString = (string: string | undefined): string => (string ?? "").trim();
+const trimWord = (string: string | undefined): string => (string ?? "").trim();
 
 export const readEnvironment = (): AgentVoiceEnvironment => ({
-  AGENT_VOICE_HOME: trimString(process.env.AGENT_VOICE_HOME),
-  AGENT_VOICE_CONFIG_FILE: trimString(process.env.AGENT_VOICE_CONFIG_FILE),
-  AGENT_VOICE_DICTATION_MODEL: trimString(process.env.AGENT_VOICE_DICTATION_MODEL),
+  AGENT_VOICE_HOME: trimWord(process.env.AGENT_VOICE_HOME),
+  AGENT_VOICE_CONFIG_FILE: trimWord(process.env.AGENT_VOICE_CONFIG_FILE),
+  AGENT_VOICE_DICTATION_MODEL: trimWord(process.env.AGENT_VOICE_DICTATION_MODEL),
   AGENT_VOICE_DICTATION_LIVE_PREVIEW: isSwitchOn(process.env.AGENT_VOICE_DICTATION_LIVE_PREVIEW),
   AGENT_VOICE_REFINE_PICKER: isSwitchOn(process.env.AGENT_VOICE_REFINE_PICKER),
-  CI: trimString(process.env.CI),
+  CI: trimWord(process.env.CI),
 });
 
 // README and .env.example list exactly these: agent-voice's own variables, not CI.
