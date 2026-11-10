@@ -6,8 +6,9 @@ import { MODEL_ALIASES, whisperModelKeys } from "#src/dictation/whisper-models.j
 const choiceWithAliases = <Choice extends string>(aliases: Readonly<Record<string, Choice>>) =>
   z.string().transform((enteredWords, issueReporter) => {
     const key = enteredWords.trim().toLowerCase();
-    const isKnownAlias = Object.hasOwn(aliases, key);
-    if (!isKnownAlias) {
+
+    const isNotKnownAlias = !Object.hasOwn(aliases, key);
+    if (isNotKnownAlias) {
       issueReporter.addIssue({ code: "custom", message: `Unknown value "${enteredWords}".`, input: enteredWords });
       return z.NEVER;
     }
@@ -118,7 +119,9 @@ const describeConfigIssues = (error: ZodError): string =>
 // Throws with the issues as text when a value does not match the config schema.
 export const decodeConfig = (storedSettings: unknown): Config => {
   const checkedReply = configSchema.safeParse(storedSettings);
-  if (!checkedReply.success) {
+
+  const isReplyInvalid = !checkedReply.success;
+  if (isReplyInvalid) {
     throw new Error(describeConfigIssues(checkedReply.error));
   }
 
@@ -288,6 +291,7 @@ export type ConfigValue = string | number | boolean;
 
 const parseNumberText = (trimmed: string): number => {
   const number = Number(trimmed);
+
   const isNotANumber = trimmed === "" || Number.isNaN(number);
   if (isNotANumber) {
     throw new Error(`Expected a number, actual "${trimmed}".`);
@@ -299,6 +303,7 @@ const parseNumberText = (trimmed: string): number => {
 const parseBooleanText = (trimmed: string): boolean => {
   const isTrue = trimmed === "true";
   const isFalse = trimmed === "false";
+
   if (isTrue) {
     return true;
   }
@@ -316,6 +321,7 @@ export const parseSettingValue = (request: {
   readonly enteredWords: string;
 }): ConfigValue | null => {
   const trimmed = request.enteredWords.trim();
+
   const isClearedOptional = request.setting.optional && trimmed === "";
   if (isClearedOptional) {
     return null;

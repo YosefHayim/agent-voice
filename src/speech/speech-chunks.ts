@@ -8,8 +8,11 @@ const chunkEnd = (remaining: string, maxCharacters: number): number => {
   const window = remaining.slice(0, maxCharacters + 1);
   const sentenceEnds = [...window.matchAll(SENTENCE_END)].map((match) => match.index + match[0].length);
   const splitAt = sentenceEnds.at(-1) || window.lastIndexOf(" ") + 1;
+
   const fits = splitAt > 0 && splitAt <= maxCharacters;
-  if (!fits) {
+
+  const isNotFitting = !fits;
+  if (isNotFitting) {
     return maxCharacters;
   }
 
@@ -67,6 +70,7 @@ export const supertonicText = (text: string): string => {
     .replace(/(["'`])\1+/gu, "$1")
     .replace(/\s+/gu, " ")
     .trim();
+
   const isEnded = /[.!?;:,'")\]}…。」』】〉》›»]$/u.test(cleaned);
   if (isEnded) {
     return `<en>${cleaned}</en>`;
@@ -79,8 +83,11 @@ export const supertonicText = (text: string): string => {
 export const characterIds = (text: string, indexer: ReadonlyArray<number>): ReadonlyArray<number> =>
   [...text].flatMap((character) => {
     const codePoint = character.codePointAt(0) || 0;
+
     const id = indexer[codePoint];
-    if (id === undefined || id < 0) {
+
+    const isIdMissingOrBelow0 = id === undefined || id < 0;
+    if (isIdMissingOrBelow0) {
       return [];
     }
 

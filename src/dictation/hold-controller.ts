@@ -29,7 +29,9 @@ const clipboardOutcomeHoldMilliseconds = 4_000;
 const stopTappedSpeech = (status: StatusWriter): void => {
   const wasSpeaking = isSpeaking();
   stopSpeech();
-  if (!wasSpeaking) {
+
+  const wasNotSpeaking = !wasSpeaking;
+  if (wasNotSpeaking) {
     return;
   }
 
@@ -84,7 +86,8 @@ const toggleSpeechMute = (status: StatusWriter): void => {
     const willBeMuted = !settings.speechMuted;
     saveConfig({ ...settings, speechMuted: willBeMuted });
 
-    if (!willBeMuted) {
+    const isNotGoingToMute = !willBeMuted;
+    if (isNotGoingToMute) {
       status.write("inactive", "Speech unmuted");
       return;
     }
@@ -117,7 +120,9 @@ export const makeHoldController = (request: {
   const cancelClip = (): void => {
     clip.cancel();
     caption.clear();
-    if (!isListeningAnnounced) {
+
+    const isListeningNotAnnounced = !isListeningAnnounced;
+    if (isListeningNotAnnounced) {
       return;
     }
 
@@ -130,6 +135,7 @@ export const makeHoldController = (request: {
     finishingGeneration = undefined;
     const samples = clip.end();
     const fallbackCaption = caption.take();
+
     const isClipEmpty = samples.length === 0 && fallbackCaption === "";
     if (isClipEmpty) {
       status.write("inactive", "No audio captured");
@@ -162,6 +168,7 @@ export const makeHoldController = (request: {
 
     const tap = classifyTap({ lastTapAt, now: Date.now() });
     lastTapAt = tap.rememberedTapAt;
+
     const isSingleTap = !tap.double;
     if (isSingleTap) {
       stopTappedSpeech(status);
@@ -207,6 +214,7 @@ export const makeHoldController = (request: {
   // Buffer audio before the threshold so the first word is retained.
   const scheduleHold = (): void => {
     const pendingGeneration = finishingGeneration;
+
     const hasPendingClip = pendingGeneration !== undefined;
     if (hasPendingClip) {
       endClip(pendingGeneration);
@@ -273,8 +281,8 @@ export const makeHoldController = (request: {
   };
 
   const listTimerEvents = (): ReadonlyArray<HoldEvent> => {
-    const isHoldElapsed = deadline !== undefined && holdState === "waiting" && Date.now() >= deadline;
-    if (!isHoldElapsed) {
+    const isNotHoldElapsed = deadline === undefined || holdState !== "waiting" || Date.now() < deadline;
+    if (isNotHoldElapsed) {
       return [];
     }
 
@@ -284,8 +292,9 @@ export const makeHoldController = (request: {
   // Recording with no dictation hold and no release tail means a signal was lost: never leave the mic on.
   const stopLostRecording = (): void => {
     const isHeld = holdState === "waiting" || holdState === "listening";
-    const isLost = clip.isRecording() && finishingGeneration === undefined && !isHeld;
-    if (!isLost) {
+
+    const isNotLost = !clip.isRecording() || finishingGeneration !== undefined || isHeld;
+    if (isNotLost) {
       return;
     }
 

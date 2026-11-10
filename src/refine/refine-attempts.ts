@@ -57,12 +57,13 @@ export const listCodexModelCandidates = (request: {
 };
 
 const pickSavedModel = (saved: SavedChoice | null, provider: ProviderId): string => {
-  if (saved === null) {
+  const isSavedMissing = saved === null;
+  if (isSavedMissing) {
     return "";
   }
 
-  const isSavedForProvider = saved.provider === provider;
-  if (!isSavedForProvider) {
+  const isNotSavedForProvider = saved.provider !== provider;
+  if (isNotSavedForProvider) {
     return "";
   }
 
@@ -71,7 +72,9 @@ const pickSavedModel = (saved: SavedChoice | null, provider: ProviderId): string
 
 const listDiscoveredModels = async (provider: ProviderId, preferred: string): Promise<ReadonlyArray<string>> => {
   const isCodex = provider === "codex";
-  if (!isCodex) {
+
+  const isNotCodex = !isCodex;
+  if (isNotCodex) {
     return providerModels(provider);
   }
 
@@ -87,6 +90,7 @@ const listModelCandidates = async (provider: ProviderId, preferred: string): Pro
   const savedModel = pickSavedModel(saved, provider);
   const discovered = await listDiscoveredModels(provider, preferred);
   const candidates = dedupe([chosenModel, savedModel, ...discovered]).slice(0, MAX_MODELS_PER_PROVIDER);
+
   const hasCandidates = candidates.length > 0;
   if (hasCandidates) {
     return candidates;
@@ -129,8 +133,8 @@ const pickAutoStartModel = (
   provider: ProviderId,
   request: { readonly savedProvider: string; readonly requestedModel: string },
 ): string => {
-  const isSavedProvider = provider === request.savedProvider;
-  if (!isSavedProvider) {
+  const isNotSavedProvider = provider !== request.savedProvider;
+  if (isNotSavedProvider) {
     return "";
   }
 
@@ -146,6 +150,7 @@ const listAutoAttempts = async (requestedModel: string): Promise<ReadonlyArray<A
   ];
   const installed = savedFirst.filter(isProviderInstalled).slice(0, 1 + MAX_CROSS_PROVIDER_ATTEMPTS);
   const [leadProvider, ...fallbackProviders] = installed;
+
   const hasNoProvider = leadProvider === undefined;
   if (hasNoProvider) {
     return [];
@@ -192,12 +197,14 @@ const readSavedEffort = (): string => readSavedChoice()?.effort ?? "";
 // The configured model, else the saved pick for this provider, else Codex's default.
 const pickStartingModel = (request: RefineRequest): string => {
   const configuredModel = request.model.trim();
+
   const isModelChosen = configuredModel !== "" || request.provider === "auto";
   if (isModelChosen) {
     return configuredModel;
   }
 
   const savedModel = pickSavedModel(readSavedChoice(), request.provider);
+
   const hasSavedModel = savedModel !== "";
   if (hasSavedModel) {
     return savedModel;
@@ -242,6 +249,7 @@ const tryAttempts = async (
   for (const target of request.attempts) {
     request.log(`refine try ${target.provider}/${target.model}`);
     const outcome = await refineWithTarget(target, request);
+
     const isRefined = outcome.status === "refined";
     if (isRefined) {
       saveRefineChoice({ provider: target.provider, model: target.model, effort: request.effort });
@@ -250,6 +258,7 @@ const tryAttempts = async (
 
     const detail = outcome.detail;
     failures.push(`${target.provider}/${target.model}: ${detail.slice(0, 400)}`);
+
     const isUnavailableCodexModel = target.provider === "codex" && isModelUnavailableError(detail);
     if (isUnavailableCodexModel) {
       markCodexModelFailed(target.model);
@@ -268,6 +277,7 @@ const tryAttempts = async (
 // Throws an Error with the reason when refine fails and the user does not skip it.
 export const refinePrompt = async (request: RefineRequest): Promise<string> => {
   const draft = request.draft.trim();
+
   const isDraftEmpty = draft === "";
   if (isDraftEmpty) {
     throw new Error("Nothing to refine");
@@ -276,6 +286,7 @@ export const refinePrompt = async (request: RefineRequest): Promise<string> => {
   const effort = request.effort.trim().toLowerCase() || readSavedEffort() || DEFAULT_REFINE_EFFORT;
   const model = pickStartingModel(request);
   const attempts = await createAttemptQueue({ provider: request.provider, model });
+
   const hasNoAttempts = attempts.length === 0;
   if (hasNoAttempts) {
     throw new Error("No refine provider found on PATH (install codex, claude, grok, ollama, …).");
@@ -283,14 +294,16 @@ export const refinePrompt = async (request: RefineRequest): Promise<string> => {
 
   const tried = await tryAttempts({ ...request, draft, attempts, effort });
   const refinedPrompt = tried.refined;
+
   const hasRefined = refinedPrompt !== null;
   if (hasRefined) {
     return refinedPrompt;
   }
 
   const joined = (tried.failures.join("; ") || "all refine attempts failed").slice(0, 2_000);
-  const isPickerAllowed = request.allowPicker && isPickerEnabled();
-  if (!isPickerAllowed) {
+
+  const isNotPickerAllowed = !request.allowPicker || !isPickerEnabled();
+  if (isNotPickerAllowed) {
     throw new Error(`refine failed after fallbacks: ${joined}`);
   }
 
@@ -301,6 +314,7 @@ export const refinePrompt = async (request: RefineRequest): Promise<string> => {
     preferredEffort: effort,
     offerSkip: true,
   });
+
   const isPickCancelled = picked === null;
   if (isPickCancelled) {
     throw new Error(`refine cancelled at the picker: ${joined}`);

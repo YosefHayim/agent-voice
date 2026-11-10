@@ -37,15 +37,19 @@ const wavChunks = (bytes: Buffer): ReadonlyArray<WavChunk> => {
 
 // Keeps only the first channel: every reader wants mono.
 export const decodeWav = (bytes: Buffer): { readonly sampleRate: number; readonly pcm: Int16Array } | undefined => {
-  const isWave = bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WAVE";
-  if (!isWave) {
+  const isNotWave = bytes.toString("ascii", 0, 4) !== "RIFF" || bytes.toString("ascii", 8, 12) !== "WAVE";
+  if (isNotWave) {
     return undefined;
   }
 
   const chunks = wavChunks(bytes);
   const format = chunks.find((chunk) => chunk.id === "fmt ");
+
   const samples = chunks.find((chunk) => chunk.id === "data");
-  if (format === undefined || samples === undefined || bytes.readUInt16LE(format.start + 14) !== 16) {
+
+  const isUnsupportedWave =
+    format === undefined || samples === undefined || bytes.readUInt16LE(format.start + 14) !== 16;
+  if (isUnsupportedWave) {
     return undefined;
   }
 

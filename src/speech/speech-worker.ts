@@ -19,6 +19,7 @@ const nothingSpokenPauseMilliseconds = 150;
 export const speakNextReply = async (engine: SupertonicEngine, player: SpeechPlayer): Promise<SpeakStep> => {
   // Before the claim, which can wait on Cmux: a stop that comes in meanwhile must still silence the reply.
   player.reset();
+
   const settings = readConfigOrDefaults();
 
   // Before the dictation wait, so a reply that came in while muted is never kept for after an unmute.
@@ -33,6 +34,7 @@ export const speakNextReply = async (engine: SupertonicEngine, player: SpeechPla
   }
 
   const nextReply = await claimNextReply(settings.speechMode);
+
   const isThereNoNext = nextReply === null;
   if (isThereNoNext) {
     return "idle";
@@ -68,6 +70,7 @@ const pauseAfter = (step: SpeakStep): number => {
 const speakUntilStopped = async (engine: SupertonicEngine, player: SpeechPlayer): Promise<void> => {
   while (!stopRequested()) {
     const settings = readConfigOrDefaults();
+
     const isSpeechOff = settings.speechMode === "off";
     if (isSpeechOff) {
       removeInboxFiles([".json", ".speaking"]);
@@ -88,6 +91,7 @@ const loadAndSpeak = async (player: SpeechPlayer): Promise<void> => {
   // A claim left by a crash would otherwise look like speech in progress forever.
   removeInboxFiles([".speaking"]);
   const settings = readConfigOrDefaults();
+
   const isSpeechOff = settings.speechMode === "off";
   if (isSpeechOff) {
     removeInboxFiles([".json"]);
@@ -106,6 +110,7 @@ export const runSpeechWorker = async (): Promise<void> => {
   const player = makeSpeechPlayer();
   process.on("SIGUSR2", player.stop);
   const releaseWorkerLock = claimWorkerLock("speech");
+
   const isLockTaken = releaseWorkerLock === null;
   if (isLockTaken) {
     return;

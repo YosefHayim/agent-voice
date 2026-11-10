@@ -33,6 +33,7 @@ const makeParentFolder = (filePath: string): void => {
   const folder = path.dirname(filePath);
   const home = agentVoiceHome();
   const relative = path.relative(home, folder);
+
   const isOutsideHome = relative.startsWith("..") || path.isAbsolute(relative);
   if (isOutsideHome) {
     mkdirSync(folder, { recursive: true, mode: PRIVATE_FOLDER_MODE });
@@ -127,6 +128,7 @@ export const readJsonFile = <Value>(request: {
   readonly schema: ZodType<Value>;
 }): Value | null => {
   const fileContents = readTextIfReadable(request.path);
+
   const isThereNoFileContents = fileContents === null;
   if (isThereNoFileContents) {
     return null;

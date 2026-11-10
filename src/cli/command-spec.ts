@@ -38,8 +38,9 @@ export const isFlagOn = (parsedCommand: ParsedCommand, flagName: string): boolea
 
 export const readStringFlag = (parsedCommand: ParsedCommand, flagName: string): string | null => {
   const flagWord = parsedCommand.flags[flagName];
-  const isWordGiven = typeof flagWord === "string";
-  if (!isWordGiven) {
+
+  const isNotWordGiven = typeof flagWord !== "string";
+  if (isNotWordGiven) {
     return null;
   }
 
@@ -52,6 +53,7 @@ export const readOptionalPositional = (parsedCommand: ParsedCommand, positionalN
 // The parser already rejects a missing required word, so a missing one here is a bug and fails loudly.
 export const readRequiredPositional = (parsedCommand: ParsedCommand, positionalName: string): string => {
   const positionalWord = parsedCommand.positionals[positionalName];
+
   const isWordMissing = positionalWord == null;
   if (isWordMissing) {
     throw new Error(`Missing ${positionalName}.`);

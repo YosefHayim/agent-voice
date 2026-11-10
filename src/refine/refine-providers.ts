@@ -39,6 +39,7 @@ const failAttempt = (detail: string): never => {
 
 const requireCli = (names: ReadonlyArray<string>): string => {
   const installed = findFirstCli(names);
+
   const isNotInstalled = installed === null;
   if (isNotInstalled) {
     return failAttempt(`${names.join(" or ")} not found on PATH`);
@@ -48,7 +49,8 @@ const requireCli = (names: ReadonlyArray<string>): string => {
 };
 
 const timeoutFor = (provider: ProviderId): number => {
-  if (provider === "codex") {
+  const isProviderCodex = provider === "codex";
+  if (isProviderCodex) {
     return CODEX_TIMEOUT_MS;
   }
 
@@ -76,7 +78,8 @@ const runSucceeded = async (attempt: RefineAttempt, invocation: Invocation, sign
 
 // An empty value leaves its flag out.
 const optionalFlag = (flag: string, value: string): ReadonlyArray<string> => {
-  if (value === "") {
+  const isValueEmpty = value === "";
+  if (isValueEmpty) {
     return [];
   }
 
@@ -86,7 +89,9 @@ const optionalFlag = (flag: string, value: string): ReadonlyArray<string> => {
 // "default" or the CLI's own name means its configured model, so no model flag is passed.
 export const namedModel = (model: string, defaults: ReadonlyArray<string>): string => {
   const trimmed = model.trim();
-  if (defaults.includes(trimmed)) {
+
+  const isTrimmedInDefaults = defaults.includes(trimmed);
+  if (isTrimmedInDefaults) {
     return "";
   }
 
@@ -96,7 +101,8 @@ export const namedModel = (model: string, defaults: ReadonlyArray<string>): stri
 const jsonOrPlainReply = (cliRun: CliRun): string => replyTextFromJson(cliRun.stdout) || cliOutputText(cliRun);
 
 const codexEffortSetting = (effort: string): string => {
-  if (effort === "") {
+  const isEffortEmpty = effort === "";
+  if (isEffortEmpty) {
     return "";
   }
 
@@ -145,6 +151,7 @@ const codexFinalReply = (cliRun: CliRun, fileReply: string): string => {
   }
 
   const reply = fileReply || codexOutputReply(cliRun);
+
   const isReplyEmpty = reply === "";
   if (isReplyEmpty) {
     const outputText = cliOutputText(cliRun);
@@ -196,8 +203,9 @@ const parseOllamaBody = (bodyText: string): z.infer<typeof ollamaGenerateSchema>
   try {
     const parsed: unknown = JSON.parse(bodyText);
     const checked = ollamaGenerateSchema.safeParse(parsed);
-    const isChecked = checked.success;
-    if (!isChecked) {
+
+    const isCheckFailed = !checked.success;
+    if (isCheckFailed) {
       return null;
     }
 
@@ -231,8 +239,11 @@ const ollamaReply = async (attempt: RefineAttempt, executable: string, signal: A
   const model = attempt.model.trim() || "llama3.2";
   const prompt = createRefineRequestText(attempt.draft);
   const cliRun = await run(attempt, { executable, args: ["run", model, prompt] }, signal);
+
   const cliReply = cliOutputText(cliRun);
-  if (cliReply !== "") {
+
+  const isCliReplyNotEmpty = cliReply !== "";
+  if (isCliReplyNotEmpty) {
     return cliReply;
   }
 
@@ -243,6 +254,7 @@ const ollamaReply = async (attempt: RefineAttempt, executable: string, signal: A
   }
 
   const httpReply = await ollamaOverHttp(attempt, model);
+
   const isHttpReplyEmpty = httpReply === "";
   if (isHttpReplyEmpty) {
     return failAttempt(OLLAMA_EMPTY_DETAIL);
@@ -268,8 +280,11 @@ const opencodeReply = async (attempt: RefineAttempt, executable: string, signal:
   const prompt = createRefineRequestText(attempt.draft);
   const args = ["run", "--format", "json", ...optionalFlag("-m", model), ...optionalFlag("--variant", variant), prompt];
   const cliRun = await runSucceeded(attempt, { executable, args }, signal);
+
   const reply = jsonOrPlainReply(cliRun);
-  if (looksLikeCliHelp(reply)) {
+
+  const isCliHelpReply = looksLikeCliHelp(reply);
+  if (isCliHelpReply) {
     return failAttempt(OPENCODE_HELP_DETAIL);
   }
 
@@ -321,6 +336,7 @@ const geminiArgs = (attempt: RefineAttempt): ReadonlyArray<string> => {
 // The gemini provider runs Google's gemini, or Antigravity's agy when only agy is installed.
 const geminiFamilyArgs = (attempt: RefineAttempt, executable: string): ReadonlyArray<string> => {
   const cliName = path.basename(executable).toLowerCase();
+
   const isAgy = cliName === "agy";
   if (isAgy) {
     return agyArgs(attempt);
@@ -338,11 +354,13 @@ const geminiReply = async (attempt: RefineAttempt, executable: string, signal: A
 const PI_THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "off", "max"];
 
 const piThinking = (effort: string): string => {
-  if (effort === "") {
+  const isEffortEmpty = effort === "";
+  if (isEffortEmpty) {
     return "";
   }
 
-  if (PI_THINKING_LEVELS.includes(effort)) {
+  const isKnownThinkingLevel = PI_THINKING_LEVELS.includes(effort);
+  if (isKnownThinkingLevel) {
     return effort;
   }
 
@@ -391,11 +409,13 @@ const providerReply = (attempt: RefineAttempt, signal: AbortSignal): Promise<str
 };
 
 const checkedReply = (attempt: RefineAttempt, reply: string): string => {
-  if (looksLikeFailedModelOutput(reply)) {
+  const isFailedOutput = looksLikeFailedModelOutput(reply);
+  if (isFailedOutput) {
     return failAttempt(reply || `${attempt.provider} refine failed`);
   }
 
   const checked = checkRefinedPrompt({ draft: attempt.draft, refined: reply });
+
   const isRejected = checked.status === "rejected";
   if (isRejected) {
     return failAttempt(describeRefineReplyRejection(checked.rejection));

@@ -66,13 +66,18 @@ const initialFormat: FormatState = {
 
 const replacementPair = (entry: string): ReadonlyArray<readonly [string, string]> => {
   const separator = entry.indexOf("=");
-  if (separator < 0) {
+
+  const isSeparatorBelow0 = separator < 0;
+  if (isSeparatorBelow0) {
     return [];
   }
 
   const heard = entry.slice(0, separator).trim();
+
   const written = entry.slice(separator + 1).trim();
-  if (heard === "" || written === "") {
+
+  const isHeardOrWrittenEmpty = heard === "" || written === "";
+  if (isHeardOrWrittenEmpty) {
     return [];
   }
 
@@ -126,12 +131,16 @@ const replacementAt = (spoken: Spoken, index: number): Phrase | undefined =>
 // "literal" types the next command or replacement phrase, or one word, as plain words.
 const literalLength = (spoken: Spoken, index: number): number => {
   const command = commandAt(spoken, index);
-  if (command !== undefined) {
+
+  const hasCommand = command !== undefined;
+  if (hasCommand) {
     return command.phrase.length;
   }
 
   const replacement = replacementAt(spoken, index);
-  if (replacement !== undefined) {
+
+  const hasReplacement = replacement !== undefined;
+  if (hasReplacement) {
     return replacement.words.length;
   }
 
@@ -147,12 +156,16 @@ const pieceAt = (spoken: Spoken, index: number): { readonly piece: Piece; readon
   }
 
   const command = commandAt(spoken, index);
-  if (command !== undefined) {
+
+  const hasCommand = command !== undefined;
+  if (hasCommand) {
     return { piece: command.command, length: command.phrase.length };
   }
 
   const replacement = replacementAt(spoken, index);
-  if (replacement !== undefined) {
+
+  const hasReplacement = replacement !== undefined;
+  if (hasReplacement) {
     // The heard words' closing punctuation stays: "my name is Joseph." types "My name is Yosef."
     const lastHeard = spoken.words[index + replacement.words.length - 1];
     const closing = trailingPunctuation(lastHeard);
@@ -163,7 +176,8 @@ const pieceAt = (spoken: Spoken, index: number): { readonly piece: Piece; readon
 };
 
 const piecesFrom = (spoken: Spoken, index: number): ReadonlyArray<Piece> => {
-  if (index >= spoken.words.length) {
+  const isPastLastWord = index >= spoken.words.length;
+  if (isPastLastWord) {
     return [];
   }
 
@@ -174,7 +188,8 @@ const piecesFrom = (spoken: Spoken, index: number): ReadonlyArray<Piece> => {
 const capitalizeFirstLetter = (text: string): string => text.replace(/[A-Za-z]/u, (letter) => letter.toUpperCase());
 
 const renderedWords = (state: FormatState, words: string): string => {
-  if (!state.capitalizeNext) {
+  const isNotCapitalizeNext = !state.capitalizeNext;
+  if (isNotCapitalizeNext) {
     return words;
   }
 
@@ -182,7 +197,8 @@ const renderedWords = (state: FormatState, words: string): string => {
 };
 
 const appendWords = (state: FormatState, words: string): string => {
-  if (!state.needsSpace) {
+  const isNotNeedsSpace = !state.needsSpace;
+  if (isNotNeedsSpace) {
     return `${state.text}${words}`;
   }
 
@@ -256,7 +272,9 @@ const pushPiece = (state: FormatState, piece: Piece): FormatState => {
 // Ends with a space when the next utterance should start a new word, and is empty when nothing should be typed.
 const finishedText = (state: FormatState): string => {
   const endsWithWord = state.text !== "" && state.needsSpace;
-  if (!endsWithWord) {
+
+  const isNotEndingWithWord = !endsWithWord;
+  if (isNotEndingWithWord) {
     return state.text;
   }
 

@@ -56,6 +56,7 @@ export const unicodeChunks = (text: string): ReadonlyArray<string> => {
   const chunks: Array<string> = [];
   for (const character of text) {
     const last = chunks.at(-1);
+
     const isFull = last === undefined || last.length + character.length > UNICODE_CHUNK_UNITS;
     if (isFull) {
       chunks.push(character);
@@ -74,7 +75,9 @@ export const utf16Units = (chunk: string): Uint16Array =>
 // macOS silently drops a chunk that starts with a newline, so a zero-width space leads it.
 const postableChunk = (chunk: string): string => {
   const startsWithNewline = /^[\r\n]/u.test(chunk);
-  if (!startsWithNewline) {
+
+  const isNotStartingWithNewline = !startsWithNewline;
+  if (isNotStartingWithNewline) {
     return chunk;
   }
 
@@ -121,7 +124,9 @@ export const loadKeyboard = async (): Promise<Keyboard> => {
 
   const isKeyDown = (key: number): boolean => {
     const optionFlags = OPTION_KEY_FLAGS.get(key);
-    if (optionFlags === undefined) {
+
+    const isOptionFlagsMissing = optionFlags === undefined;
+    if (isOptionFlagsMissing) {
       return keyState(HID_SYSTEM_STATE, key) === true;
     }
 
@@ -155,9 +160,11 @@ export const loadKeyboard = async (): Promise<Keyboard> => {
 
   const typeUnicode = (text: string) => {
     for (const chunk of unicodeChunks(text)) {
-      if (chunk.startsWith("\t")) {
+      const isChunkTabIndented = chunk.startsWith("\t");
+      if (isChunkTabIndented) {
         pressKey(TAB_KEY, 0n);
       }
+
       const withoutTab = chunk.replace(/^\t/u, "");
       const postable = postableChunk(withoutTab);
       postUnicode(postable);

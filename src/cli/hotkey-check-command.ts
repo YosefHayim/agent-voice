@@ -17,7 +17,8 @@ export const hotkeyCheckCommand: CommandSpec = {
   run: async (parsedCommand) => {
     const defaultWatchSeconds = 8;
     const secondsWord = readStringFlag(parsedCommand, "seconds");
-    const watchSeconds = secondsWord == null ? defaultWatchSeconds : Number(secondsWord);
+    const isSecondsWordMissing = secondsWord == null;
+    const watchSeconds = isSecondsWordMissing ? defaultWatchSeconds : Number(secondsWord);
     const keyboard = await loadKeyboard();
     const label = holdKeyLabels[keyboard.holdKey];
     TerminalUI.printStep(`Hold ${label}… (watching for ${String(watchSeconds)} s)`);
@@ -29,6 +30,7 @@ export const hotkeyCheckCommand: CommandSpec = {
       const isDown = keyboard.holdDown();
       const isPressed = isDown && !wasDown;
       const isReleased = !isDown && wasDown;
+
       if (isPressed) {
         TerminalUI.printLine(`${label} DOWN`);
       }
@@ -42,7 +44,8 @@ export const hotkeyCheckCommand: CommandSpec = {
       await sleep(pollMilliseconds);
     }
 
-    if (!sawDown) {
+    const isDownUnseen = !sawDown;
+    if (isDownUnseen) {
       throw new Error(
         "No hold-key press seen. Allow Input Monitoring for your terminal in System Settings → Privacy & Security.",
       );

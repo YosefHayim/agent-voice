@@ -125,6 +125,7 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
   const synthesize = async (request: SynthesizeRequest): Promise<Float32Array> => {
     const modelText = supertonicText(request.text);
     const ids = characterIds(modelText, indexer);
+
     const isNoIds = ids.length === 0;
     if (isNoIds) {
       return new Float32Array(0);

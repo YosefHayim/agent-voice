@@ -103,7 +103,9 @@ const runReply = (args: ReadonlyArray<string>, stdin: string) =>
 
 const queued = (): ReadonlyArray<unknown> => {
   const inbox = path.join(home, "inbox");
-  if (!existsSync(inbox)) {
+
+  const isInboxAbsent = !existsSync(inbox);
+  if (isInboxAbsent) {
     return [];
   }
 

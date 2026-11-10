@@ -45,8 +45,12 @@ export const latestDevinTurn = (atif: AtifExport): DevinTurn => {
     .slice(lastUser + 1)
     .filter((step) => step.source === "agent")
     .flatMap((step) => {
-      const message = typeof step.message === "string" ? step.message.trim() : "";
-      if (message === "") {
+      const stepMessage = step.message;
+      const isMessageText = typeof stepMessage === "string";
+      const message = isMessageText ? stepMessage.trim() : "";
+
+      const isMessageEmpty = message === "";
+      if (isMessageEmpty) {
         return [];
       }
 
@@ -61,6 +65,7 @@ export const latestDevinTurn = (atif: AtifExport): DevinTurn => {
 
 const readTurn = (exportFile: string): DevinTurn => {
   const savedExport = readJsonFile({ path: exportFile, schema: atifExportSchema });
+
   const isThereNoSavedExport = savedExport === null;
   if (isThereNoSavedExport) {
     return noTurn;
@@ -77,7 +82,9 @@ const confirmTurn = (request: {
   readonly spokenTurn: string;
 }): string => {
   const confirmed = readTurn(request.exportFile);
-  if (confirmed.turnId !== request.pendingTurn || confirmed.markdown === "") {
+
+  const isConfirmedTurnUnusable = confirmed.turnId !== request.pendingTurn || confirmed.markdown === "";
+  if (isConfirmedTurnUnusable) {
     return request.spokenTurn;
   }
 
@@ -95,8 +102,8 @@ const confirmTurn = (request: {
 };
 
 const trackTurn = (state: WatchState, turnId: string): WatchState => {
-  const isNewTurn = turnId !== "" && turnId !== state.spokenTurn && turnId !== state.pendingTurn;
-  if (!isNewTurn) {
+  const isNotNewTurn = turnId === "" || turnId === state.spokenTurn || turnId === state.pendingTurn;
+  if (isNotNewTurn) {
     return state;
   }
 
@@ -104,8 +111,8 @@ const trackTurn = (state: WatchState, turnId: string): WatchState => {
 };
 
 const settleTurn = (exportFile: string, state: WatchState): WatchState => {
-  const hasSettled = state.pendingTurn !== "" && Date.now() - state.changedAt >= TURN_SETTLE_MS;
-  if (!hasSettled) {
+  const isNotSettled = state.pendingTurn === "" || Date.now() - state.changedAt < TURN_SETTLE_MS;
+  if (isNotSettled) {
     return state;
   }
 

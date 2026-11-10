@@ -90,7 +90,9 @@ const dictationStatus = (settings: Config): DictationStatus => {
     models: modelEntries(selected.key),
     hotkey: `hold-${settings.dictationHoldKey}`,
   };
-  if (!isRunning) {
+
+  const isNotRunning = !isRunning;
+  if (isNotRunning) {
     return { ...dictation, stage: "inactive" };
   }
 
@@ -127,12 +129,15 @@ const readCurrentStatus = (): AgentVoiceStatus => {
 };
 
 const dictationLine = (dictation: DictationStatus): string => {
-  if (!dictation.running) {
+  const isDictationNotRunning = !dictation.running;
+  if (isDictationNotRunning) {
     return "off";
   }
 
   const line = `on (pid ${String(dictation.pid)}) · ${dictation.stage}`;
-  if (dictation.detail === "") {
+
+  const isDictationDetailEmpty = dictation.detail === "";
+  if (isDictationDetailEmpty) {
     return line;
   }
 
@@ -147,6 +152,7 @@ const modelLine = (dictation: DictationStatus): string => {
 const speechLine = (speech: SpeechStatus): string => {
   const isSpeechOn = speech.running;
   const line = `${isSpeechOn ? "on" : "off"} · mode ${speech.mode} · voice ${speech.voice}`;
+
   if (speech.muted) {
     return `${line} · muted`;
   }
@@ -155,7 +161,8 @@ const speechLine = (speech: SpeechStatus): string => {
 };
 
 const refineLine = (refine: RefineStatus): string => {
-  if (refine.mode === "off") {
+  const isRefineModeOff = refine.mode === "off";
+  if (isRefineModeOff) {
     return "off";
   }
 
@@ -164,7 +171,8 @@ const refineLine = (refine: RefineStatus): string => {
 };
 
 const hooksLine = (hooks: ReadonlyArray<string>): string => {
-  if (hooks.length === 0) {
+  const isHooksEmpty = hooks.length === 0;
+  if (isHooksEmpty) {
     return "none (run agent-voice on)";
   }
 
@@ -190,6 +198,7 @@ export const statusCommand: CommandSpec = {
   positionals: [],
   run: async (parsedCommand) => {
     const status = readCurrentStatus();
+
     const isDocumentWanted = isFlagOn(parsedCommand, "json");
     if (isDocumentWanted) {
       TerminalUI.printDocument(status);

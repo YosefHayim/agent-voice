@@ -19,6 +19,7 @@ export const workerCommand: CommandSpec = {
   ],
   run: async (parsedCommand) => {
     const workerKind = readRequiredPositional(parsedCommand, "kind");
+
     const isDictationWorker = workerKind === DICTATION_WORKER;
     if (isDictationWorker) {
       await runDictationWorker();

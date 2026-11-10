@@ -54,6 +54,7 @@ const checkFlagWord = (flagName: string, flag: FlagSpec, flagWord: string): void
 const checkFlagWords = (flags: Readonly<Record<string, FlagSpec>>, parsedFlags: ParsedFlags): void => {
   for (const [flagName, flag] of Object.entries(flags)) {
     const flagWord = parsedFlags[flagName];
+
     const isWordGiven = typeof flagWord === "string";
     if (isWordGiven) {
       checkFlagWord(flagName, flag, flagWord);
@@ -68,6 +69,7 @@ const checkPositionalWords = (
   for (const [index, positionalSpec] of positionalSpecs.entries()) {
     const positionalWord = positionalWords[index];
     const isWordMissing = positionalWord == null;
+
     const isRequiredWordMissing = isWordMissing && positionalSpec.isRequired;
     if (isRequiredWordMissing) {
       throw new Error(`Missing ${positionalSpec.name}.`);
@@ -110,6 +112,7 @@ const routeLeaf = (request: {
 }): CommandRoute => {
   const { command, commandPath, restWords } = request;
   const run = command.run;
+
   const isRunMissing = run == null;
   if (isRunMissing) {
     return commandHelpRoute(commandPath, command);
@@ -146,19 +149,26 @@ const routeWithin = (request: {
 }): CommandRoute => {
   const [wordName, ...restWords] = request.commandWords;
   const isNoWordLeft = wordName == null;
+
   const isHelpWord = wordName === "--help" || wordName === "-h";
-  if (isNoWordLeft || isHelpWord) {
-    return request.group == null ? rootHelpRoute() : commandHelpRoute(request.commandPath, request.group);
+
+  const isGroupHelpRequested = isNoWordLeft || isHelpWord;
+  if (isGroupHelpRequested) {
+    const isRequestGroupMissing = request.group == null;
+    return isRequestGroupMissing ? rootHelpRoute() : commandHelpRoute(request.commandPath, request.group);
   }
 
-  const commands = request.group == null ? commandSpecs : (request.group.subcommands ?? []);
+  const isNoGroupGiven = request.group == null;
+  const commands = isNoGroupGiven ? commandSpecs : (request.group.subcommands ?? []);
   const command = commands.find((candidate) => candidate.name === wordName);
+
   const isUnknownCommand = command == null;
   if (isUnknownCommand) {
     throw new Error(`Unknown command "${wordName}". Run ${request.commandPath} --help.`);
   }
 
   const commandPath = `${request.commandPath} ${command.name}`;
+
   const isGroup = command.subcommands != null;
   if (isGroup) {
     return routeWithin({ commandWords: restWords, group: command, commandPath });
@@ -170,8 +180,11 @@ const routeWithin = (request: {
 const routeCommandWords = (commandWords: ReadonlyArray<string>): CommandRoute => {
   const [firstWord] = commandWords;
   const isNoWordGiven = firstWord == null;
+
   const isHelpWord = firstWord === "--help" || firstWord === "-h";
-  if (isNoWordGiven || isHelpWord) {
+
+  const isRootHelpRequested = isNoWordGiven || isHelpWord;
+  if (isRootHelpRequested) {
     return rootHelpRoute();
   }
 

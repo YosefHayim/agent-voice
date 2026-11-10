@@ -21,7 +21,8 @@ export const makeLiveCaption = () => {
   let best = "";
   return {
     offer: (text: string) => {
-      if (text.length >= best.length) {
+      const isLengthAtLeastBestLength = text.length >= best.length;
+      if (isLengthAtLeastBestLength) {
         best = text;
       }
     },
@@ -61,8 +62,11 @@ const captionOnce = async (request: CaptionRequest): Promise<void> => {
     const text = cleanTranscript(heard ?? "");
     // A pass that finishes after its hold ended and a new one began holds the old hold's words: drop it.
     const isSameHold = request.clip.isRecording() && request.clip.clipNumber() === clipNumber;
+
     const isCaptionEmpty = text === "";
-    if (isCaptionEmpty || !isSameHold) {
+
+    const isCaptionUnusable = isCaptionEmpty || !isSameHold;
+    if (isCaptionUnusable) {
       return;
     }
 

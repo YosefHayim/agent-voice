@@ -39,7 +39,8 @@ const NO_SPEECH_TEXTS = ["", "no speech", "no speech detected", ".", "..."];
 const splitWords = (text: string): ReadonlyArray<string> => text.split(/\s+/u).filter((word) => word !== "");
 
 const wordsPerSecondFor = (seconds: number): number => {
-  if (seconds < SHORT_CLIP_SECONDS) {
+  const isShortClip = seconds < SHORT_CLIP_SECONDS;
+  if (isShortClip) {
     return MAX_WORDS_PER_SECOND_SHORT;
   }
 
@@ -51,8 +52,11 @@ export const capWordsForDuration = (text: string, sampleCount: number): string =
   const words = splitWords(text);
   const seconds = Math.max(sampleCount / SAMPLE_RATE, 0.15);
   const wordsPerSecond = wordsPerSecondFor(seconds);
+
   const maxWords = Math.ceil(seconds * wordsPerSecond);
-  if (words.length <= maxWords) {
+
+  const isWordsLengthAtMostMaxWords = words.length <= maxWords;
+  if (isWordsLengthAtMostMaxWords) {
     return text;
   }
 
@@ -73,8 +77,11 @@ export const rejectNoiseHallucination = (text: string, sampleCount: number): str
   const words = splitWords(lettersOnly);
   const bareText = words.join(" ");
   const isNoiseWord = words.length === 1 && seconds < 2.5 && SINGLE_WORD_NOISE.has(bareText);
+
   const isNoisePhrase = seconds < 4 && words.length <= 8 && NOISE_PHRASES.some((phrase) => bareText.includes(phrase));
-  if (isNoiseWord || isNoisePhrase) {
+
+  const isNoise = isNoiseWord || isNoisePhrase;
+  if (isNoise) {
     return "";
   }
 
@@ -93,6 +100,7 @@ export const cleanTranscript = (text: string): string => {
   const untagged = NO_SPEECH_TAGS.reduce((current, tag) => current.replaceAll(tag, ""), text);
   const clean = splitWords(untagged).join(" ");
   const lowercase = clean.toLowerCase();
+
   const isNoSpeech = NO_SPEECH_TEXTS.includes(lowercase);
   if (isNoSpeech) {
     return "";

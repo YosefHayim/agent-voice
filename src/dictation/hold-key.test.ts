@@ -81,7 +81,9 @@ describe("debounceHold", () => {
     for (const [index, sample] of samples.entries()) {
       const [next, edge] = debounceHold(debounce, sample);
       debounce = next;
-      if (edge !== "none") {
+
+      const isEdgeNotNone = edge !== "none";
+      if (isEdgeNotNone) {
         edges.push([index, edge]);
       }
     }

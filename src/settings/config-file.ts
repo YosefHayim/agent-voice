@@ -14,7 +14,8 @@ const decodeSavedText = (request: { readonly filePath: string; readonly text: st
   try {
     return decodeConfig(JSON.parse(request.text));
   } catch (error) {
-    const issue = error instanceof Error ? error.message : String(error);
+    const isErrorInstanceError = error instanceof Error;
+    const issue = isErrorInstanceError ? error.message : String(error);
     throw new Error(`${request.filePath} is not a valid agent-voice config: ${issue}`, { cause: error });
   }
 };
@@ -23,6 +24,7 @@ const decodeSavedText = (request: { readonly filePath: string; readonly text: st
 export const readConfig = (): Config => {
   const filePath = configFilePath();
   const savedFileContents = readSavedText(filePath);
+
   const isThereNoSavedFile = savedFileContents === null;
   if (isThereNoSavedFile) {
     return defaultConfig;

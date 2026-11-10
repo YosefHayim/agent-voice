@@ -8,10 +8,12 @@ interface PackageJson {
 
 const findPackageJsonPath = (folder: string): string => {
   const candidatePath = path.join(folder, "package.json");
+
   const isTherePackageJson = existsSync(candidatePath);
   if (isTherePackageJson) return candidatePath;
 
   const parentFolder = path.dirname(folder);
+
   const isFilesystemRoot = parentFolder === folder;
   if (isFilesystemRoot) throw new Error("No package.json found above the CLI files.");
 

@@ -6,7 +6,8 @@ import type { PvRecorder } from "@picovoice/pvrecorder-node";
 import { SAMPLE_RATE, samplesFromPcm } from "./clip-audio.js";
 
 const createMicrophoneError = (error: unknown): Error => {
-  const issue = error instanceof Error ? error.message : String(error);
+  const isErrorInstanceError = error instanceof Error;
+  const issue = isErrorInstanceError ? error.message : String(error);
   return new Error(`Microphone: ${issue}`, { cause: error });
 };
 

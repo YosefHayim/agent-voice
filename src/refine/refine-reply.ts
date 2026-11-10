@@ -148,8 +148,8 @@ export const promptLiterals = (text: string): ReadonlyArray<string> => {
   const longestFirst = [...candidates].sort((left, right) => lengthOf(right) - lengthOf(left));
   const kept: Array<LiteralMatch> = [];
   for (const candidate of longestFirst) {
-    const isOverlapping = kept.some((taken) => overlaps(candidate, taken));
-    if (!isOverlapping) {
+    const isNotOverlapping = !kept.some((taken) => overlaps(candidate, taken));
+    if (isNotOverlapping) {
       kept.push(candidate);
     }
   }
@@ -179,8 +179,9 @@ export const describeRefineReplyRejection = (rejection: RefineReplyRejection): s
 
 const withoutWholeReplyFence = (text: string): string => {
   const lines = text.split("\n");
-  const isFenced = text.startsWith("```") && text.endsWith("```") && lines.length >= 2;
-  if (!isFenced) {
+
+  const isNotFenced = !text.startsWith("```") || !text.endsWith("```") || lines.length < 2;
+  if (isNotFenced) {
     return text;
   }
 
@@ -193,18 +194,22 @@ export const checkRefinedPrompt = (request: {
 }): RefinedPromptCheck => {
   const trimmed = request.refined.trim();
   const refinedPrompt = withoutWholeReplyFence(trimmed);
+
   const isPromptEmpty = refinedPrompt === "";
   if (isPromptEmpty) {
     return { status: "rejected", rejection: { reason: "empty" } };
   }
 
-  if (looksLikeCliHelp(refinedPrompt)) {
+  const isCliHelpReply = looksLikeCliHelp(refinedPrompt);
+  if (isCliHelpReply) {
     return { status: "rejected", rejection: { reason: "cliHelp" } };
   }
 
   const literals = promptLiterals(request.draft);
   const droppedLiteral = literals.find((literal) => !refinedPrompt.includes(literal));
-  if (droppedLiteral !== undefined) {
+
+  const hasDroppedLiteral = droppedLiteral !== undefined;
+  if (hasDroppedLiteral) {
     return { status: "rejected", rejection: { reason: "droppedLiteral", literal: droppedLiteral } };
   }
 
@@ -224,7 +229,9 @@ const isTextPresent = (text: string | null): text is string => text !== null;
 // The trimmed text, or null when the value is not a string or is blank.
 const textOf = (value: unknown): string | null => {
   const isString = typeof value === "string";
-  if (!isString) {
+
+  const isNotString = !isString;
+  if (isNotString) {
     return null;
   }
 
@@ -235,7 +242,9 @@ const textOf = (value: unknown): string | null => {
 
 const stringOf = (value: unknown): string => {
   const isString = typeof value === "string";
-  if (!isString) {
+
+  const isNotString = !isString;
+  if (isNotString) {
     return "";
   }
 
@@ -245,8 +254,9 @@ const stringOf = (value: unknown): string => {
 // A block keeps its text as sent, blank included, so the joined reply keeps its line breaks.
 const blockText = (block: unknown): string | null => {
   const text = isJsonObject(block) ? block.text : undefined;
-  const isTextString = typeof text === "string";
-  if (!isTextString) {
+
+  const isNotTextString = typeof text !== "string";
+  if (isNotTextString) {
     return null;
   }
 
@@ -254,8 +264,8 @@ const blockText = (block: unknown): string | null => {
 };
 
 const joinedBlocks = (value: unknown): string | null => {
-  const isBlockList = Array.isArray(value);
-  if (!isBlockList) {
+  const isNotBlockList = !Array.isArray(value);
+  if (isNotBlockList) {
     return null;
   }
 
@@ -272,7 +282,9 @@ const isTextPart = (event: JsonObject, part: JsonObject): boolean => {
 
 const partText = (event: JsonObject): string | null => {
   const part = event.part;
-  if (!isJsonObject(part) || !isTextPart(event, part)) {
+
+  const isNotTextPart = !isJsonObject(part) || !isTextPart(event, part);
+  if (isNotTextPart) {
     return null;
   }
 
@@ -280,7 +292,8 @@ const partText = (event: JsonObject): string | null => {
 };
 
 const nestedText = (value: unknown): string | null => {
-  if (!isJsonObject(value)) {
+  const isNotObject = !isJsonObject(value);
+  if (isNotObject) {
     return null;
   }
 
@@ -298,7 +311,9 @@ const documentText = (document: JsonObject): string | null => {
 
 const messageText = (event: JsonObject): string | null => {
   const message = event.message;
-  if (!isJsonObject(message)) {
+
+  const isNotObjectMessage = !isJsonObject(message);
+  if (isNotObjectMessage) {
     return null;
   }
 
@@ -315,7 +330,9 @@ const eventText = (event: JsonObject): string | null => {
 const wholeReplyText = (output: string): string | null => {
   const whole = parseJsonOrNull(output);
   const wholeString = textOf(whole);
-  if (wholeString !== null) {
+
+  const hasWholeString = wholeString !== null;
+  if (hasWholeString) {
     return wholeString;
   }
 
@@ -329,7 +346,8 @@ const jsonLineEvents = (output: string): ReadonlyArray<JsonObject> =>
     .filter(isJsonObject);
 
 const longerText = (best: string, part: string): string => {
-  if (part.length > best.length) {
+  const isPartLengthAboveBestLength = part.length > best.length;
+  if (isPartLengthAboveBestLength) {
     return part;
   }
 
@@ -339,6 +357,7 @@ const longerText = (best: string, part: string): string => {
 // Streamed parts are often cumulative: the longest wins when it already holds the rest.
 const joinedParts = (parts: ReadonlyArray<string>): string => {
   const longest = parts.reduce(longerText, "");
+
   const holdsEveryPart = parts.every((part) => longest.includes(part));
   if (holdsEveryPart) {
     return longest;
@@ -349,18 +368,24 @@ const joinedParts = (parts: ReadonlyArray<string>): string => {
 
 export const replyTextFromJson = (output: string): string => {
   const trimmed = output.trim();
-  if (trimmed === "") {
+
+  const isTrimmedEmpty = trimmed === "";
+  if (isTrimmedEmpty) {
     return "";
   }
 
   const wholeText = wholeReplyText(trimmed);
-  if (wholeText !== null) {
+
+  const hasWholeText = wholeText !== null;
+  if (hasWholeText) {
     return wholeText;
   }
 
   const events = jsonLineEvents(trimmed);
   const parts = events.map(partText).filter(isTextPresent);
-  if (parts.length > 0) {
+
+  const hasParts = parts.length > 0;
+  if (hasParts) {
     return joinedParts(parts);
   }
 

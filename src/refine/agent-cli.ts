@@ -57,6 +57,7 @@ export const findCli = (name: string): string | null => {
 export const findFirstCli = (names: ReadonlyArray<string>): FoundCli | null => {
   for (const name of names) {
     const cliPath = findCli(name);
+
     const isCliFound = cliPath !== null;
     if (isCliFound) {
       return { name, path: cliPath };

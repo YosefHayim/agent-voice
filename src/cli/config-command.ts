@@ -29,7 +29,9 @@ const describeUnknownSetting = (settingName: string): string =>
 
 const describeSettingValue = (settings: Config, setting: ConfigSetting): string => {
   const savedValue: unknown = settings[setting.key];
-  if (savedValue === undefined) {
+
+  const isSavedMissing = savedValue === undefined;
+  if (isSavedMissing) {
     return "(not set)";
   }
 
@@ -37,7 +39,8 @@ const describeSettingValue = (settings: Config, setting: ConfigSetting): string 
 };
 
 const describeChoices = (setting: ConfigSetting): string => {
-  if (setting.choices.length === 0) {
+  const isSettingChoicesEmpty = setting.choices.length === 0;
+  if (isSettingChoicesEmpty) {
     return "";
   }
 
@@ -58,6 +61,7 @@ const listCommand: CommandSpec = {
   positionals: [],
   run: async (parsedCommand) => {
     const settings = readConfig();
+
     const isDocumentWanted = isFlagOn(parsedCommand, "json");
     if (isDocumentWanted) {
       TerminalUI.printDocument(settings);
@@ -76,7 +80,9 @@ const listCommand: CommandSpec = {
 const describeSettingEntry = (settings: Config, setting: ConfigSetting) => {
   const savedValue: unknown = settings[setting.key];
   const { key: _key, ...described } = setting;
-  if (savedValue === undefined) {
+
+  const isSavedMissing = savedValue === undefined;
+  if (isSavedMissing) {
     return { ...described, value: null };
   }
 
@@ -104,6 +110,7 @@ const getCommand: CommandSpec = {
   run: async (parsedCommand) => {
     const settingName = readRequiredPositional(parsedCommand, "setting");
     const setting = findSetting(settingName);
+
     const isSettingUnknown = setting == null;
     if (isSettingUnknown) {
       TerminalUI.printError(describeUnknownSetting(settingName));
@@ -128,6 +135,7 @@ const applyChange = async (previous: Config, next: Config): Promise<void> => {
   const isNewlyMuted = !previous.speechMuted && next.speechMuted;
   const isDictationRestartNeeded = (isModelChanged || isHoldKeyChanged) && isDictationRunning;
   const isSpeechStartNeeded = isSpeechTurnedOn && isDictationRunning;
+
   if (isDictationRestartNeeded) {
     await prepareModels(next);
     await restartWorkers();
@@ -180,6 +188,7 @@ const setCommand: CommandSpec = {
   run: async (parsedCommand) => {
     const settingName = readRequiredPositional(parsedCommand, "setting");
     const setting = findSetting(settingName);
+
     const isSettingUnknown = setting == null;
     if (isSettingUnknown) {
       TerminalUI.printError(describeUnknownSetting(settingName));
@@ -201,6 +210,7 @@ const unsetCommand: CommandSpec = {
   run: async (parsedCommand) => {
     const settingName = readRequiredPositional(parsedCommand, "setting");
     const setting = findSetting(settingName);
+
     const isSettingUnknown = setting == null;
     if (isSettingUnknown) {
       TerminalUI.printError(describeUnknownSetting(settingName));
@@ -215,7 +225,8 @@ const unsetCommand: CommandSpec = {
 
 // Null when the user cancels; an empty string when the provider has no effort setting.
 const pickEffort = async (provider: DiscoveredProvider, settings: Config): Promise<string | null> => {
-  if (!provider.effort) {
+  const isProviderEffortEmpty = !provider.effort;
+  if (isProviderEffortEmpty) {
     return "";
   }
 
@@ -228,6 +239,7 @@ const pickEffort = async (provider: DiscoveredProvider, settings: Config): Promi
 
 const pickInTerminal = async (settings: Config): Promise<RefinePick | null> => {
   const providers = await discoverProviders({ refresh: true });
+
   const hasNoProviders = providers.length === 0;
   if (hasNoProviders) {
     return null;
@@ -242,6 +254,7 @@ const pickInTerminal = async (settings: Config): Promise<RefinePick | null> => {
     })),
     initial: providers.find((found) => found.id === settings.refineProvider),
   });
+
   const isProviderCancelled = provider == null;
   if (isProviderCancelled) {
     return null;
@@ -256,12 +269,14 @@ const pickInTerminal = async (settings: Config): Promise<RefinePick | null> => {
     message: `Model for ${provider.id}`,
     choices: models.map((name) => ({ title: name, pick: name })),
   });
+
   const isModelCancelled = model == null;
   if (isModelCancelled) {
     return null;
   }
 
   const effort = await pickEffort(provider, settings);
+
   const isEffortCancelled = effort == null;
   if (isEffortCancelled) {
     return null;
@@ -275,8 +290,9 @@ const pickRefineTarget = async (request: {
   readonly isGuiWanted: boolean;
 }): Promise<RefinePick | null> => {
   const isInteractive = TerminalUI.isInteractiveTerminal();
-  const isDialogWanted = request.isGuiWanted || !isInteractive;
-  if (!isDialogWanted) {
+
+  const isNotDialogWanted = !request.isGuiWanted && isInteractive;
+  if (isNotDialogWanted) {
     return pickInTerminal(request.settings);
   }
 
@@ -291,6 +307,7 @@ const pickRefineTarget = async (request: {
 
 const describePickedTarget = (pick: RefinePick, effort: string | undefined): string => {
   const target = `refine → ${pick.provider}/${pick.model}`;
+
   const isEffortMissing = effort === undefined;
   if (isEffortMissing) {
     return target;
@@ -309,6 +326,7 @@ const pickRefineCommand: CommandSpec = {
   run: async (parsedCommand) => {
     const settings = readConfig();
     const picked = await pickRefineTarget({ settings, isGuiWanted: isFlagOn(parsedCommand, "gui") });
+
     const isNothingPicked = picked == null;
     if (isNothingPicked) {
       TerminalUI.printError("No refine provider picked (none found, or cancelled).");

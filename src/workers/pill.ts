@@ -203,18 +203,23 @@ export const startPill = (workerPid: number): ChildProcess => {
     stdio: ["pipe", "ignore", "ignore"],
   });
   child.stdin?.end(PILL_SCRIPT);
-  if (child.pid !== undefined) {
+
+  const hasChildPid = child.pid !== undefined;
+  if (hasChildPid) {
     writePid("pill.pid", child.pid);
   }
+
   return child;
 };
 
 export const stopPill = (): void => {
   const pillPid = runningPid("pill.pid");
+
   const isPillRunning = pillPid !== null;
   if (isPillRunning) {
     signalGroup(pillPid, "SIGKILL");
   }
+
   const pidPath = stateFile("pill.pid");
   removeIfPresent(pidPath);
 };

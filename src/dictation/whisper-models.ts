@@ -105,18 +105,21 @@ export const selectWhisperModel = (request: {
   readonly config: Config;
 }): WhisperModel => {
   const forced = request.environment.AGENT_VOICE_DICTATION_MODEL.toLowerCase();
+
   const isForced = forced !== "";
   if (isForced) {
     return pickWhisperModel(MODEL_ALIASES[forced] ?? "turbo-q5");
   }
 
   const chosenKey = request.config.dictationModel;
+
   const isChosen = chosenKey !== "auto";
   if (isChosen) {
     return pickWhisperModel(chosenKey);
   }
 
-  if (request.config.dictationLanguage === "he") {
+  const isDictationLanguageHe = request.config.dictationLanguage === "he";
+  if (isDictationLanguageHe) {
     return pickWhisperModel("ivrit");
   }
 
@@ -133,8 +136,9 @@ const failedDownloadBytes = 1_000_000;
 
 export const isWhisperModelPresent = (model: WhisperModel): boolean => {
   const file = whisperModelPath(model);
-  const isFilePresent = existsSync(file);
-  if (!isFilePresent) {
+
+  const isFileAbsent = !existsSync(file);
+  if (isFileAbsent) {
     return false;
   }
 
@@ -148,6 +152,7 @@ export const ensureWhisperModel = async (request: {
   readonly onProgress: (receivedBytes: number) => void;
 }): Promise<string> => {
   const modelPath = whisperModelPath(request.model);
+
   const isModelPresent = isWhisperModelPresent(request.model);
   if (isModelPresent) {
     return modelPath;

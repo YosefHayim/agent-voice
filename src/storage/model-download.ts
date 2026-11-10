@@ -20,6 +20,7 @@ const progressCounter = (onProgress: (receivedBytes: number) => void): Transform
   return new TransformStream({
     transform: (chunk, controller) => {
       received += chunk.length;
+
       const isProgressDue = received - reported >= progressStepBytes;
       if (isProgressDue) {
         reported = received;
@@ -35,6 +36,7 @@ const progressCounter = (onProgress: (receivedBytes: number) => void): Transform
 const fetchIntoPlace = async (request: DownloadRequest): Promise<void> => {
   const partial = `${request.destination}.partial`;
   const reply = await fetch(request.url, { redirect: "follow" });
+
   const isReplyFailed = !reply.ok || reply.body === null;
   if (isReplyFailed) {
     throw new Error(`HTTP ${String(reply.status)}`);
@@ -58,7 +60,9 @@ const fetchIntoPlace = async (request: DownloadRequest): Promise<void> => {
 // Device and inode, so a file renamed into place by another process reads as a different file.
 const fileIdentity = (filePath: string): string => {
   const stats = statSync(filePath, { throwIfNoEntry: false });
-  if (stats === undefined) {
+
+  const isStatsMissing = stats === undefined;
+  if (isStatsMissing) {
     return "";
   }
 
@@ -66,7 +70,8 @@ const fileIdentity = (filePath: string): string => {
 };
 
 const describeIssue = (error: unknown): string => {
-  if (error instanceof Error) {
+  const isErrorInstanceError = error instanceof Error;
+  if (isErrorInstanceError) {
     return error.message;
   }
 
@@ -80,6 +85,7 @@ const downloadFileUnderLock = async (request: DownloadRequest): Promise<void> =>
   const releaseLock = await waitForLock(lockPath);
   try {
     const current = fileIdentity(request.destination);
+
     const isFinishedByAnother = current !== "" && current !== before;
     if (isFinishedByAnother) {
       return;

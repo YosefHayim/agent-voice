@@ -38,6 +38,7 @@ export const speakCommand: CommandSpec = {
     const settings = readConfig();
     const markdown = readRequiredPositional(parsedCommand, "markdown");
     const outputFile = readStringFlag(parsedCommand, "output");
+
     const isPlaybackOnly = outputFile == null;
     if (isPlaybackOnly) {
       await speakAloud(markdown, settings);
