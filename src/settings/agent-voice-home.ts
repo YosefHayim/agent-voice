@@ -23,7 +23,7 @@ type StateFileName =
 
 type StateFolderName = "inbox" | "failed" | "models" | "backups" | "audio" | "prompts" | "devin";
 
-export const agentVoiceHome = (): string => {
+export const readAgentVoiceHome = (): string => {
   const { AGENT_VOICE_HOME } = readEnvironment();
 
   const isHomeSet = AGENT_VOICE_HOME !== "";
@@ -35,12 +35,12 @@ export const agentVoiceHome = (): string => {
   return path.join(home, ".agent-voice");
 };
 
-const homePath = (name: string): string => {
-  const home = agentVoiceHome();
+const readHomePath = (name: string): string => {
+  const home = readAgentVoiceHome();
   return path.join(home, name);
 };
 
-export const configFilePath = (): string => {
+export const readConfigFilePath = (): string => {
   const { AGENT_VOICE_CONFIG_FILE } = readEnvironment();
 
   const isConfigFileSet = AGENT_VOICE_CONFIG_FILE !== "";
@@ -48,9 +48,9 @@ export const configFilePath = (): string => {
     return path.resolve(AGENT_VOICE_CONFIG_FILE);
   }
 
-  return homePath("config.json");
+  return readHomePath("config.json");
 };
 
-export const stateFile = (name: StateFileName): string => homePath(name);
+export const readStateFile = (name: StateFileName): string => readHomePath(name);
 
-export const stateFolder = (name: StateFolderName): string => homePath(name);
+export const readStateFolder = (name: StateFolderName): string => readHomePath(name);

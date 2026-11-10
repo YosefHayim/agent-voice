@@ -3,7 +3,7 @@ import { type ZodError, z } from "zod";
 import { MODEL_ALIASES, whisperModelKeys } from "#src/dictation/whisper-models.js";
 
 // A closed choice that also accepts any letter case and the listed aliases ("Hebrew" → "he").
-const choiceWithAliases = <Choice extends string>(aliases: Readonly<Record<string, Choice>>) =>
+const createAliasedChoiceSchema = <Choice extends string>(aliases: Readonly<Record<string, Choice>>) =>
   z.string().transform((enteredWords, issueReporter) => {
     const key = enteredWords.trim().toLowerCase();
 
@@ -16,12 +16,14 @@ const choiceWithAliases = <Choice extends string>(aliases: Readonly<Record<strin
     return aliases[key];
   });
 
-const literalAliases = <Choice extends string>(choices: ReadonlyArray<Choice>): Readonly<Record<string, Choice>> => {
+const readLiteralAliases = <Choice extends string>(
+  choices: ReadonlyArray<Choice>,
+): Readonly<Record<string, Choice>> => {
   const lowercaseEntries = choices.map((choice) => [choice.toLowerCase(), choice]);
   return Object.fromEntries(lowercaseEntries);
 };
 
-const rangedNumber = (request: {
+const createRangedNumberSchema = (request: {
   readonly range: readonly [number, number];
   readonly outOfRange: string;
   readonly fallback: number;
@@ -36,17 +38,17 @@ const rangedNumber = (request: {
 
 const dictationModelChoices = ["auto", ...whisperModelKeys] as const;
 
-const dictationModelSchema = choiceWithAliases({ ...MODEL_ALIASES, auto: "auto" });
+const dictationModelSchema = createAliasedChoiceSchema({ ...MODEL_ALIASES, auto: "auto" });
 
 export const speechVoices = ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"] as const;
 
-const speechVoiceSchema = choiceWithAliases(literalAliases(speechVoices));
+const speechVoiceSchema = createAliasedChoiceSchema(readLiteralAliases(speechVoices));
 
 export const refineProviders = ["codex", "auto", "grok", "ollama", "opencode", "claude", "gemini", "pi"] as const;
 
 // The CLI names agents use for the same tools: Grok Build is `agent`, Antigravity is `agy`, pi is also `pie`.
-const refineProviderSchema = choiceWithAliases({
-  ...literalAliases(refineProviders),
+const refineProviderSchema = createAliasedChoiceSchema({
+  ...readLiteralAliases(refineProviders),
   agent: "grok",
   agy: "gemini",
   pie: "pi",
@@ -54,7 +56,7 @@ const refineProviderSchema = choiceWithAliases({
 
 const dictationLanguages = ["en", "he"] as const;
 
-const dictationLanguageSchema = choiceWithAliases({
+const dictationLanguageSchema = createAliasedChoiceSchema({
   en: "en",
   english: "en",
   "en-us": "en",
@@ -84,7 +86,7 @@ export const configSchema = z.strictObject({
   speechMode: z.enum(speechModes).default("auto"),
   speechMuted: z.boolean().default(true),
   speechVoice: speechVoiceSchema.default("F4"),
-  speechWordsPerMinute: rangedNumber({
+  speechWordsPerMinute: createRangedNumberSchema({
     range: [80, 720],
     outOfRange: "Speech rate must be between 80 and 720 words per minute.",
     fallback: 230,
@@ -92,7 +94,7 @@ export const configSchema = z.strictObject({
   dictationHoldKey: z.enum(dictationHoldKeys).default("shift"),
   dictationLanguage: dictationLanguageSchema.default("en"),
   dictationModel: dictationModelSchema.default("auto"),
-  dictationKeepListeningSeconds: rangedNumber({
+  dictationKeepListeningSeconds: createRangedNumberSchema({
     range: [0, 2],
     outOfRange: "Dictation keep-listening time must be between 0 and 2 seconds.",
     fallback: 0.2,
@@ -338,7 +340,7 @@ export const parseSettingValue = (request: {
 };
 
 // A cleared optional setting leaves config.json without the key instead of storing an empty value.
-export const withSettingValue = (request: {
+export const setSettingValue = (request: {
   readonly config: Config;
   readonly key: ConfigKey;
   readonly value: ConfigValue | null;

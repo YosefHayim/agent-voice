@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import { stateFolder } from "#src/settings/agent-voice-home.js";
+import { readStateFolder } from "#src/settings/agent-voice-home.js";
 import { speechVoices } from "#src/settings/config-schema.js";
 import { downloadFile } from "#src/storage/model-download.js";
 
@@ -15,13 +15,13 @@ const supertonicFiles: ReadonlyArray<string> = [
   ...speechVoices.map((voice) => `voice_styles/${voice}.json`),
 ];
 
-export const supertonicFolder = (): string => {
-  const modelsFolder = stateFolder("models");
+export const readSupertonicFolder = (): string => {
+  const modelsFolder = readStateFolder("models");
   return path.join(modelsFolder, "supertonic-3");
 };
 
-export const missingSupertonicFiles = (): ReadonlyArray<string> => {
-  const folder = supertonicFolder();
+export const listMissingSupertonicFiles = (): ReadonlyArray<string> => {
+  const folder = readSupertonicFolder();
   return supertonicFiles.filter((file) => {
     const filePath = path.join(folder, file);
     return !existsSync(filePath);
@@ -32,8 +32,8 @@ export const missingSupertonicFiles = (): ReadonlyArray<string> => {
 export const ensureSupertonicModels = async (
   onProgress: (file: string, receivedBytes: number) => void,
 ): Promise<string> => {
-  const folder = supertonicFolder();
-  const missingFiles = missingSupertonicFiles();
+  const folder = readSupertonicFolder();
+  const missingFiles = listMissingSupertonicFiles();
 
   for (const file of missingFiles) {
     await downloadFile({

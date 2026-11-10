@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTestFolder } from "#src/testing/test-folder.js";
 import { type DiscoveredProvider, discoverProviders } from "./provider-models.js";
 import { canRotate, createAttemptQueue, listCodexModelCandidates, refinePrompt } from "./refine-attempts.js";
-import { codexFailedModels } from "./refine-choices.js";
+import { readCodexFailedModels } from "./refine-choices.js";
 import { listPickerModels } from "./refine-picker.js";
 import { refineWithProvider } from "./refine-providers.js";
 
@@ -61,7 +61,7 @@ afterEach(() => {
 const makeSignal = (): AbortSignal => new AbortController().signal;
 
 // A fake codex that writes its reply to the `-o` file, or fails for the models listed in BAD_MODELS.
-const fakeCodex = (request: { readonly reply: string; readonly badModels: ReadonlyArray<string> }) => {
+const writeFakeCodex = (request: { readonly reply: string; readonly badModels: ReadonlyArray<string> }) => {
   const script = [
     'out=""; model=""; prev=""',
     'for arg in "$@"; do',
@@ -75,7 +75,7 @@ const fakeCodex = (request: { readonly reply: string; readonly badModels: Readon
   writeFakeCli("codex", script);
 };
 
-const refine = (draft: string): Promise<string> =>
+const refineDraft = (draft: string): Promise<string> =>
   refinePrompt({
     draft,
     provider: "codex",
@@ -149,8 +149,8 @@ describe("refine rotation", () => {
   });
 
   it("refines with codex, keeps protected literals, and remembers the working model", async () => {
-    fakeCodex({ reply: "finish-and-push: run `pnpm verify` then open a PR", badModels: [] });
-    const refined = await refine("uh run `pnpm verify` and like open a pr dont merge");
+    writeFakeCodex({ reply: "finish-and-push: run `pnpm verify` then open a PR", badModels: [] });
+    const refined = await refineDraft("uh run `pnpm verify` and like open a pr dont merge");
 
     expect(refined).toBe("finish-and-push: run `pnpm verify` then open a PR");
     const choiceFile = path.join(home, ".agent-voice", "refine-choice.json");
@@ -160,11 +160,11 @@ describe("refine rotation", () => {
   });
 
   it("marks a model this account cannot use and moves on to the next one", async () => {
-    fakeCodex({ reply: "Ship the voice refine fix", badModels: ["gpt-5.3-codex-spark"] });
-    const refined = await refine("uh ship the voice refine fix please now");
+    writeFakeCodex({ reply: "Ship the voice refine fix", badModels: ["gpt-5.3-codex-spark"] });
+    const refined = await refineDraft("uh ship the voice refine fix please now");
 
     expect(refined).toBe("Ship the voice refine fix");
-    expect([...codexFailedModels()]).toEqual(["gpt-5.3-codex-spark"]);
+    expect([...readCodexFailedModels()]).toEqual(["gpt-5.3-codex-spark"]);
   });
 
   it("fails without typing anything when every provider prints an error envelope", async () => {
@@ -172,7 +172,7 @@ describe("refine rotation", () => {
       writeFakeCli(name, 'echo \'{"error":{"code":402,"message":"requires more credits"}}\'');
     }
 
-    await expect(refine("make a branch and open a pull request")).rejects.toThrow();
+    await expect(refineDraft("make a branch and open a pull request")).rejects.toThrow();
   });
 });
 

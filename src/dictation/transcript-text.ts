@@ -38,7 +38,7 @@ const NO_SPEECH_TEXTS = ["", "no speech", "no speech detected", ".", "..."];
 
 const splitWords = (text: string): ReadonlyArray<string> => text.split(/\s+/u).filter((word) => word !== "");
 
-const wordsPerSecondFor = (seconds: number): number => {
+const readWordsPerSecond = (seconds: number): number => {
   const isShortClip = seconds < SHORT_CLIP_SECONDS;
   if (isShortClip) {
     return MAX_WORDS_PER_SECOND_SHORT;
@@ -48,10 +48,10 @@ const wordsPerSecondFor = (seconds: number): number => {
 };
 
 // Whisper invents prose on near-silence, so a clip keeps only the words its length could hold.
-export const capWordsForDuration = (text: string, sampleCount: number): string => {
+export const limitWordsToDuration = (text: string, sampleCount: number): string => {
   const words = splitWords(text);
   const seconds = Math.max(sampleCount / SAMPLE_RATE, 0.15);
-  const wordsPerSecond = wordsPerSecondFor(seconds);
+  const wordsPerSecond = readWordsPerSecond(seconds);
 
   const maxWords = Math.ceil(seconds * wordsPerSecond);
 
@@ -90,7 +90,7 @@ export const rejectNoiseHallucination = (text: string, sampleCount: number): str
 
 export const tidyWhisperText = (text: string, sampleCount: number): string => {
   const trimmed = text.trim();
-  const capped = capWordsForDuration(trimmed, sampleCount);
+  const capped = limitWordsToDuration(trimmed, sampleCount);
   const collapsed = collapseRepeatedRuns(capped);
   return rejectNoiseHallucination(collapsed, sampleCount);
 };

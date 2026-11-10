@@ -5,8 +5,8 @@ import { parseArgs } from "node:util";
 
 import { z } from "zod";
 
-import { SAMPLE_RATE, syntheticSpeech } from "#src/dictation/clip-audio.js";
-import { loadTranscriber, type Transcriber, whisperBackend } from "#src/dictation/transcriber.js";
+import { readSyntheticSpeech, SAMPLE_RATE } from "#src/dictation/clip-audio.js";
+import { loadTranscriber, readWhisperBackend, type Transcriber } from "#src/dictation/transcriber.js";
 import { ensureWhisperModel, whisperModels } from "#src/dictation/whisper-models.js";
 
 const { values } = parseArgs({
@@ -17,7 +17,7 @@ const { values } = parseArgs({
   },
 });
 
-const commaSeparatedList = (commaSeparatedText: string) =>
+const listCommaSeparatedList = (commaSeparatedText: string) =>
   commaSeparatedText
     .split(",")
     .map((word) => word.trim())
@@ -32,13 +32,13 @@ const runsSchema = z.coerce.number().int().positive();
 
 const millisecondsPerSecond = 1_000;
 
-const benchClip = async (request: {
+const readBenchClip = async (request: {
   readonly transcriber: Transcriber;
   readonly seconds: number;
   readonly runs: number;
 }) => {
   // syntheticSpeech pads very short requests, so the clip's own length is the audio that was decoded.
-  const samples = syntheticSpeech(request.seconds);
+  const samples = readSyntheticSpeech(request.seconds);
   const audioSeconds = samples.length / SAMPLE_RATE;
 
   const attempts = Array.from({ length: request.runs });
@@ -61,7 +61,7 @@ const benchClip = async (request: {
   };
 };
 
-const benchModel = async (request: {
+const readBenchModel = async (request: {
   readonly key: string;
   readonly seconds: ReadonlyArray<number>;
   readonly runs: number;
@@ -85,7 +85,7 @@ const benchModel = async (request: {
 
   const clips = [];
   for (const seconds of request.seconds) {
-    const clip = await benchClip({ transcriber, seconds, runs: request.runs });
+    const clip = await readBenchClip({ transcriber, seconds, runs: request.runs });
     clips.push(clip);
   }
 
@@ -99,19 +99,19 @@ const benchModel = async (request: {
   };
 };
 
-const seconds = durationsSchema.parse(commaSeparatedList(values.seconds));
+const seconds = durationsSchema.parse(listCommaSeparatedList(values.seconds));
 
 const runs = runsSchema.parse(values.runs);
 
-const modelKeys = commaSeparatedList(values.models);
+const modelKeys = listCommaSeparatedList(values.models);
 
 const modelReports = [];
 for (const key of modelKeys) {
-  const modelReport = await benchModel({ key, seconds, runs });
+  const modelReport = await readBenchModel({ key, seconds, runs });
   modelReports.push(modelReport);
 }
 
-const backend = whisperBackend();
+const backend = readWhisperBackend();
 
 const benchReport = JSON.stringify(
   {

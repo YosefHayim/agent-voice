@@ -28,7 +28,7 @@ const replyOrigin = (): ReplyOrigin => {
 };
 
 // A missing transcript is an expected outcome: the reply is simply empty, and nothing is printed.
-const transcriptReply = (transcriptPath: string): string => {
+const readTranscriptReply = (transcriptPath: string): string => {
   const isThereNoTranscript = transcriptPath === "" || !existsSync(transcriptPath);
   if (isThereNoTranscript) {
     return "";
@@ -73,7 +73,7 @@ const queueAgentReply = async (agent: AgentId): Promise<void> => {
     return;
   }
 
-  const markdown = stopReply.markdown || transcriptReply(stopReply.transcriptPath);
+  const markdown = stopReply.markdown || readTranscriptReply(stopReply.transcriptPath);
 
   const isThereNoMarkdown = markdown.trim() === "";
   if (isThereNoMarkdown) {
@@ -98,7 +98,7 @@ const parseAgentId = (agentName: string | undefined): AgentId | null => {
   return parsedAgent.success ? parsedAgent.data : null;
 };
 
-const agentFromArguments = (args: ReadonlyArray<string>): AgentId | null => {
+const readAgentFromArguments = (args: ReadonlyArray<string>): AgentId | null => {
   const inlineFlag = args.find((argument) => argument.startsWith("--agent="));
 
   const hasInlineFlag = inlineFlag !== undefined;
@@ -120,7 +120,7 @@ const agentFromArguments = (args: ReadonlyArray<string>): AgentId | null => {
 // A Claude Code Stop hook that exits 2 blocks the agent, so wrong, missing, or extra arguments
 // (say, an agent ID renamed after the hook was registered) are a silent no-op.
 export const runReplyHookFromArguments = async (args: ReadonlyArray<string>): Promise<void> => {
-  const agent = agentFromArguments(args);
+  const agent = readAgentFromArguments(args);
 
   const isThereNoAgent = agent === null;
   if (isThereNoAgent) {

@@ -3,7 +3,7 @@ import { readConfigOrDefaults } from "#src/settings/config-file.js";
 import { sleep } from "#src/sleep.js";
 import { appendSpeechLog } from "#src/workers/worker-log.js";
 import { claimWorkerLock, stopRequested } from "#src/workers/worker-processes.js";
-import { dictationOwnsAudio } from "#src/workers/worker-status.js";
+import { isAudioOwnedByDictation } from "#src/workers/worker-status.js";
 import { claimNextReply, completeReply, failReply, removeInboxFiles } from "./inbox.js";
 import { makeSpeechPlayer, type SpeechPlayer, speakMarkdown } from "./speech-player.js";
 import { loadSupertonic, type SupertonicEngine } from "./supertonic.js";
@@ -28,7 +28,7 @@ export const speakNextReply = async (engine: SupertonicEngine, player: SpeechPla
     return "wait";
   }
 
-  const isDictationOwningAudio = dictationOwnsAudio();
+  const isDictationOwningAudio = isAudioOwnedByDictation();
   if (isDictationOwningAudio) {
     return "wait";
   }

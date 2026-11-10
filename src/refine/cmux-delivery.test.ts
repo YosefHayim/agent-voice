@@ -2,11 +2,11 @@ import { spawnSync } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
 
-import { expandCommandTemplate, shellSingleQuote, surfaceParams, workspaceTitle } from "./cmux-delivery.js";
+import { expandCommandTemplate, quoteShellWord, readSurfaceParams, readWorkspaceTitle } from "./cmux-delivery.js";
 
 describe("cmux delivery", () => {
   it("quotes apostrophes for a single-quoted shell string", () => {
-    expect(shellSingleQuote("it's")).toBe("'it'\\''s'");
+    expect(quoteShellWord("it's")).toBe("'it'\\''s'");
   });
 
   it("expands each placeholder to one shell-quoted word", () => {
@@ -33,12 +33,12 @@ describe("cmux delivery", () => {
   });
 
   it("addresses a surface by ref or by ID", () => {
-    expect(surfaceParams("surface:3", { key: "enter" })).toEqual({ surface_ref: "surface:3", key: "enter" });
-    expect(surfaceParams("ab-12", {})).toEqual({ surface_id: "ab-12" });
+    expect(readSurfaceParams("surface:3", { key: "enter" })).toEqual({ surface_ref: "surface:3", key: "enter" });
+    expect(readSurfaceParams("ab-12", {})).toEqual({ surface_id: "ab-12" });
   });
 
   it("titles a new workspace with the first line of the prompt", () => {
-    expect(workspaceTitle("Fix the login bug\nand more")).toBe("refine: Fix the login bug");
-    expect(workspaceTitle("")).toBe("refine");
+    expect(readWorkspaceTitle("Fix the login bug\nand more")).toBe("refine: Fix the login bug");
+    expect(readWorkspaceTitle("")).toBe("refine");
   });
 });

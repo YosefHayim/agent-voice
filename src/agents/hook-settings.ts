@@ -24,7 +24,7 @@ interface HookInsertion {
 }
 
 // POSIX single quotes: the shell expands nothing inside them, and an embedded ' is closed, escaped, and reopened.
-const shellQuoted = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
+const quoteShellWord = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
 
 // `'<node>' [loader flags] '<agent-voice main>' reply --agent <id>`: the command that identifies agent-voice's entry.
 export const replyHookCommand = (request: {
@@ -32,9 +32,13 @@ export const replyHookCommand = (request: {
   readonly scriptArguments: ReadonlyArray<string>;
   readonly agent: AgentId;
 }): string =>
-  [shellQuoted(request.nodePath), ...request.scriptArguments.map(shellQuoted), "reply", "--agent", request.agent].join(
-    " ",
-  );
+  [
+    quoteShellWord(request.nodePath),
+    ...request.scriptArguments.map(quoteShellWord),
+    "reply",
+    "--agent",
+    request.agent,
+  ].join(" ");
 
 const QUOTED_WORD = String.raw`'(?:[^']|'\\'')*'`;
 
@@ -62,16 +66,19 @@ const parseSettings = (source: string): Node => {
   return root;
 };
 
-const lineIndent = (source: string, offset: number): string => {
+const readLineIndent = (source: string, offset: number): string => {
   const lineStart = source.lastIndexOf("\n", offset - 1) + 1;
   const line = source.slice(lineStart);
   return /^[ \t]*/u.exec(line)?.[0] || "";
 };
 
-const indentUnit = (source: string): string => /\n([ \t]+)"/u.exec(source)?.[1] || "  ";
+const readIndentUnit = (source: string): string => /\n([ \t]+)"/u.exec(source)?.[1] || "  ";
 
-const pretty = (request: { readonly value: unknown; readonly unit: string; readonly baseIndent: string }) =>
-  JSON.stringify(request.value, null, request.unit).split("\n").join(`\n${request.baseIndent}`);
+const stringifyWithIndent = (request: {
+  readonly value: unknown;
+  readonly unit: string;
+  readonly baseIndent: string;
+}) => JSON.stringify(request.value, null, request.unit).split("\n").join(`\n${request.baseIndent}`);
 
 const splice = (source: string, edit: { readonly offset: number; readonly length: number; readonly text: string }) =>
   source.slice(0, edit.offset) + edit.text + source.slice(edit.offset + edit.length);
@@ -87,7 +94,7 @@ const appendMember = (request: {
 
   const hasLast = last !== undefined;
   if (hasLast) {
-    const indent = lineIndent(request.source, last.offset);
+    const indent = readLineIndent(request.source, last.offset);
     return splice(request.source, {
       offset: last.offset + last.length,
       length: 0,
@@ -95,8 +102,8 @@ const appendMember = (request: {
     });
   }
 
-  const outerIndent = lineIndent(request.source, request.container.offset);
-  const innerIndent = outerIndent + indentUnit(request.source);
+  const outerIndent = readLineIndent(request.source, request.container.offset);
+  const innerIndent = outerIndent + readIndentUnit(request.source);
   return splice(request.source, {
     offset: request.container.offset + 1,
     length: request.container.length - 2,
@@ -140,7 +147,7 @@ const removeMember = (request: {
   });
 };
 
-const commandOf = (hook: Node): string => {
+const readHookCommand = (hook: Node): string => {
   const commandNode = findNodeAtLocation(hook, ["command"]);
 
   const isThereNoCommandNode = commandNode === undefined;
@@ -172,7 +179,7 @@ const findReplyHook = (root: Node, matches: (command: string) => boolean): Reply
     return (groupHooks.children || []).map((hook) => ({ stopArray, group, groupHooks, hook }));
   });
   const location = locations.find((candidate) => {
-    const command = commandOf(candidate.hook);
+    const command = readHookCommand(candidate.hook);
     return matches(command);
   });
   return location ?? null;
@@ -226,7 +233,7 @@ export const removeReplyHook = (request: { readonly source: string; readonly age
 };
 
 // agent-voice's hook group goes into the Stop array, into a new Stop key in hooks, or into a new hooks key.
-const hookInsertion = (root: Node, command: string): HookInsertion => {
+const readHookInsertion = (root: Node, command: string): HookInsertion => {
   const hookGroup = { hooks: [{ type: "command", command }] };
   const hooks = findNodeAtLocation(root, ["hooks"]);
   const stopArray = findNodeAtLocation(root, ["hooks", "Stop"]);
@@ -256,16 +263,17 @@ const hookInsertion = (root: Node, command: string): HookInsertion => {
 
 const appendReplyHook = (source: string, command: string): string => {
   const root = parseSettings(source);
-  const insertion = hookInsertion(root, command);
-  const unit = indentUnit(source);
+  const insertion = readHookInsertion(root, command);
+  const unit = readIndentUnit(source);
   return appendMember({
     source,
     container: insertion.container,
-    member: (indent) => `${insertion.keyPrefix}${pretty({ value: insertion.value, unit, baseIndent: indent })}`,
+    member: (indent) =>
+      `${insertion.keyPrefix}${stringifyWithIndent({ value: insertion.value, unit, baseIndent: indent })}`,
   });
 };
 
-const settingsText = (source: string): string => {
+const readSettingsText = (source: string): string => {
   const isBlank = source.trim() === "";
   if (isBlank) {
     return "{}\n";
@@ -302,11 +310,11 @@ export const addReplyHook = (request: {
   readonly command: string;
   readonly agent: AgentId;
 }): SettingsEdit => {
-  const source = settingsText(request.source);
+  const source = readSettingsText(request.source);
   const root = parseSettings(source);
   const existing = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
 
-  const isCurrent = existing !== null && commandOf(existing.hook) === request.command;
+  const isCurrent = existing !== null && readHookCommand(existing.hook) === request.command;
   if (isCurrent) {
     return { source: request.source, changed: false };
   }

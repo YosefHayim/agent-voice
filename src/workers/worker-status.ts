@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { stateFile } from "#src/settings/agent-voice-home.js";
+import { readStateFile } from "#src/settings/agent-voice-home.js";
 import { readJsonFile, writeJsonAtomically } from "#src/storage/state-files.js";
 
 const dictationStages = ["starting", "inactive", "listening", "finishing", "refining", "done", "unavailable"] as const;
@@ -24,10 +24,10 @@ const workerStatusSchema = z.object({
 type WorkerStatus = z.infer<typeof workerStatusSchema>;
 
 export const readWorkerStatus = (): WorkerStatus | null =>
-  readJsonFile({ path: stateFile("status.json"), schema: workerStatusSchema });
+  readJsonFile({ path: readStateFile("status.json"), schema: workerStatusSchema });
 
 export const writeWorkerStatus = (status: Omit<WorkerStatus, "updatedAt">): void =>
-  writeJsonAtomically({ path: stateFile("status.json"), value: { ...status, updatedAt: Date.now() / 1_000 } });
+  writeJsonAtomically({ path: readStateFile("status.json"), value: { ...status, updatedAt: Date.now() / 1_000 } });
 
 // Every write records whether the mic is capturing a hold, so a queued clip's "finishing" or "refining" never lets
 // speech into a newer hold.
@@ -36,11 +36,12 @@ export const makeStatusWriter = (request: {
   readonly backend: string;
   readonly recording: () => boolean;
 }) => {
-  const fields = () => ({ model: request.model, backend: request.backend, recording: request.recording() });
+  const readStatusFields = () => ({ model: request.model, backend: request.backend, recording: request.recording() });
   return {
-    write: (stage: DictationStage, detail: string) => writeWorkerStatus({ ...fields(), stage, detail, preview: "" }),
+    write: (stage: DictationStage, detail: string) =>
+      writeWorkerStatus({ ...readStatusFields(), stage, detail, preview: "" }),
     writePreview: (caption: string) =>
-      writeWorkerStatus({ ...fields(), stage: "listening", detail: "", preview: caption }),
+      writeWorkerStatus({ ...readStatusFields(), stage: "listening", detail: "", preview: caption }),
     stage: (): DictationStage | null => readWorkerStatus()?.stage ?? null,
   };
 };
@@ -48,7 +49,7 @@ export const makeStatusWriter = (request: {
 export type StatusWriter = ReturnType<typeof makeStatusWriter>;
 
 // Speech waits while the dictation worker starts and while a hold is captured, release tail included.
-export const dictationOwnsAudio = (): boolean => {
+export const isAudioOwnedByDictation = (): boolean => {
   const status = readWorkerStatus();
 
   const isThereNoStatus = status === null;

@@ -10,13 +10,13 @@ import { readClipboard, writeClipboard } from "./caret.js";
 import type { DictationQueue } from "./dictation-queue.js";
 import {
   classifyTap,
-  doubleTapAction,
   HOLD_THRESHOLD_MS,
   type HoldAction,
   type HoldEvent,
   type HoldState,
   holdTransition,
   initialHoldTracker,
+  readDoubleTapAction,
   sampleHold,
 } from "./hold-key.js";
 import type { Keyboard } from "./keyboard.js";
@@ -177,7 +177,7 @@ export const makeHoldController = (request: {
 
     const settings = readConfigOrDefaults();
     const isClipboardRefineOn = settings.refineMode === "clipboard" || settings.refineMode === "both";
-    const action = doubleTapAction({ isSpeaking: isSpeaking(), clipboardRefine: isClipboardRefineOn });
+    const action = readDoubleTapAction({ isSpeaking: isSpeaking(), clipboardRefine: isClipboardRefineOn });
     switch (action) {
       case "stopSpeaking":
         stopSpeech();

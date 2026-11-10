@@ -4,14 +4,17 @@ import { readConfig } from "#src/settings/config-file.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { makeSpeechPlayer, speakMarkdown, writeMarkdownWav } from "#src/speech/speech-player.js";
 import { loadSupertonic } from "#src/speech/supertonic.js";
-import { ensureSupertonicModels, missingSupertonicFiles } from "#src/speech/supertonic-models.js";
+import { ensureSupertonicModels, listMissingSupertonicFiles } from "#src/speech/supertonic-models.js";
 import { type CommandSpec, readRequiredPositional, readStringFlag } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
-const voiceOf = (settings: Config) => ({ voice: settings.speechVoice, wordsPerMinute: settings.speechWordsPerMinute });
+const readVoice = (settings: Config) => ({
+  voice: settings.speechVoice,
+  wordsPerMinute: settings.speechWordsPerMinute,
+});
 
 const loadEngine = async () => {
-  const isDownloadNeeded = missingSupertonicFiles().length > 0;
+  const isDownloadNeeded = listMissingSupertonicFiles().length > 0;
   if (isDownloadNeeded) {
     TerminalUI.printStep("Downloading the Supertonic voices (~400 MB, once)");
   }
@@ -23,7 +26,7 @@ const loadEngine = async () => {
 export const speakAloud = async (markdown: string, settings: Config): Promise<void> => {
   const engine = await loadEngine();
   const player = makeSpeechPlayer();
-  const voice = voiceOf(settings);
+  const voice = readVoice(settings);
   await speakMarkdown({ engine, player, markdown, voice });
 };
 
@@ -47,7 +50,7 @@ export const speakCommand: CommandSpec = {
 
     const engine = await loadEngine();
     const outputPath = path.resolve(outputFile);
-    const seconds = await writeMarkdownWav({ engine, markdown, voice: voiceOf(settings), outputFile: outputPath });
+    const seconds = await writeMarkdownWav({ engine, markdown, voice: readVoice(settings), outputFile: outputPath });
     TerminalUI.printSuccess(`Wrote ${seconds.toFixed(1)} s of speech to ${outputPath}`);
     return 0;
   },

@@ -5,20 +5,20 @@ import { holdKeyLabels } from "#src/dictation/hold-key.js";
 import {
   ensureWhisperModel,
   isWhisperModelPresent,
+  readWhisperModelPath,
   selectWhisperModel,
-  whisperModelPath,
 } from "#src/dictation/whisper-models.js";
 import { describeError } from "#src/error-message.js";
 import { readConfig } from "#src/settings/config-file.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
 import { sleep } from "#src/sleep.js";
-import { ensureSupertonicModels, missingSupertonicFiles } from "#src/speech/supertonic-models.js";
+import { ensureSupertonicModels, listMissingSupertonicFiles } from "#src/speech/supertonic-models.js";
 import { startWorkers, stopWorkers } from "#src/workers/worker-processes.js";
 import { type CommandSpec, type ExitCode, isFlagOn } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
-const backupNote = (change: HookChange): string => {
+const readBackupNote = (change: HookChange): string => {
   const isChangeBackupMissing = change.backup === undefined;
   if (isChangeBackupMissing) {
     return "";
@@ -32,7 +32,7 @@ const printHookChange = (change: HookChange): void => {
   switch (change.change) {
     case "added":
     case "removed":
-      TerminalUI.printSuccess(`${where} (${change.change}${backupNote(change)})`);
+      TerminalUI.printSuccess(`${where} (${change.change}${readBackupNote(change)})`);
       return;
     case "unchanged":
       TerminalUI.printDetail(`${where} (already registered)`);
@@ -55,7 +55,7 @@ export const printHookChanges = (changes: ReadonlyArray<HookChange>): void => {
   }
 };
 
-const megabytes = (bytes: number): string => {
+const readMegabytes = (bytes: number): string => {
   const rounded = Math.round(bytes / 1e6);
   return `${String(rounded)} MB`;
 };
@@ -73,7 +73,7 @@ const showDownloadProgress = (download: ModelDownload): void => {
   }
 
   const arrivedBytes = statSync(download.partialFile).size;
-  TerminalUI.printDetail(`${download.label}: ${megabytes(arrivedBytes)} so far`);
+  TerminalUI.printDetail(`${download.label}: ${readMegabytes(arrivedBytes)} so far`);
 };
 
 // Prints the bytes so far every few seconds until the download settles; a failed download rethrows here.
@@ -100,23 +100,23 @@ export const prepareModels = async (settings: Config): Promise<void> => {
 
   const isModelMissing = !isWhisperModelPresent(model);
   if (isModelMissing) {
-    TerminalUI.printStep(`Downloading ${model.label} (~${megabytes(model.approximateBytes)})`);
+    TerminalUI.printStep(`Downloading ${model.label} (~${readMegabytes(model.approximateBytes)})`);
     const modelDownloading = ensureWhisperModel({ model, onProgress: () => undefined });
     await waitForDownload({
       label: model.label,
-      partialFile: `${whisperModelPath(model)}.partial`,
+      partialFile: `${readWhisperModelPath(model)}.partial`,
       finished: modelDownloading,
     });
   }
 
-  const isVoiceDownloadNeeded = settings.speechMode !== "off" && missingSupertonicFiles().length > 0;
+  const isVoiceDownloadNeeded = settings.speechMode !== "off" && listMissingSupertonicFiles().length > 0;
   if (isVoiceDownloadNeeded) {
     TerminalUI.printStep("Downloading the Supertonic voices (~400 MB)");
     await ensureSupertonicModels(() => undefined);
   }
 };
 
-const refineTarget = (settings: Config): string => {
+const readRefineTarget = (settings: Config): string => {
   const model = settings.refineModel || "default model";
 
   const isSettingsRefineEffortMissing = settings.refineEffort === undefined;
@@ -128,7 +128,7 @@ const refineTarget = (settings: Config): string => {
 };
 
 const describeRefine = (settings: Config): string => {
-  const target = refineTarget(settings);
+  const target = readRefineTarget(settings);
 
   if (settings.refinePressEnter) {
     return `${target} → ${settings.refineSendTo} + Enter`;

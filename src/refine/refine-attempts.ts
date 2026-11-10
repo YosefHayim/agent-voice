@@ -1,20 +1,20 @@
 import { describeError } from "#src/error-message.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { containsAny, dedupe } from "./agent-cli.js";
-import { CODEX_MODEL_FALLBACKS, isProviderInstalled, type ProviderId, providerModels } from "./provider-models.js";
+import { CODEX_MODEL_FALLBACKS, isProviderInstalled, listProviderModels, type ProviderId } from "./provider-models.js";
 import {
-  codexFailedModels,
-  codexLastGoodModel,
   DEFAULT_REFINE_EFFORT,
   DEFAULT_REFINE_MODEL,
   markCodexModelFailed,
+  readCodexFailedModels,
+  readCodexLastGoodModel,
   readSavedChoice,
   type SavedChoice,
   saveRefineChoice,
 } from "./refine-choices.js";
 import { isPickerEnabled, pickRefineTargetWithDialogs, SKIP_REFINE_LABEL } from "./refine-picker.js";
-import { namedModel, refineWithProvider } from "./refine-providers.js";
-import { isModelUnavailableError, looksLikeFailedModelOutput } from "./refine-reply.js";
+import { readNamedModel, refineWithProvider } from "./refine-providers.js";
+import { isFailedModelOutputText, isModelUnavailableError } from "./refine-reply.js";
 
 // Bounds so a dictation release never hangs on rotation.
 const MAX_MODELS_PER_PROVIDER = 6;
@@ -38,7 +38,7 @@ const LAST_RESORT_MODEL: Readonly<Record<ProviderId, string>> = {
 const ROTATE_MARKERS = ["failed", "error", "timeout", "timed out", "connection", "refused", "not found", "empty"];
 
 export const canRotate = (detail: string): boolean =>
-  looksLikeFailedModelOutput(detail) || containsAny(detail, ROTATE_MARKERS);
+  isFailedModelOutputText(detail) || containsAny(detail, ROTATE_MARKERS);
 
 // Models that already failed for this account go last, so a ChatGPT-account rejection (~3 s) is not paid every time.
 export const listCodexModelCandidates = (request: {
@@ -75,17 +75,17 @@ const listDiscoveredModels = async (provider: ProviderId, preferred: string): Pr
 
   const isNotCodex = !isCodex;
   if (isNotCodex) {
-    return providerModels(provider);
+    return listProviderModels(provider);
   }
 
-  const lastGood = codexLastGoodModel();
-  const failed = codexFailedModels();
+  const lastGood = readCodexLastGoodModel();
+  const failed = readCodexFailedModels();
   return listCodexModelCandidates({ preferred, lastGood, failed });
 };
 
 // The preferred model, the saved pick, then the discovered list.
 const listModelCandidates = async (provider: ProviderId, preferred: string): Promise<ReadonlyArray<string>> => {
-  const chosenModel = namedModel(preferred, ["default", "auto"]);
+  const chosenModel = readNamedModel(preferred, ["default", "auto"]);
   const saved = readSavedChoice();
   const savedModel = pickSavedModel(saved, provider);
   const discovered = await listDiscoveredModels(provider, preferred);

@@ -49,7 +49,7 @@ const pollTap = (poll: () => void): void => {
   }
 };
 
-const shiftKeyboard = (shift: { down: boolean }): Keyboard => ({
+const createShiftKeyboard = (shift: { down: boolean }): Keyboard => ({
   holdKey: "shift",
   otherModifiersDown: () => false,
   holdDown: () => shift.down,
@@ -66,7 +66,7 @@ const shiftKeyboard = (shift: { down: boolean }): Keyboard => ({
 const doubleTapShift = () => {
   const shift = { down: false };
   const controller = makeHoldController({
-    keyboard: shiftKeyboard(shift),
+    keyboard: createShiftKeyboard(shift),
     clip: makeClipBuffer(),
     caption: makeLiveCaption(),
     status: makeStatusWriter({ model: "fake", backend: "none", recording: () => false }),
@@ -79,7 +79,7 @@ const doubleTapShift = () => {
   }
 };
 
-const savedMute = (): boolean => {
+const isMuteSaved = (): boolean => {
   const savedSettings = readConfig();
   return savedSettings.speechMuted;
 };
@@ -90,7 +90,7 @@ describe("double-tap Shift", () => {
 
     doubleTapShift();
 
-    expect(savedMute()).toBe(true);
+    expect(isMuteSaved()).toBe(true);
     // The first tap always stops speech; muting stops it again for a reply claimed between the taps.
     expect(stopSpeech).toHaveBeenCalledTimes(2);
   });
@@ -100,17 +100,17 @@ describe("double-tap Shift", () => {
 
     doubleTapShift();
 
-    expect(savedMute()).toBe(false);
+    expect(isMuteSaved()).toBe(false);
     expect(stopSpeech).toHaveBeenCalledTimes(1);
   });
 });
 
-const rightOptionController = () => {
+const createRightOptionController = () => {
   const pressed = { down: false, modifiers: false, keys: 0n };
   const clip = makeClipBuffer();
   const offer = vi.fn(() => undefined);
   const keyboard: Keyboard = {
-    ...shiftKeyboard(pressed),
+    ...createShiftKeyboard(pressed),
     holdKey: "right-option",
     otherModifiersDown: () => pressed.modifiers,
     otherKeysDown: () => pressed.keys,
@@ -129,7 +129,7 @@ const rightOptionController = () => {
 describe("Right Option hold-only dictation", () => {
   it("ignores taps and double taps without changing speech mute", () => {
     writeConfig({ speechMuted: true });
-    const hold = rightOptionController();
+    const hold = createRightOptionController();
     for (const down of [true, false, true, false]) {
       hold.pressed.down = down;
       pollTap(hold.poll);
@@ -138,11 +138,11 @@ describe("Right Option hold-only dictation", () => {
     expect(hold.clip.isRecording()).toBe(false);
     expect(hold.offer).not.toHaveBeenCalled();
     expect(stopSpeech).not.toHaveBeenCalled();
-    expect(savedMute()).toBe(true);
+    expect(isMuteSaved()).toBe(true);
   });
 
   it("records only after the threshold and queues one clip after release", async () => {
-    const hold = rightOptionController();
+    const hold = createRightOptionController();
     const now = Date.now();
     const clock = vi.spyOn(Date, "now").mockReturnValue(now);
     try {
@@ -167,7 +167,7 @@ describe("Right Option hold-only dictation", () => {
   });
 
   it.each(["before", "during"])("cancels modifiers held %s Right Option", (when) => {
-    const hold = rightOptionController();
+    const hold = createRightOptionController();
     hold.pressed.modifiers = when === "before";
     hold.pressed.down = true;
     pollTap(hold.poll);
@@ -182,7 +182,7 @@ describe("Right Option hold-only dictation", () => {
   });
 
   it("cancels when another key is typed while Right Option is held", () => {
-    const hold = rightOptionController();
+    const hold = createRightOptionController();
     hold.pressed.down = true;
     pollTap(hold.poll);
     hold.pressed.keys = 1n << 0x01n;

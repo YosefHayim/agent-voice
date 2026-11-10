@@ -28,7 +28,7 @@ const half = Buffer.alloc(MODEL_BYTES / 2, 7);
 const largeModel = Buffer.alloc(LARGE_BYTES, 7);
 
 // The test server listens on a TCP port, so its address is an object that carries the port.
-const portOf = (address: AddressInfo | string | null): number => {
+const readPort = (address: AddressInfo | string | null): number => {
   const isNotTcpAddress = address === null || typeof address !== "object";
   if (isNotTcpAddress) {
     throw new Error("the test server is not on a TCP port");
@@ -66,7 +66,7 @@ beforeEach(async () => {
   });
   await new Promise((resolve) => server?.listen(0, "127.0.0.1", () => resolve(undefined)));
   const address = server.address();
-  const port = portOf(address);
+  const port = readPort(address);
   origin = `http://127.0.0.1:${String(port)}`;
 });
 
@@ -104,7 +104,7 @@ const startDownloader = (request: { readonly url: string; readonly destination: 
   return { child, exited: new Promise<number | null>((resolve) => child.once("exit", resolve)) };
 };
 
-const eventually = async (check: () => boolean): Promise<boolean> => {
+const waitUntilTrue = async (check: () => boolean): Promise<boolean> => {
   const deadline = Date.now() + 20_000;
   while (!check() && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -174,7 +174,7 @@ describe("downloadFile", () => {
     async () => {
       const destination = path.join(folder, "model.bin");
       const other = startDownloader({ url: `${origin}/slow.bin`, destination });
-      expect(await eventually(() => requests.length === 1)).toBe(true);
+      expect(await waitUntilTrue(() => requests.length === 1)).toBe(true);
 
       await download({ url: `${origin}/slow.bin`, destination });
 
@@ -190,7 +190,7 @@ describe("downloadFile", () => {
     const destination = path.join(folder, "model.bin");
     const crashed = startDownloader({ url: `${origin}/stall.bin`, destination });
     const partial = `${destination}.partial`;
-    expect(await eventually(() => existsSync(partial) && statSync(partial).size > 0)).toBe(true);
+    expect(await waitUntilTrue(() => existsSync(partial) && statSync(partial).size > 0)).toBe(true);
     crashed.child.kill("SIGKILL");
     await crashed.exited;
     expect(existsSync(`${destination}.lock`)).toBe(true);

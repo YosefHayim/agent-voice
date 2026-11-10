@@ -1,4 +1,4 @@
-import { markdownToSpeech } from "#src/speech/markdown-to-speech.js";
+import { convertMarkdownToSpeech } from "#src/speech/markdown-to-speech.js";
 import { type CommandSpec, readRequiredPositional } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
@@ -9,7 +9,7 @@ export const renderCommand: CommandSpec = {
   positionals: [{ name: "markdown", description: "A complete reply, in Markdown", isRequired: true }],
   run: async (parsedCommand) => {
     const markdown = readRequiredPositional(parsedCommand, "markdown");
-    const speech = markdownToSpeech(markdown);
+    const speech = convertMarkdownToSpeech(markdown);
     TerminalUI.printLine(speech);
     return 0;
   },

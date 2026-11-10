@@ -18,7 +18,7 @@ const flagUsage = (flagName: string, flag: FlagSpec): string => {
   return `--${flagName} <${placeholderName}>`;
 };
 
-const positionalUsage = (positionalSpec: PositionalSpec): string => {
+const readPositionalUsage = (positionalSpec: PositionalSpec): string => {
   if (positionalSpec.isRequired) {
     return `<${positionalSpec.name}>`;
   }
@@ -26,7 +26,7 @@ const positionalUsage = (positionalSpec: PositionalSpec): string => {
   return `[${positionalSpec.name}]`;
 };
 
-const usageLabel = (commandPath: string, command: CommandSpec): string => {
+const readUsageLabel = (commandPath: string, command: CommandSpec): string => {
   const isGroup = command.subcommands != null;
   if (isGroup) {
     return `${commandPath} <command>`;
@@ -37,46 +37,46 @@ const usageLabel = (commandPath: string, command: CommandSpec): string => {
   }
 
   const flagParts = Object.entries(command.flags).map(([flagName, flag]) => flagUsage(flagName, flag));
-  const positionalParts = command.positionals.map(positionalUsage);
+  const positionalParts = command.positionals.map(readPositionalUsage);
   return [commandPath, ...flagParts, ...positionalParts].join(" ");
 };
 
-const tableLines = (rows: ReadonlyArray<HelpRow>): ReadonlyArray<string> => {
+const listTableLines = (rows: ReadonlyArray<HelpRow>): ReadonlyArray<string> => {
   const labelWidth = Math.max(...rows.map((row) => row.label.length));
   return rows.map((row) => `${INDENT}${row.label.padEnd(labelWidth)}  ${row.description}`);
 };
 
-const sectionLines = (title: string, rows: ReadonlyArray<HelpRow>): ReadonlyArray<string> => {
+const listSectionLines = (title: string, rows: ReadonlyArray<HelpRow>): ReadonlyArray<string> => {
   const isEmptySection = rows.length === 0;
   if (isEmptySection) {
     return [];
   }
 
-  return ["", `${title}:`, ...tableLines(rows)];
+  return ["", `${title}:`, ...listTableLines(rows)];
 };
 
-export const renderRootHelp = (commands: ReadonlyArray<CommandSpec>): string => {
+export const createRootHelp = (commands: ReadonlyArray<CommandSpec>): string => {
   const commandRows = commands.map((command) => ({
-    label: usageLabel(command.name, command),
+    label: readUsageLabel(command.name, command),
     description: command.description,
   }));
   return [
     "agent-voice · Hold Shift to dictate into any text field and hear coding-agent replies read aloud.",
     "",
     "Usage: agent-voice <command> [options]",
-    ...sectionLines("Commands", commandRows),
+    ...listSectionLines("Commands", commandRows),
     "",
     "Run agent-voice <command> --help for the options of one command.",
   ].join("\n");
 };
 
-export const renderCommandHelp = (commandPath: string, command: CommandSpec): string => {
+export const createCommandHelp = (commandPath: string, command: CommandSpec): string => {
   const subcommandRows = (command.subcommands ?? []).map((subcommand) => ({
-    label: usageLabel(subcommand.name, subcommand),
+    label: readUsageLabel(subcommand.name, subcommand),
     description: subcommand.description,
   }));
   const positionalRows = command.positionals.map((positionalSpec) => ({
-    label: positionalUsage(positionalSpec),
+    label: readPositionalUsage(positionalSpec),
     description: positionalSpec.description,
   }));
   const flagRows = Object.entries(command.flags).map(([flagName, flag]) => ({
@@ -86,9 +86,9 @@ export const renderCommandHelp = (commandPath: string, command: CommandSpec): st
   return [
     `${commandPath} — ${command.description}`,
     "",
-    `Usage: ${usageLabel(commandPath, command)}`,
-    ...sectionLines("Commands", subcommandRows),
-    ...sectionLines("Arguments", positionalRows),
-    ...sectionLines("Options", flagRows),
+    `Usage: ${readUsageLabel(commandPath, command)}`,
+    ...listSectionLines("Commands", subcommandRows),
+    ...listSectionLines("Arguments", positionalRows),
+    ...listSectionLines("Options", flagRows),
   ].join("\n");
 };

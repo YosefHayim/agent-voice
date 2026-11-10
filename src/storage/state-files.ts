@@ -15,7 +15,7 @@ import path from "node:path";
 import type { ZodType } from "zod";
 
 import { isErrorWithCode } from "#src/error-code.js";
-import { agentVoiceHome } from "#src/settings/agent-voice-home.js";
+import { readAgentVoiceHome } from "#src/settings/agent-voice-home.js";
 
 // Dictated, refined, and reply text is readable by the user alone: its files are 0600 and its folders 0700.
 const PRIVATE_FILE_MODE = 0o600;
@@ -31,7 +31,7 @@ export const makePrivateFolder = (folder: string): void => {
 // Folders under agent-voice's home are tightened; a folder the user picked (say, for AGENT_VOICE_CONFIG_FILE) keeps its mode.
 const makeParentFolder = (filePath: string): void => {
   const folder = path.dirname(filePath);
-  const home = agentVoiceHome();
+  const home = readAgentVoiceHome();
   const relative = path.relative(home, folder);
 
   const isOutsideHome = relative.startsWith("..") || path.isAbsolute(relative);

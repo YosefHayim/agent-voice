@@ -39,7 +39,7 @@ const parseJsonOrNull = (stopHookStdin: string): unknown => {
 };
 
 // Grok also sends Stop when its session closes (reason "shutdown" or "channel_closed"); only a finished turn is read.
-const grokTurnReply = (grokStop: GrokStop): StopReply | null => {
+const readGrokTurnReply = (grokStop: GrokStop): StopReply | null => {
   const isNotFinishedTurn = grokStop.reason !== "end_turn";
   if (isNotFinishedTurn) {
     return null;
@@ -54,7 +54,7 @@ export const readStopReply = (stopHookStdin: string): StopReply | null => {
 
   const isGrokStop = grokStopReply.success;
   if (isGrokStop) {
-    return grokTurnReply(grokStopReply.data);
+    return readGrokTurnReply(grokStopReply.data);
   }
 
   const snakeCaseStopReply = snakeCaseStopSchema.safeParse(stopHookValue);
@@ -88,7 +88,7 @@ type ChatMessage = z.infer<typeof chatMessageSchema>;
 // Claude Code wraps each message as `{ type, message }`; other transcripts write the message itself.
 const claudeLineSchema = z.object({ message: chatMessageSchema });
 
-const transcriptMessage = (line: string): ReadonlyArray<ChatMessage> => {
+const listTranscriptMessage = (line: string): ReadonlyArray<ChatMessage> => {
   const lineValue = parseJsonOrNull(line);
   const claudeLine = claudeLineSchema.safeParse(lineValue);
 
@@ -102,7 +102,7 @@ const transcriptMessage = (line: string): ReadonlyArray<ChatMessage> => {
   return isChatLine ? [chatLine.data] : [];
 };
 
-const contentBlocks = (message: ChatMessage): ReadonlyArray<ContentBlock> => {
+const listContentBlocks = (message: ChatMessage): ReadonlyArray<ContentBlock> => {
   const isPlainText = typeof message.content === "string";
   if (isPlainText) {
     return [{ type: "text", text: message.content }];
@@ -113,25 +113,25 @@ const contentBlocks = (message: ChatMessage): ReadonlyArray<ContentBlock> => {
 
 // Claude Code feeds tool results back as user messages; only a prompt the user typed starts a new reply.
 const isUserPrompt = (message: ChatMessage): boolean => {
-  const blocks = contentBlocks(message);
+  const blocks = listContentBlocks(message);
   return message.role === "user" && blocks.every((block) => block.type !== "tool_result");
 };
 
-const assistantTexts = (message: ChatMessage): ReadonlyArray<string> => {
+const listAssistantTexts = (message: ChatMessage): ReadonlyArray<string> => {
   const isMessageRoleNotAssistant = message.role !== "assistant";
   if (isMessageRoleNotAssistant) {
     return [];
   }
 
-  const blocks = contentBlocks(message);
+  const blocks = listContentBlocks(message);
   return blocks.filter((block) => block.type === "text" && block.text.trim() !== "").map((block) => block.text);
 };
 
 export const replyFromTranscript = (transcript: string): string => {
   const lines = transcript.split("\n");
-  const messages = lines.flatMap(transcriptMessage);
+  const messages = lines.flatMap(listTranscriptMessage);
   const promptFlags = messages.map(isUserPrompt);
   const lastPromptIndex = promptFlags.lastIndexOf(true);
   const replyMessages = messages.slice(lastPromptIndex + 1);
-  return replyMessages.flatMap(assistantTexts).join("\n\n");
+  return replyMessages.flatMap(listAssistantTexts).join("\n\n");
 };

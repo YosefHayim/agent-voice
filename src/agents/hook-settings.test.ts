@@ -17,9 +17,10 @@ const command = replyHookCommand({
   agent: "codex",
 });
 
-const added = (source: string, hookCommand = command) => addReplyHook({ source, command: hookCommand, agent: "codex" });
+const readAdded = (source: string, hookCommand = command) =>
+  addReplyHook({ source, command: hookCommand, agent: "codex" });
 
-const removed = (source: string) => removeReplyHook({ source, agent: "codex" });
+const readRemoved = (source: string) => removeReplyHook({ source, agent: "codex" });
 
 const stopCommands = (source: string): ReadonlyArray<string> =>
   (parse(source)?.hooks?.Stop || []).flatMap((group: { hooks: ReadonlyArray<{ command: string }> }) =>
@@ -69,7 +70,7 @@ describe("replyHookCommand", () => {
 
 describe("addReplyHook and removeReplyHook", () => {
   it("appends one Stop entry, keeps every other byte, and restores the file exactly", () => {
-    const withHook = added(claudeSettings);
+    const withHook = readAdded(claudeSettings);
     const stopArrayEnd = claudeSettings.indexOf("    ]");
     const textBeforeStopEnd = claudeSettings.slice(0, stopArrayEnd).trimEnd();
 
@@ -77,50 +78,50 @@ describe("addReplyHook and removeReplyHook", () => {
     expect(stopCommands(withHook.source)).toEqual(["notify-send done", command]);
     expect(withHook.source.startsWith(textBeforeStopEnd)).toBe(true);
     expect(withHook.source).toContain("// my settings");
-    expect(removed(withHook.source)).toEqual({ source: claudeSettings, changed: true });
+    expect(readRemoved(withHook.source)).toEqual({ source: claudeSettings, changed: true });
   });
 
   it("creates hooks.Stop in a file without hooks and removes it again byte for byte", () => {
     const plain = '{\n    "model": "opus"\n}\n';
-    const withHook = added(plain);
+    const withHook = readAdded(plain);
 
     expect(parse(withHook.source)).toEqual({
       model: "opus",
       hooks: { Stop: [{ hooks: [{ type: "command", command }] }] },
     });
     expect(withHook.source).toContain('\n    "hooks": {\n        "Stop": [');
-    expect(removed(withHook.source).source).toBe(plain);
+    expect(readRemoved(withHook.source).source).toBe(plain);
   });
 
   it("adds Stop beside other hook events and removes only what it added", () => {
     const codexHooks =
       '{\n  "hooks": {\n    "PreToolUse": [{"hooks":[{"type":"command","command":"guard"}]}]\n  }\n}\n';
-    const withHook = added(codexHooks);
+    const withHook = readAdded(codexHooks);
 
     expect(Object.keys(parse(withHook.source).hooks)).toEqual(["PreToolUse", "Stop"]);
-    expect(removed(withHook.source).source).toBe(codexHooks);
+    expect(readRemoved(withHook.source).source).toBe(codexHooks);
   });
 
   it("writes a fresh file when there is none, and leaves an empty object behind on removal", () => {
-    const fresh = added("");
+    const fresh = readAdded("");
 
     expect(stopCommands(fresh.source)).toEqual([command]);
-    expect(isEmptySettings(removed(fresh.source).source)).toBe(true);
+    expect(isEmptySettings(readRemoved(fresh.source).source)).toBe(true);
   });
 
   it("does nothing when the same command is already there, and replaces an entry from an older agent-voice path", () => {
-    const once = added(claudeSettings).source;
-    expect(added(once)).toEqual({ source: once, changed: false });
+    const once = readAdded(claudeSettings).source;
+    expect(readAdded(once)).toEqual({ source: once, changed: false });
 
     const moved = command.replace("/Users/me/Code/agent-voice", "/opt/agent-voice");
-    const updated = added(once, moved);
+    const updated = readAdded(once, moved);
     expect(updated.changed).toBe(true);
     expect(stopCommands(updated.source)).toEqual(["notify-send done", moved]);
   });
 
   it("removes only agent-voice's hook when the user moved it into a group with other hooks", () => {
     const shared = `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"notify"},{"type":"command","command":${JSON.stringify(command)}}]}]}}`;
-    const withoutAgentVoice = removed(shared);
+    const withoutAgentVoice = readRemoved(shared);
 
     expect(withoutAgentVoice.changed).toBe(true);
     expect(parse(withoutAgentVoice.source)).toEqual({
@@ -132,8 +133,8 @@ describe("addReplyHook and removeReplyHook", () => {
     const foreign =
       '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"say agent-voice reply --agent codex"}]}]}}';
 
-    expect(removed(foreign)).toEqual({ source: foreign, changed: false });
-    expect(stopCommands(added(foreign).source)).toEqual(["say agent-voice reply --agent codex", command]);
+    expect(readRemoved(foreign)).toEqual({ source: foreign, changed: false });
+    expect(stopCommands(readAdded(foreign).source)).toEqual(["say agent-voice reply --agent codex", command]);
   });
 
   it("treats a file as empty only when nothing but {} and whitespace is left, so a comment keeps it", () => {
@@ -146,7 +147,7 @@ describe("addReplyHook and removeReplyHook", () => {
     const addToArrayFile = () => addReplyHook({ source: "[1, 2]", command, agent: "codex" });
     const addWhenStopIsObject = () => addReplyHook({ source: '{"hooks": {"Stop": {}}}', command, agent: "codex" });
 
-    expect(removed(claudeSettings)).toEqual({ source: claudeSettings, changed: false });
+    expect(readRemoved(claudeSettings)).toEqual({ source: claudeSettings, changed: false });
     expect(addToArrayFile).toThrow("the settings file is not a JSON object");
     expect(addWhenStopIsObject).toThrow("hooks.Stop is not an array");
   });

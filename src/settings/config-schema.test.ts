@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { configSettings, decodeConfig, defaultConfig, parseSettingValue, withSettingValue } from "./config-schema.js";
+import { configSettings, decodeConfig, defaultConfig, parseSettingValue, setSettingValue } from "./config-schema.js";
 
 describe("configSchema", () => {
   it("decodes an empty file to the documented defaults", () => {
@@ -107,12 +107,12 @@ describe("configSchema", () => {
 
     const seconds = parseSettingValue({ setting: keepListening, enteredWords: "1" });
     const clearedModel = parseSettingValue({ setting: refineModel, enteredWords: " " });
-    const withModel = withSettingValue({
+    const withModel = setSettingValue({
       config: defaultConfig,
       key: "refineModel",
       value: "grok-4.5",
     });
-    const cleared = withSettingValue({ config: withModel, key: "refineModel", value: null });
+    const cleared = setSettingValue({ config: withModel, key: "refineModel", value: null });
 
     expect(seconds).toBe(1);
     expect(clearedModel).toBeNull();

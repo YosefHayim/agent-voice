@@ -6,15 +6,15 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decodeWav } from "#src/speech/wav-file.js";
 import { makeTestFolder } from "#src/testing/test-folder.js";
-import { samplesFromPcm } from "./clip-audio.js";
-import { formatDictation } from "./dictation-format.js";
+import { readSamplesFromPcm } from "./clip-audio.js";
+import { createDictationText } from "./dictation-format.js";
 import { loadTranscriber } from "./transcriber.js";
 
 // Smoke tests only read a Whisper model already in ~/.agent-voice/models and never download one.
 const userHome = homedir();
 const modelsFolder = path.join(userHome, ".agent-voice", "models");
 
-const installedModel = (): string | undefined => {
+const readInstalledModel = (): string | undefined => {
   const isModelsFolderAbsent = !existsSync(modelsFolder);
   if (isModelsFolderAbsent) {
     return undefined;
@@ -30,7 +30,7 @@ const installedModel = (): string | undefined => {
   return path.join(modelsFolder, modelName);
 };
 
-const modelFile = installedModel();
+const modelFile = readInstalledModel();
 
 describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisper transcription (smoke)", () => {
   const modelPath = modelFile || "";
@@ -44,7 +44,7 @@ describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisp
     rmSync(folder, { recursive: true, force: true });
   });
 
-  const spokenFixture = (text: string): Float32Array => {
+  const readSpokenFixture = (text: string): Float32Array => {
     const aiff = path.join(folder, "spoken.aiff");
     const wav = path.join(folder, "spoken.wav");
     execFileSync("say", ["-o", aiff, text]);
@@ -59,16 +59,16 @@ describe.skipIf(modelFile === undefined || process.platform !== "darwin")("Whisp
       throw new Error("afconvert did not write 16 kHz PCM");
     }
 
-    return samplesFromPcm(decoded.pcm);
+    return readSamplesFromPcm(decoded.pcm);
   };
 
   it("transcribes a spoken WAV fixture and formats it for the caret", async () => {
-    const samples = spokenFixture("Check the worktrees folder and push every branch.");
+    const samples = readSpokenFixture("Check the worktrees folder and push every branch.");
     const transcriber = await loadTranscriber(modelPath);
     await transcriber.warmUp();
     const transcription = await transcriber.transcribe({ samples, language: "en", prompt: "worktrees" });
     await transcriber.release();
-    const formatted = formatDictation(transcription.text, new Map());
+    const formatted = createDictationText(transcription.text, new Map());
 
     expect(transcription.ranWhisper).toBe(true);
     expect(transcription.text.toLowerCase()).toMatch(/folder.*push every/u);

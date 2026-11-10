@@ -4,11 +4,11 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import { z } from "zod";
-import { stateFolder } from "#src/settings/agent-voice-home.js";
+import { readStateFolder } from "#src/settings/agent-voice-home.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { sleep } from "#src/sleep.js";
 import { writePrivateFile } from "#src/storage/state-files.js";
-import { type CliRun, cliFailureText, findCli, nonBlankLines, parseJsonOrNull, runCli } from "./agent-cli.js";
+import { type CliRun, findCli, listNonBlankLines, parseJsonOrNull, readCliFailureText, runCli } from "./agent-cli.js";
 
 const CMUX_TIMEOUT_MS = 15_000;
 
@@ -70,7 +70,7 @@ const readFirstString = (value: unknown, keys: ReadonlyArray<string>): string | 
 
 // cmux may print notices before its JSON line.
 const readCmuxReply = (stdout: string): unknown => {
-  const jsonLines = nonBlankLines(stdout).filter((line) => line.startsWith("{"));
+  const jsonLines = listNonBlankLines(stdout).filter((line) => line.startsWith("{"));
   const lastJsonLine = jsonLines.at(-1) ?? "";
   const wholeReply = parseJsonOrNull(stdout.trim());
 
@@ -111,7 +111,7 @@ const runCmuxJson = async (request: {
 
   const isFailedExit = cliRun.exitCode !== 0;
   if (isFailedExit) {
-    const detail = cliFailureText(cliRun) || "failed";
+    const detail = readCliFailureText(cliRun) || "failed";
     throw createCmuxError(request.step, detail);
   }
 
@@ -119,7 +119,7 @@ const runCmuxJson = async (request: {
 };
 
 // cmux addresses a surface by `surface_ref` (`surface:N`) or by `surface_id` (UUID).
-const surfaceKey = (surface: string): string => {
+const readSurfaceKey = (surface: string): string => {
   const isSurfaceRef = surface.startsWith("surface:");
   if (isSurfaceRef) {
     return "surface_ref";
@@ -128,11 +128,11 @@ const surfaceKey = (surface: string): string => {
   return "surface_id";
 };
 
-export const surfaceParams = (
+export const readSurfaceParams = (
   surface: string,
   fields: Readonly<Record<string, string>>,
 ): Readonly<Record<string, string>> => {
-  const key = surfaceKey(surface);
+  const key = readSurfaceKey(surface);
   return { [key]: surface, ...fields };
 };
 
@@ -143,8 +143,8 @@ const callRpc = (method: string, params: Readonly<Record<string, string>>): Prom
 
 // Some cmux builds name the key "return" instead of "enter". A key that fails to send is logged, not thrown.
 const pressEnterKey = async (surface: string): Promise<void> => {
-  const enterParams = surfaceParams(surface, { key: "enter" });
-  const returnParams = surfaceParams(surface, { key: "return" });
+  const enterParams = readSurfaceParams(surface, { key: "enter" });
+  const returnParams = readSurfaceParams(surface, { key: "return" });
   try {
     await callRpc("surface.send_key", enterParams);
   } catch (enterError) {
@@ -162,7 +162,7 @@ const sendTextToSurface = async (request: {
   readonly text: string;
   readonly pressEnter: boolean;
 }): Promise<void> => {
-  const textParams = surfaceParams(request.surface, { text: request.text });
+  const textParams = readSurfaceParams(request.surface, { text: request.text });
   await callRpc("surface.send_text", textParams);
 
   if (request.pressEnter) {
@@ -271,7 +271,7 @@ const readDeliveryFolder = async (): Promise<string> => {
 };
 
 // Safe inside a single-quoted shell string: ' becomes '\''.
-export const shellSingleQuote = (plainText: string): string => `'${plainText.replaceAll("'", "'\\''")}'`;
+export const quoteShellWord = (plainText: string): string => `'${plainText.replaceAll("'", "'\\''")}'`;
 
 // One pass, so a folder with spaces or `$(...)` stays one literal word, and text inserted by one placeholder is never expanded again.
 export const expandCommandTemplate = (request: {
@@ -286,11 +286,11 @@ export const expandCommandTemplate = (request: {
     cwd: request.folder,
   };
   return request.template.replace(/\{\{(prompt_file|prompt|cwd)\}\}/gu, (_placeholder, name: string) =>
-    shellSingleQuote(values[name] || ""),
+    quoteShellWord(values[name] || ""),
   );
 };
 
-export const workspaceTitle = (plainText: string): string => {
+export const readWorkspaceTitle = (plainText: string): string => {
   const firstLine = plainText.split("\n")[0] || "";
   const characters = [...firstLine.trim()];
   const shortLine = characters.slice(0, 40).join("");
@@ -304,7 +304,7 @@ export const workspaceTitle = (plainText: string): string => {
 };
 
 const writePromptFile = (promptText: string): string => {
-  const promptsFolder = stateFolder("prompts");
+  const promptsFolder = readStateFolder("prompts");
   const promptFile = path.join(promptsFolder, `prompt-${randomUUID()}.txt`);
   writePrivateFile({ path: promptFile, flags: "w", contents: `${promptText}\n` });
   return promptFile;
@@ -314,7 +314,7 @@ const createWorkspaceArgs = (request: {
   readonly promptText: string;
   readonly folder: string;
 }): ReadonlyArray<string> => {
-  const title = workspaceTitle(request.promptText);
+  const title = readWorkspaceTitle(request.promptText);
   return ["workspace", "create", "--name", title, "--cwd", request.folder, "--focus", "true"];
 };
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { characterIds, chunkSpeech, speedForWordsPerMinute, supertonicText } from "./speech-chunks.js";
+import { chunkSpeech, listCharacterIds, readSpeedFromWordsPerMinute, readSupertonicText } from "./speech-chunks.js";
 import { decodeWav, encodeWav } from "./wav-file.js";
 
 describe("chunkSpeech", () => {
@@ -21,13 +21,13 @@ describe("chunkSpeech", () => {
 
 describe("supertonicText", () => {
   it("normalizes symbols, spacing, and quotes, ends with a period, and adds the language tags", () => {
-    expect(supertonicText("Use foo_bar — see “docs” @ home , ok")).toBe(
+    expect(readSupertonicText("Use foo_bar — see “docs” @ home , ok")).toBe(
       '<en>Use foo bar - see "docs" at home, ok.</en>',
     );
   });
 
   it("keeps existing end punctuation and removes emoji", () => {
-    expect(supertonicText("Done! 🎉")).toBe("<en>Done!</en>");
+    expect(readSupertonicText("Done! 🎉")).toBe("<en>Done!</en>");
   });
 });
 
@@ -35,15 +35,15 @@ describe("characterIds", () => {
   it("maps characters through the indexer and drops unsupported ones", () => {
     const indexer = Array.from({ length: 128 }, (_unused, code) => code + 1000);
     indexer[0x7e] = -1;
-    expect(characterIds("a~b", indexer)).toEqual([1097, 1098]);
+    expect(listCharacterIds("a~b", indexer)).toEqual([1097, 1098]);
   });
 });
 
 describe("speedForWordsPerMinute", () => {
   it("turns 230 wpm into 1.15x and clamps to 0.7–2.0", () => {
-    expect(speedForWordsPerMinute(230)).toBeCloseTo(1.15);
-    expect(speedForWordsPerMinute(80)).toBe(0.7);
-    expect(speedForWordsPerMinute(720)).toBe(2);
+    expect(readSpeedFromWordsPerMinute(230)).toBeCloseTo(1.15);
+    expect(readSpeedFromWordsPerMinute(80)).toBe(0.7);
+    expect(readSpeedFromWordsPerMinute(720)).toBe(2);
   });
 });
 

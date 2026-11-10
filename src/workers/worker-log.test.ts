@@ -22,14 +22,14 @@ afterEach(() => {
   rmSync(testFolder, { recursive: true, force: true });
 });
 
-const permissions = (file: string) => statSync(file).mode & 0o777;
+const readPermissions = (file: string) => statSync(file).mode & 0o777;
 
 describe("dictation.log", () => {
   it("is created readable by the user alone, in an agent-voice folder only the user can open", () => {
     appendDictationLog("stt text=meet me at noon");
 
-    expect(permissions(log)).toBe(0o600);
-    expect(permissions(home)).toBe(0o700);
+    expect(readPermissions(log)).toBe(0o600);
+    expect(readPermissions(home)).toBe(0o700);
     expect(readFileSync(log, "utf8")).toMatch(/^\d+\.\d{3} stt text=meet me at noon\n$/u);
   });
 
@@ -41,8 +41,8 @@ describe("dictation.log", () => {
 
     appendDictationLog("refine text=a refined prompt");
 
-    expect(permissions(log)).toBe(0o600);
-    expect(permissions(home)).toBe(0o700);
+    expect(readPermissions(log)).toBe(0o600);
+    expect(readPermissions(home)).toBe(0o700);
     expect(readFileSync(log, "utf8").split("\n")).toEqual([
       "1.000 stt text=an earlier hold",
       expect.stringMatching(/^\d+\.\d{3} refine text=a refined prompt$/u),

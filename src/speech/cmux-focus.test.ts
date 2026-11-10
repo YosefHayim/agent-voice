@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { makeTestFolder, makeTestSocketPath } from "#src/testing/test-folder.js";
-import { cmuxFocus } from "./cmux-focus.js";
+import { readCmuxFocus } from "./cmux-focus.js";
 
 let folder = "";
 let server: Server | undefined;
@@ -38,7 +38,7 @@ describe("cmuxFocus", () => {
       server = silentServer;
       await new Promise<void>((listening) => silentServer.listen(socketPath, () => listening()));
 
-      const focus = await cmuxFocus(socketPath);
+      const focus = await readCmuxFocus(socketPath);
 
       expect(focus).toEqual({ kind: "unknown" });
     },

@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { describeError } from "#src/error-message.js";
 import type { Config } from "#src/settings/config-schema.js";
-import { characterIds, supertonicText } from "./speech-chunks.js";
+import { listCharacterIds, readSupertonicText } from "./speech-chunks.js";
 
 export interface SynthesizeRequest {
   readonly text: string;
@@ -38,7 +38,7 @@ const FLOW_STEPS = 8;
 const createSupertonicError = (issue: string, cause?: unknown): Error => new Error(`Supertonic: ${issue}`, { cause });
 
 // Turns any failure from onnxruntime into one error that names Supertonic.
-const withSupertonicErrors = async <Value>(work: () => Promise<Value>): Promise<Value> => {
+const wrapSupertonicErrors = async <Value>(work: () => Promise<Value>): Promise<Value> => {
   try {
     return await work();
   } catch (error) {
@@ -55,25 +55,25 @@ const readSupertonicJson = <Output>(schema: z.ZodType<Output>, file: string): Ou
 };
 
 // Box–Muller: the flow starts from Gaussian noise, as numpy's randn does.
-const gaussian = (): number => {
+const sampleGaussian = (): number => {
   const first = 1 - Math.random();
   const second = Math.random();
   const radius = Math.sqrt(-2 * Math.log(first));
   return radius * Math.cos(2 * Math.PI * second);
 };
 
-const flatNumbers = (nested: unknown): ReadonlyArray<number> => {
+const listFlatNumbers = (nested: unknown): ReadonlyArray<number> => {
   const flat = [nested].flat(Number.POSITIVE_INFINITY);
   return numbersSchema.parse(flat);
 };
 
-const ones = (length: number): Float32Array => new Float32Array(length).fill(1);
+const createOnes = (length: number): Float32Array => new Float32Array(length).fill(1);
 
 const runModel = async (request: {
   readonly model: OnnxRuntime.InferenceSession;
   readonly feeds: Readonly<Record<string, OnnxRuntime.Tensor>>;
 }) => {
-  const outputs = await withSupertonicErrors(() => request.model.run({ ...request.feeds }));
+  const outputs = await wrapSupertonicErrors(() => request.model.run({ ...request.feeds }));
   const firstName = request.model.outputNames[0] || "";
   const tensor = outputs[firstName];
 
@@ -87,7 +87,7 @@ const runModel = async (request: {
 
 // onnxruntime-node is imported here, not at the top, so `agent-voice reply` never loads it.
 export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEngine> => {
-  const ort: typeof OnnxRuntime = await withSupertonicErrors(() => import("onnxruntime-node"));
+  const ort: typeof OnnxRuntime = await wrapSupertonicErrors(() => import("onnxruntime-node"));
   const onnxFolder = path.join(modelFolder, "onnx");
   const configFile = path.join(onnxFolder, "tts.json");
   const indexerFile = path.join(onnxFolder, "unicode_indexer.json");
@@ -95,7 +95,7 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
   const indexer = readSupertonicJson(numbersSchema, indexerFile);
 
   const loadSession = (name: string) =>
-    withSupertonicErrors(() =>
+    wrapSupertonicErrors(() =>
       ort.InferenceSession.create(path.join(onnxFolder, `${name}.onnx`), { executionProviders: ["cpu"] }),
     );
   const durationPredictor = await loadSession("duration_predictor");
@@ -107,34 +107,36 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
   const chunkSize = config.ae.base_chunk_size * config.ttl.chunk_compress_factor;
   const latentDimension = config.ttl.latent_dim * config.ttl.chunk_compress_factor;
 
-  const floatTensor = (floats: Float32Array | ReadonlyArray<number>, dims: ReadonlyArray<number>): OnnxRuntime.Tensor =>
-    new ort.Tensor("float32", floats, dims);
+  const readFloatTensor = (
+    floats: Float32Array | ReadonlyArray<number>,
+    dims: ReadonlyArray<number>,
+  ): OnnxRuntime.Tensor => new ort.Tensor("float32", floats, dims);
 
-  const styleTensor = (style: StyleTensor) => {
-    const floats = flatNumbers(style.data);
-    return floatTensor(floats, style.dims);
+  const readStyleTensor = (style: StyleTensor) => {
+    const floats = listFlatNumbers(style.data);
+    return readFloatTensor(floats, style.dims);
   };
 
-  const styleTensors = (voice: Config["speechVoice"]) => {
+  const readStyleTensors = (voice: Config["speechVoice"]) => {
     const styleFile = path.join(modelFolder, "voice_styles", `${voice}.json`);
     const style = readSupertonicJson(voiceStyleSchema, styleFile);
-    return { textToLatent: styleTensor(style.style_ttl), duration: styleTensor(style.style_dp) };
+    return { textToLatent: readStyleTensor(style.style_ttl), duration: readStyleTensor(style.style_dp) };
   };
 
   // Mono samples at `sampleRate` for one chunk of speech text.
   const synthesize = async (request: SynthesizeRequest): Promise<Float32Array> => {
-    const modelText = supertonicText(request.text);
-    const ids = characterIds(modelText, indexer);
+    const modelText = readSupertonicText(request.text);
+    const ids = listCharacterIds(modelText, indexer);
 
     const isNoIds = ids.length === 0;
     if (isNoIds) {
       return new Float32Array(0);
     }
 
-    const style = styleTensors(request.voice);
+    const style = readStyleTensors(request.voice);
     const textIds = new ort.Tensor("int64", ids, [1, ids.length]);
-    const textOnes = ones(ids.length);
-    const textMask = floatTensor(textOnes, [1, 1, ids.length]);
+    const textOnes = createOnes(ids.length);
+    const textMask = readFloatTensor(textOnes, [1, 1, ids.length]);
 
     const duration = await runModel({
       model: durationPredictor,
@@ -149,12 +151,12 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
     const wantedSamples = Math.floor(seconds * sampleRate);
     const sampleCount = Math.max(wantedSamples, 1);
     const latentLength = Math.ceil(sampleCount / chunkSize);
-    const latentOnes = ones(latentLength);
-    const latentMask = floatTensor(latentOnes, [1, 1, latentLength]);
-    const totalSteps = floatTensor([FLOW_STEPS], [1]);
+    const latentOnes = createOnes(latentLength);
+    const latentMask = readFloatTensor(latentOnes, [1, 1, latentLength]);
+    const totalSteps = readFloatTensor([FLOW_STEPS], [1]);
 
     const denoise = (noisyLatent: OnnxRuntime.Tensor, step: number) => {
-      const currentStep = floatTensor([step], [1]);
+      const currentStep = readFloatTensor([step], [1]);
       return runModel({
         model: vectorEstimator,
         feeds: {
@@ -169,8 +171,8 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
       });
     };
 
-    const noiseSamples = Float32Array.from({ length: latentDimension * latentLength }, gaussian);
-    const noise = floatTensor(noiseSamples, [1, latentDimension, latentLength]);
+    const noiseSamples = Float32Array.from({ length: latentDimension * latentLength }, sampleGaussian);
+    const noise = readFloatTensor(noiseSamples, [1, latentDimension, latentLength]);
     const steps = Array.from({ length: FLOW_STEPS }, (_unused, step) => step);
     let latent = noise;
     for (const step of steps) {

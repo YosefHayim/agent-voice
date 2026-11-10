@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { stateFile } from "#src/settings/agent-voice-home.js";
+import { readStateFile } from "#src/settings/agent-voice-home.js";
 import {
   readJsonFile,
   readTextIfPresent,
@@ -7,7 +7,7 @@ import {
   writeFileAtomically,
   writeJsonAtomically,
 } from "#src/storage/state-files.js";
-import { nonBlankLines } from "./agent-cli.js";
+import { listNonBlankLines } from "./agent-cli.js";
 
 export const DEFAULT_REFINE_MODEL = "gpt-5.3-codex-spark";
 
@@ -28,38 +28,38 @@ const CODEX_LAST_GOOD_FILE = "refine-codex-last-good.txt";
 const CODEX_FAILED_FILE = "refine-codex-failed.txt";
 
 export const readSavedChoice = (): SavedChoice | null =>
-  readJsonFile({ path: stateFile(CHOICE_FILE), schema: savedChoiceSchema });
+  readJsonFile({ path: readStateFile(CHOICE_FILE), schema: savedChoiceSchema });
 
-export const codexLastGoodModel = (): string => {
-  const lastGoodFile = stateFile(CODEX_LAST_GOOD_FILE);
+export const readCodexLastGoodModel = (): string => {
+  const lastGoodFile = readStateFile(CODEX_LAST_GOOD_FILE);
   return (readTextIfReadable(lastGoodFile) ?? "").trim();
 };
 
-const modelSet = (fileText: string | null): ReadonlySet<string> => {
-  const models = nonBlankLines(fileText ?? "");
+const readModelSet = (fileText: string | null): ReadonlySet<string> => {
+  const models = listNonBlankLines(fileText ?? "");
   return new Set(models);
 };
 
 // Null when the file exists but cannot be read, so an update never replaces it unseen.
-const readCodexFailedModels = (): ReadonlySet<string> | null => {
-  const failedFile = stateFile(CODEX_FAILED_FILE);
+const readCodexFailedModelsOrNull = (): ReadonlySet<string> | null => {
+  const failedFile = readStateFile(CODEX_FAILED_FILE);
   try {
-    return modelSet(readTextIfPresent(failedFile));
+    return readModelSet(readTextIfPresent(failedFile));
   } catch {
     return null;
   }
 };
 
-export const codexFailedModels = (): ReadonlySet<string> => readCodexFailedModels() ?? new Set<string>();
+export const readCodexFailedModels = (): ReadonlySet<string> => readCodexFailedModelsOrNull() ?? new Set<string>();
 
 const writeCodexFailedModels = (failed: ReadonlySet<string>): void => {
   const lines = [...failed].sort().map((model) => `${model}\n`);
-  writeFileAtomically({ path: stateFile(CODEX_FAILED_FILE), contents: lines.join("") });
+  writeFileAtomically({ path: readStateFile(CODEX_FAILED_FILE), contents: lines.join("") });
 };
 
 export const markCodexModelFailed = (model: string): void => {
   const trimmed = model.trim();
-  const failed = readCodexFailedModels();
+  const failed = readCodexFailedModelsOrNull();
 
   const isUnreadable = failed === null;
 
@@ -86,7 +86,7 @@ export const saveRefineChoice = (request: {
   }
 
   writeJsonAtomically({
-    path: stateFile(CHOICE_FILE),
+    path: readStateFile(CHOICE_FILE),
     value: {
       provider: request.provider,
       model,
@@ -100,8 +100,8 @@ export const saveRefineChoice = (request: {
     return;
   }
 
-  writeFileAtomically({ path: stateFile(CODEX_LAST_GOOD_FILE), contents: `${model}\n` });
-  const failed = readCodexFailedModels();
+  writeFileAtomically({ path: readStateFile(CODEX_LAST_GOOD_FILE), contents: `${model}\n` });
+  const failed = readCodexFailedModelsOrNull();
 
   const isModelNotMarkedFailed = failed === null || !failed.has(model);
   if (isModelNotMarkedFailed) {

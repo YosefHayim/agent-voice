@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDictation, parseReplacements, promptBoost } from "./dictation-format.js";
+import { createDictationText, parseReplacements, readPromptBoost } from "./dictation-format.js";
 
 describe("formatDictation", () => {
   const replacements = new Map([["Joseph", "Yosef"]]);
@@ -17,7 +17,7 @@ describe("formatDictation", () => {
     ["is it ready question mark yes exclamation point", "Is it ready? Yes! "],
     ["", ""],
   ])("formats %j", (spoken, typed) => {
-    expect(formatDictation(spoken, replacements)).toBe(typed);
+    expect(createDictationText(spoken, replacements)).toBe(typed);
   });
 
   it("matches multi-word replacements, longest first, ignoring case and trailing punctuation", () => {
@@ -25,18 +25,18 @@ describe("formatDictation", () => {
       ["type script", "TypeScript"],
       ["type", "kind"],
     ]);
-    expect(formatDictation("I like Type Script.", terms)).toBe("I like TypeScript. ");
-    expect(formatDictation("what type is it", terms)).toBe("What kind is it ");
+    expect(createDictationText("I like Type Script.", terms)).toBe("I like TypeScript. ");
+    expect(createDictationText("what type is it", terms)).toBe("What kind is it ");
   });
 
   it("keeps the punctuation Whisper put after a replaced word, so the next sentence still starts with a capital", () => {
     const names = new Map([["Joseph", "Yosef"]]);
-    expect(formatDictation("my name is Joseph. thanks", names)).toBe("My name is Yosef. Thanks ");
-    expect(formatDictation("Joseph, hi", names)).toBe("Yosef, hi ");
+    expect(createDictationText("my name is Joseph. thanks", names)).toBe("My name is Yosef. Thanks ");
+    expect(createDictationText("Joseph, hi", names)).toBe("Yosef, hi ");
   });
 
   it("leaves Hebrew words untouched", () => {
-    expect(formatDictation("שלום comma עולם", new Map())).toBe("שלום, עולם ");
+    expect(createDictationText("שלום comma עולם", new Map())).toBe("שלום, עולם ");
   });
 });
 
@@ -52,13 +52,13 @@ describe("parseReplacements", () => {
 
 describe("promptBoost", () => {
   it("lists every replacement term once, sorted", () => {
-    const boost = promptBoost(
+    const boost = readPromptBoost(
       new Map([
         ["type script", "TypeScript"],
         ["joseph", "Yosef"],
       ]),
     );
     expect(boost).toBe("TypeScript, Yosef, joseph, type script");
-    expect(promptBoost(new Map())).toBe("");
+    expect(readPromptBoost(new Map())).toBe("");
   });
 });

@@ -39,7 +39,7 @@ describe("live caption", () => {
       transcribe: async () => {
         throw new Error("final decodes are not part of this test");
       },
-      caption: async () => {
+      readCaption: async () => {
         passes += 1;
         clip.end();
         clip.begin();

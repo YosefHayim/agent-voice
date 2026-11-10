@@ -1,16 +1,16 @@
 import { existsSync } from "node:fs";
-import { registeredSettingsFiles } from "#src/agents/hook-registration.js";
-import { hookSettingsFiles } from "#src/agents/hook-settings-files.js";
+import { listRegisteredSettingsFiles } from "#src/agents/hook-registration.js";
+import { listHookSettingsFiles } from "#src/agents/hook-settings-files.js";
 import { type Keyboard, loadKeyboard } from "#src/dictation/keyboard.js";
 import { WHISPER_PACKAGE } from "#src/dictation/transcriber.js";
-import { isWhisperModelPresent, selectWhisperModel, whisperModelPath } from "#src/dictation/whisper-models.js";
+import { isWhisperModelPresent, readWhisperModelPath, selectWhisperModel } from "#src/dictation/whisper-models.js";
 import { describeError } from "#src/error-message.js";
 import { findCli, runCli } from "#src/refine/agent-cli.js";
 import { type DiscoveredProvider, discoverProviders } from "#src/refine/provider-models.js";
 import { readConfig } from "#src/settings/config-file.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
-import { missingSupertonicFiles, supertonicFolder } from "#src/speech/supertonic-models.js";
+import { listMissingSupertonicFiles, readSupertonicFolder } from "#src/speech/supertonic-models.js";
 import { type CommandSpec, type ExitCode, isFlagOn } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
@@ -181,8 +181,8 @@ const checkMicrophone = async (): Promise<DoctorCheck> => {
 };
 
 const checkHooks = (): ReadonlyArray<DoctorCheck> => {
-  const registeredFiles = registeredSettingsFiles().map((settings) => settings.file);
-  return hookSettingsFiles().map((settings) => {
+  const registeredFiles = listRegisteredSettingsFiles().map((settings) => settings.file);
+  return listHookSettingsFiles().map((settings) => {
     const name = `${settings.displayName} hook`;
 
     const isRegistered = registeredFiles.includes(settings.file);
@@ -218,16 +218,16 @@ const checkWhisperModel = (settings: Config): DoctorCheck => {
     };
   }
 
-  const modelPath = whisperModelPath(model);
+  const modelPath = readWhisperModelPath(model);
   return createOkCheck("Whisper model", modelPath);
 };
 
 const checkSupertonicVoices = (settings: Config): DoctorCheck => {
-  const missingFiles = missingSupertonicFiles();
+  const missingFiles = listMissingSupertonicFiles();
 
   const isEverythingPresent = missingFiles.length === 0;
   if (isEverythingPresent) {
-    const folder = supertonicFolder();
+    const folder = readSupertonicFolder();
     return createOkCheck("Supertonic voices", folder);
   }
 

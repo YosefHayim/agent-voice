@@ -3,10 +3,10 @@ import { existsSync, readdirSync, renameSync } from "node:fs";
 import path from "node:path";
 
 import { z } from "zod";
-import { stateFile, stateFolder } from "#src/settings/agent-voice-home.js";
+import { readStateFile, readStateFolder } from "#src/settings/agent-voice-home.js";
 import type { Config } from "#src/settings/config-schema.js";
 import { makePrivateFolder, readJsonFile, removeIfPresent, writeJsonAtomically } from "#src/storage/state-files.js";
-import { type CmuxFocus, cmuxFocus } from "./cmux-focus.js";
+import { type CmuxFocus, readCmuxFocus } from "./cmux-focus.js";
 
 const terminalOriginSchema = z.object({ kind: z.literal("terminal") });
 
@@ -39,14 +39,14 @@ export type QueuedReply = z.infer<typeof queuedReplySchema>;
 
 const seenKeysSchema = z.record(z.string(), z.number());
 
-const nowSeconds = () => Date.now() / 1_000;
+const readNowSeconds = () => Date.now() / 1_000;
 
-const inboxFolder = () => stateFolder("inbox");
+const readInboxFolder = () => readStateFolder("inbox");
 
-const seenFile = () => stateFile("seen.json");
+const readSeenFile = () => readStateFile("seen.json");
 
 // FNV-1a 64-bit plus the byte length, so the same text gets the same token in every process.
-export const contentToken = (markdown: string): string => {
+export const readContentToken = (markdown: string): string => {
   const bytes = Buffer.from(markdown, "utf8");
   const hash = bytes.reduce((current, byte) => {
     const mixed = (current ^ BigInt(byte)) * 0x100000001b3n;
@@ -56,7 +56,7 @@ export const contentToken = (markdown: string): string => {
   return `${hexHash}:${bytes.length}`;
 };
 
-export const surfaceIdentity = (reply: QueuedReply): string => {
+export const readSurfaceIdentity = (reply: QueuedReply): string => {
   const { origin } = reply;
 
   const isOriginUnusable = origin.kind !== "cmux" || origin.workspaceId === "" || origin.surfaceId === "";
@@ -69,14 +69,14 @@ export const surfaceIdentity = (reply: QueuedReply): string => {
 
 const replyPlace = (reply: QueuedReply): string => {
   const agentId = reply.source || "unknown";
-  const surface = surfaceIdentity(reply) || "terminal";
+  const surface = readSurfaceIdentity(reply) || "terminal";
   return `${agentId}:${surface}`;
 };
 
 // The same text from the same place is one reply, whatever its ID.
-export const contentIdentity = (reply: QueuedReply): string => {
+export const readContentIdentity = (reply: QueuedReply): string => {
   const place = replyPlace(reply);
-  const token = contentToken(reply.markdown);
+  const token = readContentToken(reply.markdown);
   return `${place}:${token}`;
 };
 
@@ -86,16 +86,16 @@ export const replyIdentity = (reply: QueuedReply): string => {
 
   const isReplyIdEmpty = replyId === "";
   if (isReplyIdEmpty) {
-    return contentIdentity(reply);
+    return readContentIdentity(reply);
   }
 
   const place = replyPlace(reply);
-  const token = contentToken(reply.markdown);
+  const token = readContentToken(reply.markdown);
   return `${place}:${replyId}:${token}`;
 };
 
 // When Cmux cannot be asked, speak instead of holding the reply forever.
-export const speaksForFocus = (surface: string, focus: CmuxFocus): boolean => {
+export const isSpeaksForFocus = (surface: string, focus: CmuxFocus): boolean => {
   switch (focus.kind) {
     case "surface":
       return focus.surface === surface;
@@ -106,8 +106,8 @@ export const speaksForFocus = (surface: string, focus: CmuxFocus): boolean => {
   }
 };
 
-const inboxFiles = (extension: ".json" | ".speaking"): ReadonlyArray<string> => {
-  const folder = inboxFolder();
+const listInboxFiles = (extension: ".json" | ".speaking"): ReadonlyArray<string> => {
+  const folder = readInboxFolder();
 
   const isFolderAbsent = !existsSync(folder);
   if (isFolderAbsent) {
@@ -121,18 +121,18 @@ const inboxFiles = (extension: ".json" | ".speaking"): ReadonlyArray<string> => 
 };
 
 export const removeInboxFiles = (extensions: ReadonlyArray<".json" | ".speaking">): void => {
-  const files = extensions.flatMap(inboxFiles);
+  const files = extensions.flatMap(listInboxFiles);
   for (const file of files) {
     removeIfPresent(file);
   }
 };
 
 // A claimed reply exists only while the speech worker is speaking it.
-export const isSpeaking = (): boolean => inboxFiles(".speaking").length > 0;
+export const isSpeaking = (): boolean => listInboxFiles(".speaking").length > 0;
 
-const seenKeys = (): ReadonlyMap<string, number> => {
-  const now = nowSeconds();
-  const savedStamps = readJsonFile({ path: seenFile(), schema: seenKeysSchema });
+const readSeenKeys = (): ReadonlyMap<string, number> => {
+  const now = readNowSeconds();
+  const savedStamps = readJsonFile({ path: readSeenFile(), schema: seenKeysSchema });
 
   const isThereNoSavedStamp = savedStamps === null;
   if (isThereNoSavedStamp) {
@@ -144,21 +144,21 @@ const seenKeys = (): ReadonlyMap<string, number> => {
   return new Map(freshStamps);
 };
 
-const alreadySpoken = (seen: ReadonlyMap<string, number>, reply: QueuedReply): boolean => {
+const hasBeenSpoken = (seen: ReadonlyMap<string, number>, reply: QueuedReply): boolean => {
   const replyKey = replyIdentity(reply);
-  const contentKey = contentIdentity(reply);
+  const contentKey = readContentIdentity(reply);
   return seen.has(replyKey) || seen.has(contentKey);
 };
 
 // Both keys, so a later hook with a different reply ID cannot re-speak the same text.
 const rememberSpoken = (reply: QueuedReply): void => {
-  const now = nowSeconds();
+  const now = readNowSeconds();
   const replyKey = replyIdentity(reply);
-  const contentKey = contentIdentity(reply);
-  const previous = seenKeys();
+  const contentKey = readContentIdentity(reply);
+  const previous = readSeenKeys();
   const seen = new Map(previous).set(replyKey, now).set(contentKey, now);
   const stamps = Object.fromEntries(seen);
-  writeJsonAtomically({ path: seenFile(), value: stamps });
+  writeJsonAtomically({ path: readSeenFile(), value: stamps });
 };
 
 export const queueReply = (request: {
@@ -170,20 +170,20 @@ export const queueReply = (request: {
   const reply: QueuedReply = {
     markdown: request.markdown,
     origin: request.origin,
-    receivedAt: nowSeconds(),
-    agentReplyId: request.agentReplyId.trim() || contentToken(request.markdown),
+    receivedAt: readNowSeconds(),
+    agentReplyId: request.agentReplyId.trim() || readContentToken(request.markdown),
     source: request.source,
   };
 
-  const seen = seenKeys();
+  const seen = readSeenKeys();
 
-  const isAlreadySpoken = alreadySpoken(seen, reply);
+  const isAlreadySpoken = hasBeenSpoken(seen, reply);
   if (isAlreadySpoken) {
     return;
   }
 
   // Agent replies are the user's text: the inbox and failed/ are 0700, and each reply file 0600.
-  const folder = inboxFolder();
+  const folder = readInboxFolder();
   makePrivateFolder(folder);
   // Wall-clock milliseconds order replies across processes; the high-resolution counter orders them within one.
   const milliseconds = Date.now().toString().padStart(15, "0");
@@ -198,15 +198,15 @@ interface PendingReply {
 }
 
 const isSpeakable = (reply: QueuedReply): boolean => {
-  const ageSeconds = nowSeconds() - reply.receivedAt;
+  const ageSeconds = readNowSeconds() - reply.receivedAt;
   const pendingTtlSeconds = 60 * 60;
   const isExpired = reply.receivedAt > 0 && ageSeconds > pendingTtlSeconds;
   return reply.markdown.trim() !== "" && !isExpired;
 };
 
 // Oldest first; an unreadable, empty, or expired file is deleted.
-const pendingReplies = (): ReadonlyArray<PendingReply> => {
-  const files = inboxFiles(".json");
+const listPendingReplies = (): ReadonlyArray<PendingReply> => {
+  const files = listInboxFiles(".json");
   return files.flatMap((file) => {
     const storedReply = readJsonFile({ path: file, schema: queuedReplySchema });
 
@@ -223,7 +223,7 @@ const pendingReplies = (): ReadonlyArray<PendingReply> => {
 // Newer replies with the same identity, or from the same Cmux surface, supersede older ones.
 const isSuperseded = (pending: ReadonlyArray<PendingReply>, candidate: PendingReply): boolean => {
   const identity = replyIdentity(candidate.reply);
-  const surface = surfaceIdentity(candidate.reply);
+  const surface = readSurfaceIdentity(candidate.reply);
   const newestFirst = [...pending].reverse();
   const newestTwin = newestFirst.find((other) => replyIdentity(other.reply) === identity);
 
@@ -237,24 +237,24 @@ const isSuperseded = (pending: ReadonlyArray<PendingReply>, candidate: PendingRe
     return false;
   }
 
-  const newestFromSurface = newestFirst.find((other) => surfaceIdentity(other.reply) === surface);
+  const newestFromSurface = newestFirst.find((other) => readSurfaceIdentity(other.reply) === surface);
   return newestFromSurface?.file !== candidate.file;
 };
 
-const speaksNow = async (request: {
+const isSpeaksNow = async (request: {
   readonly mode: Config["speechMode"];
   readonly reply: QueuedReply;
 }): Promise<boolean> => {
   const { origin } = request.reply;
-  const surface = surfaceIdentity(request.reply);
+  const surface = readSurfaceIdentity(request.reply);
 
   const isSpokenAtOnce = request.mode === "immediate" || surface === "" || origin.kind !== "cmux";
   if (isSpokenAtOnce) {
     return true;
   }
 
-  const focus = await cmuxFocus(origin.socketPath);
-  return speaksForFocus(surface, focus);
+  const focus = await readCmuxFocus(origin.socketPath);
+  return isSpeaksForFocus(surface, focus);
 };
 
 // Another process may have claimed or deleted the file since it was listed.
@@ -270,7 +270,7 @@ const claimFile = (file: string): string | null => {
 
 // The rename to `.speaking` stops a reply from being picked twice; one waiting for its Cmux surface stays queued.
 export const claimNextReply = async (mode: Config["speechMode"]): Promise<PendingReply | null> => {
-  const pending = pendingReplies();
+  const pending = listPendingReplies();
 
   const isModeOff = mode === "off";
   if (isModeOff) {
@@ -278,15 +278,15 @@ export const claimNextReply = async (mode: Config["speechMode"]): Promise<Pendin
     return null;
   }
 
-  const seen = seenKeys();
+  const seen = readSeenKeys();
   for (const candidate of pending) {
-    const isStale = isSuperseded(pending, candidate) || alreadySpoken(seen, candidate.reply);
+    const isStale = isSuperseded(pending, candidate) || hasBeenSpoken(seen, candidate.reply);
     if (isStale) {
       removeIfPresent(candidate.file);
       continue;
     }
 
-    const isNotTimeToSpeak = !(await speaksNow({ mode, reply: candidate.reply }));
+    const isNotTimeToSpeak = !(await isSpeaksNow({ mode, reply: candidate.reply }));
     if (isNotTimeToSpeak) {
       continue;
     }
@@ -309,7 +309,7 @@ export const claimNextReply = async (mode: Config["speechMode"]): Promise<Pendin
 export const completeReply = (claimedFile: string): void => removeIfPresent(claimedFile);
 
 export const failReply = (claimedFile: string): void => {
-  const failedFolder = stateFolder("failed");
+  const failedFolder = readStateFolder("failed");
   makePrivateFolder(failedFolder);
   const fileName = path.basename(claimedFile);
   const failedFile = path.join(failedFolder, fileName);
