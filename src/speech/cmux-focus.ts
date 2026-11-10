@@ -92,7 +92,8 @@ const askCmux = (request: { readonly socketPath: string; readonly method: string
       }
 
       const replyLine = received.slice(0, newline);
-      finish(answerFrom(replyLine));
+      const focusAnswer = answerFrom(replyLine);
+      finish(focusAnswer);
     });
   });
 

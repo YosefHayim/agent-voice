@@ -160,7 +160,8 @@ describe("agent-voice reply (the agent Stop hook)", () => {
       expect(execution.status).toBe(0);
       const dictationLog = path.join(home, "dictation-worker.log");
       expect(existsSync(dictationLog)).toBe(true);
-      expect(await isTestWorkerExited()).toBe(true);
+      const isWorkerExited = await isTestWorkerExited();
+      expect(isWorkerExited).toBe(true);
     } finally {
       closeSync(lock);
     }

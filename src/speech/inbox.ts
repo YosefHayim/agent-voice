@@ -151,7 +151,8 @@ export const isSpeaking = (): boolean => listInboxFiles(SPEAKING_FILE_SUFFIX).le
 
 const readSeenKeys = (): ReadonlyMap<string, number> => {
   const now = readNowSeconds();
-  const savedStamps = readDocumentFile({ path: readSeenFile(), schema: seenKeysSchema });
+  const seenFilePath = readSeenFile();
+  const savedStamps = readDocumentFile({ path: seenFilePath, schema: seenKeysSchema });
 
   const isThereNoSavedStamp = savedStamps == null;
   if (isThereNoSavedStamp) {
@@ -178,7 +179,9 @@ const rememberSpoken = (reply: QueuedReply): void => {
   const previous = readSeenKeys();
   const seen = new Map(previous).set(replyKey, now).set(messageKey, now);
   const stamps = Object.fromEntries(seen);
-  writeDocumentAtomically({ path: readSeenFile(), value: stamps });
+  const seenFilePath = readSeenFile();
+
+  writeDocumentAtomically({ path: seenFilePath, value: stamps });
 };
 
 export const queueReply = (request: {
@@ -284,6 +287,7 @@ const isSpeaksNow = async (request: {
 // Another process may have claimed or deleted the file since it was listed.
 const claimFile = (file: string): string | null => {
   const claimed = file.replace(/\.json$/u, SPEAKING_FILE_SUFFIX);
+
   try {
     renameSync(file, claimed);
     return claimed;
@@ -310,7 +314,8 @@ export const claimNextReply = async (mode: Settings["speechMode"]): Promise<Pend
       continue;
     }
 
-    const isNotTimeToSpeak = !(await isSpeaksNow({ mode, reply: candidate.reply }));
+    const isTimeToSpeak = await isSpeaksNow({ mode, reply: candidate.reply });
+    const isNotTimeToSpeak = !isTimeToSpeak;
     if (isNotTimeToSpeak) {
       continue;
     }

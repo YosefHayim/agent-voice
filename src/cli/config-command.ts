@@ -127,12 +127,14 @@ const getCommand: CommandSpec = {
 
     const isSettingUnknown = setting == null;
     if (isSettingUnknown) {
-      TerminalUI.printError(describeUnknownSetting(settingName));
+      const unknownSettingMessage = describeUnknownSetting(settingName);
+      TerminalUI.printError(unknownSettingMessage);
       return BAD_USAGE_EXIT_CODE;
     }
 
     const settings = readSettings();
-    TerminalUI.printLine(describeSettingField(settings, setting));
+    const settingFieldLine = describeSettingField(settings, setting);
+    TerminalUI.printLine(settingFieldLine);
     return 0;
   },
 };
@@ -205,7 +207,8 @@ const setCommand: CommandSpec = {
 
     const isSettingUnknown = setting == null;
     if (isSettingUnknown) {
-      TerminalUI.printError(describeUnknownSetting(settingName));
+      const unknownSettingMessage = describeUnknownSetting(settingName);
+      TerminalUI.printError(unknownSettingMessage);
       return BAD_USAGE_EXIT_CODE;
     }
 
@@ -227,7 +230,8 @@ const unsetCommand: CommandSpec = {
 
     const isSettingUnknown = setting == null;
     if (isSettingUnknown) {
-      TerminalUI.printError(describeUnknownSetting(settingName));
+      const unknownSettingMessage = describeUnknownSetting(settingName);
+      TerminalUI.printError(unknownSettingMessage);
       return BAD_USAGE_EXIT_CODE;
     }
 
@@ -244,9 +248,11 @@ const pickEffort = async (provider: DiscoveredProvider, settings: Settings): Pro
     return "";
   }
 
+  const effortChoices = REASONING_EFFORTS.map((name) => ({ title: name, pick: name }));
+
   return TerminalUI.askChoice({
     message: "Reasoning effort",
-    choices: REASONING_EFFORTS.map((name) => ({ title: name, pick: name })),
+    choices: effortChoices,
     initial: settings.refineEffort || "low",
   });
 };
@@ -259,14 +265,17 @@ const pickInTerminal = async (settings: Settings): Promise<RefinePick | null> =>
     return null;
   }
 
+  const providerChoices = providers.map((found) => ({
+    title: found.id,
+    pick: found,
+    description: `${found.binary}, ${String(found.models.length)} models`,
+  }));
+  const initialProvider = providers.find((found) => found.id === settings.refineProvider);
+
   const provider = await TerminalUI.askChoice({
     message: "Refine provider (found on this Mac)",
-    choices: providers.map((found) => ({
-      title: found.id,
-      pick: found,
-      description: `${found.binary}, ${String(found.models.length)} models`,
-    })),
-    initial: providers.find((found) => found.id === settings.refineProvider),
+    choices: providerChoices,
+    initial: initialProvider,
   });
 
   const isProviderCancelled = provider == null;
@@ -279,9 +288,10 @@ const pickInTerminal = async (settings: Settings): Promise<RefinePick | null> =>
     providers,
     preferred: { provider: settings.refineProvider, model: settings.refineModel || "" },
   });
+  const modelChoices = models.map((name) => ({ title: name, pick: name }));
   const model = await TerminalUI.askChoice({
     message: `Model for ${provider.id}`,
-    choices: models.map((name) => ({ title: name, pick: name })),
+    choices: modelChoices,
   });
 
   const isModelCancelled = model == null;
@@ -319,7 +329,7 @@ const pickRefineTarget = async (request: {
   });
 };
 
-const describePickedTarget = (pick: RefinePick, effort: string | undefined): string => {
+const describePickedTarget = (pick: RefinePick, effort: string | null): string => {
   const target = `refine → ${pick.provider}/${pick.model}`;
 
   const isEffortMissing = effort == null;
@@ -339,7 +349,8 @@ const pickRefineCommand: CommandSpec = {
   positionals: [],
   run: async (parsedCommand) => {
     const settings = readSettings();
-    const picked = await pickRefineTarget({ settings, isGuiWanted: isFlagOn(parsedCommand, "gui") });
+    const guiFlagOn = isFlagOn(parsedCommand, "gui");
+    const picked = await pickRefineTarget({ settings, isGuiWanted: guiFlagOn });
 
     const isNothingPicked = picked == null;
     if (isNothingPicked) {
@@ -347,12 +358,13 @@ const pickRefineCommand: CommandSpec = {
       return BAD_USAGE_EXIT_CODE;
     }
 
-    const effort = REASONING_EFFORTS.find((name) => name === picked.effort);
+    const effort = REASONING_EFFORTS.find((name) => name === picked.effort) ?? null;
     const pickedSettings = { ...settings, refineProvider: picked.provider, refineModel: picked.model };
-    const next = setSettingField({ config: pickedSettings, key: "refineEffort", value: effort ?? null });
+    const next = setSettingField({ config: pickedSettings, key: "refineEffort", value: effort });
     saveSettings(next);
     saveRefineChoice(picked);
-    TerminalUI.printSuccess(describePickedTarget(picked, effort));
+    const pickedTargetMessage = describePickedTarget(picked, effort);
+    TerminalUI.printSuccess(pickedTargetMessage);
     return 0;
   },
 };

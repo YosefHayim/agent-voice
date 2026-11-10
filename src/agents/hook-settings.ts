@@ -275,6 +275,7 @@ const appendReplyHook = (code: string, command: string): string => {
   const root = parseSettings(code);
   const insertion = readHookInsertion(root, command);
   const unit = readIndentUnit(code);
+
   return appendMember({
     source: code,
     container: insertion.container,

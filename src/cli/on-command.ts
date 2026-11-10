@@ -41,6 +41,7 @@ const readBackupNote = (change: HookChange): string => {
 
 const printHookChange = (change: HookChange): void => {
   const where = `${change.displayName}: ${change.file}`;
+
   switch (change.change) {
     case ADDED_CHANGE_KIND:
     case "removed":
@@ -115,7 +116,7 @@ export const prepareModels = async (settings: Settings): Promise<void> => {
   const isModelAbsent = !isWhisperModelDownloaded(model);
   if (isModelAbsent) {
     TerminalUI.printStep(`Downloading ${model.label} (~${readMegabytes(model.approximateBytes)})`);
-    const modelDownloading = ensureWhisperModel({ model, onProgress: () => undefined });
+    const modelDownloading = ensureWhisperModel({ model, onProgress: () => {} });
     await waitForDownload({
       label: model.label,
       partialFile: `${readWhisperModelPath(model)}.partial`,
@@ -126,7 +127,7 @@ export const prepareModels = async (settings: Settings): Promise<void> => {
   const isVoiceDownloadNeeded = settings.speechMode !== OFF_MODE && listMissingSupertonicFiles().length > 0;
   if (isVoiceDownloadNeeded) {
     TerminalUI.printStep("Downloading the Supertonic voices (~400 MB)");
-    await ensureSupertonicModels(() => undefined);
+    await ensureSupertonicModels(() => {});
   }
 };
 
@@ -177,7 +178,8 @@ const printOnSummary = (settings: Settings): void => {
     TerminalUI.printDetail("Tap Shift to stop speech.");
   }
 
-  TerminalUI.printDetail(describeSpeech(settings));
+  const speechDescription = describeSpeech(settings);
+  TerminalUI.printDetail(speechDescription);
 
   const isClipboardRefineWithShiftHold = isClipboardRefineOn && settings.dictationHoldKey === SHIFT_HOLD_KEY;
   if (isClipboardRefineWithShiftHold) {

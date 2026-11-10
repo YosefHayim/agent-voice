@@ -88,7 +88,8 @@ const speakUntilStopped = async (engine: SupertonicEngine, player: SpeechPlayer)
     }
 
     const step = await speakNextReply(engine, player);
-    await sleep(pauseAfter(step));
+    const pauseMilliseconds = pauseAfter(step);
+    await sleep(pauseMilliseconds);
   }
 };
 

@@ -76,7 +76,7 @@ const readBenchModel = async (request: {
     return { model: request.key, issue: "unknown model key" };
   }
 
-  const modelPath = await ensureWhisperModel({ model, onProgress: () => undefined });
+  const modelPath = await ensureWhisperModel({ model, onProgress: () => {} });
 
   const loadStarted = performance.now();
   const transcriber = await loadTranscriber(modelPath);
@@ -102,7 +102,8 @@ const readBenchModel = async (request: {
   };
 };
 
-const seconds = durationsSchema.parse(listCommaSeparatedList(fields.seconds));
+const secondsList = listCommaSeparatedList(fields.seconds);
+const seconds = durationsSchema.parse(secondsList);
 
 const runs = runsSchema.parse(fields.runs);
 

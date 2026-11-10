@@ -80,7 +80,8 @@ const describeIssue = (error: unknown): string => {
 
 const downloadFileUnderLock = async (request: DownloadRequest): Promise<void> => {
   const lockPath = `${request.destination}.lock`;
-  mkdirSync(path.dirname(request.destination), { recursive: true });
+  const destinationFolder = path.dirname(request.destination);
+  mkdirSync(destinationFolder, { recursive: true });
   const before = readFileIdentity(request.destination);
   const releaseLock = await waitForLock(lockPath);
   try {

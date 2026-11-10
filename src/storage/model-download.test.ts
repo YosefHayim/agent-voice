@@ -172,11 +172,13 @@ describe("downloadFile", () => {
     async () => {
       const destination = path.join(folder, "model.bin");
       const other = startDownloader({ url: `${origin}/slow.bin`, destination });
-      expect(await waitUntilTrue(() => requests.length === 1)).toBe(true);
+      const isFirstRequestSeen = await waitUntilTrue(() => requests.length === 1);
+      expect(isFirstRequestSeen).toBe(true);
 
       await download({ url: `${origin}/slow.bin`, destination });
 
-      expect(await other.exited).toBe(0);
+      const otherExitCode = await other.exited;
+      expect(otherExitCode).toBe(0);
       expect(requests).toEqual(["/slow.bin"]);
       expect(readFileSync(destination)).toEqual(Buffer.concat([half, half]));
       expect(existsSync(`${destination}.partial`)).toBe(false);
@@ -188,7 +190,8 @@ describe("downloadFile", () => {
     const destination = path.join(folder, "model.bin");
     const crashed = startDownloader({ url: `${origin}/stall.bin`, destination });
     const partial = `${destination}.partial`;
-    expect(await waitUntilTrue(() => existsSync(partial) && statSync(partial).size > 0)).toBe(true);
+    const isPartialWritten = await waitUntilTrue(() => existsSync(partial) && statSync(partial).size > 0);
+    expect(isPartialWritten).toBe(true);
     crashed.child.kill("SIGKILL");
     await crashed.exited;
     expect(existsSync(`${destination}.lock`)).toBe(true);

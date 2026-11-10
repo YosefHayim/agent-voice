@@ -60,6 +60,7 @@ const createRangedNumberSchema = (request: {
   readonly fallback: number;
 }) => {
   const [lowest, highest] = request.range;
+
   return z
     .number()
     .min(lowest, { error: request.outOfRange })
@@ -73,7 +74,8 @@ const dictationModelSchema = createAliasedChoiceSchema({ ...MODEL_ALIASES, auto:
 
 export const speechVoices = ["F1", "F2", "F3", DEFAULT_VOICE_ID, "F5", "M1", "M2", "M3", "M4", "M5"] as const;
 
-const speechVoiceSchema = createAliasedChoiceSchema(readLiteralAliases(speechVoices));
+const speechVoiceAliases = readLiteralAliases(speechVoices);
+const speechVoiceSchema = createAliasedChoiceSchema(speechVoiceAliases);
 
 export const refineProviders = [
   CODEX_PROVIDER_ID,
@@ -131,23 +133,26 @@ const maximumWordsPerMinute = 720;
 
 const minimumWordsPerMinute = 80;
 
+const speechWordsPerMinuteSchema = createRangedNumberSchema({
+  range: [minimumWordsPerMinute, maximumWordsPerMinute],
+  outOfRange: "Speech rate must be between 80 and 720 words per minute.",
+  fallback: defaultWordsPerMinute,
+});
+const dictationKeepListeningSecondsSchema = createRangedNumberSchema({
+  range: [0, maximumKeepListeningSeconds],
+  outOfRange: "Dictation keep-listening time must be between 0 and 2 seconds.",
+  fallback: defaultKeepListeningSeconds,
+});
+
 export const settingsSchema = z.strictObject({
   speechMode: z.enum(speechModes).default(AUTO_CHOICE),
   speechMuted: z.boolean().default(true),
   speechVoice: speechVoiceSchema.default(DEFAULT_VOICE_ID),
-  speechWordsPerMinute: createRangedNumberSchema({
-    range: [minimumWordsPerMinute, maximumWordsPerMinute],
-    outOfRange: "Speech rate must be between 80 and 720 words per minute.",
-    fallback: defaultWordsPerMinute,
-  }),
+  speechWordsPerMinute: speechWordsPerMinuteSchema,
   dictationHoldKey: z.enum(dictationHoldKeys).default(SHIFT_HOLD_KEY),
   dictationLanguage: dictationLanguageSchema.default(ENGLISH_LANGUAGE_CODE),
   dictationModel: dictationModelSchema.default(AUTO_CHOICE),
-  dictationKeepListeningSeconds: createRangedNumberSchema({
-    range: [0, maximumKeepListeningSeconds],
-    outOfRange: "Dictation keep-listening time must be between 0 and 2 seconds.",
-    fallback: defaultKeepListeningSeconds,
-  }),
+  dictationKeepListeningSeconds: dictationKeepListeningSecondsSchema,
   dictationReplacements: z.string().trim().default(""),
   refineMode: z.enum(refineModes).default(OFF_MODE),
   refineProvider: refineProviderSchema.default(CODEX_PROVIDER_ID),
@@ -171,7 +176,8 @@ export const decodeSettings = (storedSettings: unknown): Settings => {
 
   const isReplyInvalid = !checkedReply.success;
   if (isReplyInvalid) {
-    throw new Error(describeSettingsIssues(checkedReply.error));
+    const settingsIssueSummary = describeSettingsIssues(checkedReply.error);
+    throw new Error(settingsIssueSummary);
   }
 
   return checkedReply.data;
@@ -392,8 +398,10 @@ export const setSettingField = (request: {
   readonly value: SettingsField | null;
 }): Settings => {
   const isCleared = request.value == null;
+  const otherEntries = Object.entries(request.config).filter(([key]) => key !== request.key);
   const changedSettings = isCleared
-    ? Object.fromEntries(Object.entries(request.config).filter(([key]) => key !== request.key))
+    ? Object.fromEntries(otherEntries)
     : { ...request.config, [request.key]: request.value };
+
   return decodeSettings(changedSettings);
 };

@@ -24,7 +24,10 @@ export const readClipboard = async (): Promise<string> => {
 export const writeClipboard = (string: string): Promise<void> =>
   new Promise<void>((finishWrite, failWrite) => {
     const child = spawn("pbcopy", [], { stdio: ["pipe", IGNORE_STDIO, IGNORE_STDIO] });
-    child.on("error", (error) => failWrite(new Error(`pbcopy: ${error.message}`, { cause: error })));
+    child.on("error", (error) => {
+      const pbcopyError = new Error(`pbcopy: ${error.message}`, { cause: error });
+      failWrite(pbcopyError);
+    });
     child.on("exit", (code) => {
       const isCopyOk = code === 0;
       if (isCopyOk) {
@@ -32,7 +35,8 @@ export const writeClipboard = (string: string): Promise<void> =>
         return;
       }
 
-      failWrite(new Error(`pbcopy exited ${String(code)}`));
+      const pbcopyExitError = new Error(`pbcopy exited ${String(code)}`);
+      failWrite(pbcopyExitError);
     });
     child.stdin.end(string);
   });
@@ -107,7 +111,8 @@ const pasteThroughClipboard = async (keyboard: Keyboard, string: string): Promis
 // A clipboard that cannot be read is not restored afterwards.
 const readPreviousClipboard = async (): Promise<string | null> => {
   try {
-    return await readClipboard();
+    const clipboardContents = await readClipboard();
+    return clipboardContents;
   } catch {
     return null;
   }

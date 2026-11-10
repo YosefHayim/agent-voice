@@ -69,6 +69,7 @@ export const listCodexModelCandidates = (request: {
   const isDeferred = (model: string): boolean => request.failed.has(model) && (model !== preferred || isLastGoodUsable);
   const usable = ordered.filter((model) => !isDeferred(model));
   const deferred = ordered.filter(isDeferred);
+
   return [...usable, ...deferred];
 };
 
@@ -173,7 +174,8 @@ const listAutoAttempts = async (requestedModel: string): Promise<ReadonlyArray<A
 
   const leadModel = pickAutoStartModel(leadProvider, { savedProvider, requestedModel });
   const leadTargets = await listProviderTargets(leadProvider, leadModel);
-  const fallbackTargets = await Promise.all(fallbackProviders.map((provider) => pickFallbackTarget(provider, saved)));
+  const fallbackTargetPromises = fallbackProviders.map((provider) => pickFallbackTarget(provider, saved));
+  const fallbackTargets = await Promise.all(fallbackTargetPromises);
   return [...leadTargets, ...fallbackTargets];
 };
 
@@ -192,7 +194,8 @@ export const createAttemptQueue = async (request: {
   const otherProviders = FALLBACK_ORDER.filter(
     (provider) => provider !== preferredProvider && isProviderInstalled(provider),
   ).slice(0, MAX_CROSS_PROVIDER_ATTEMPTS);
-  const fallbackTargets = await Promise.all(otherProviders.map((provider) => pickFallbackTarget(provider, saved)));
+  const otherTargetPromises = otherProviders.map((provider) => pickFallbackTarget(provider, saved));
+  const fallbackTargets = await Promise.all(otherTargetPromises);
   return [...ownTargets, ...fallbackTargets].slice(0, MAX_TOTAL_ATTEMPTS);
 };
 
@@ -216,7 +219,8 @@ const pickStartingModel = (request: RefineRequest): string => {
     return configuredModel;
   }
 
-  const savedModel = pickSavedModel(readSavedChoice(), request.provider);
+  const savedChoice = readSavedChoice();
+  const savedModel = pickSavedModel(savedChoice, request.provider);
 
   const hasSavedModel = savedModel !== "";
   if (hasSavedModel) {

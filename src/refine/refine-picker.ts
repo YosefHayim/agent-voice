@@ -61,13 +61,16 @@ const readChosenLabel = (stdout: string): string | null => {
   return chosen;
 };
 
-const runOsascript = (script: string, timeoutMilliseconds: number): Promise<CliRun> =>
-  runCli({
+const runOsascript = (script: string, timeoutMilliseconds: number): Promise<CliRun> => {
+  const timeoutSignal = AbortSignal.timeout(timeoutMilliseconds);
+
+  return runCli({
     executable: "osascript",
     args: ["-e", script],
     timeoutMs: timeoutMilliseconds,
-    signal: AbortSignal.timeout(timeoutMilliseconds),
+    signal: timeoutSignal,
   });
+};
 
 const chooseFromList = async (request: {
   readonly prompt: string;
@@ -231,10 +234,12 @@ export const pickRefineTargetWithDialogs = async (request: {
     await showAlert({ title: "Prompt refine — pick provider / model", message: request.reason });
   }
 
+  const providerLabels = providers.map(createProviderLabel);
+  const defaultProviderLabel = pickDefaultProviderLabel(providers, request.preferredProvider);
   const chosenLabel = await chooseFromList({
     prompt: "Provider (found on this Mac):",
-    labels: providers.map(createProviderLabel),
-    defaultLabel: pickDefaultProviderLabel(providers, request.preferredProvider),
+    labels: providerLabels,
+    defaultLabel: defaultProviderLabel,
   });
 
   const isProviderDismissed = chosenLabel == null;
@@ -255,9 +260,10 @@ export const pickRefineTargetWithDialogs = async (request: {
     providers,
     preferred: { provider: request.preferredProvider, model: request.preferredModel },
   });
+  const modelLabels = listModelLabels({ models, offerSkip: request.offerSkip });
   const chosenModel = await chooseFromList({
     prompt: `Model for ${providerId}:`,
-    labels: listModelLabels({ models, offerSkip: request.offerSkip }),
+    labels: modelLabels,
     defaultLabel: models[0] || "",
   });
 

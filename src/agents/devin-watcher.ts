@@ -150,6 +150,7 @@ export const watchDevinSession = async <SessionReport>(request: {
 }): Promise<SessionReport> => {
   const shutdown = new AbortController();
   const watcher = watchDevinExport(request.exportFile, shutdown.signal);
+
   try {
     const sessionReport = await request.readSession();
     await sleep(exitGraceMilliseconds);

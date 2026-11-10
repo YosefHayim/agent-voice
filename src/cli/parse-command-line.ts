@@ -56,9 +56,8 @@ const createParseSettings = (flags: Readonly<Record<string, FlagSpec>>) => {
 const checkFlagWord = (flagName: string, flag: FlagSpec, flagWord: string): void => {
   const isOutsideChoices = flag.choices != null && !flag.choices.includes(flagWord);
   if (isOutsideChoices) {
-    throw new Error(
-      `Invalid value "${flagWord}" for --${flagName}. Use one of: ${String(flag.choices?.join(LIST_SEPARATOR))}.`,
-    );
+    const flagChoiceList = flag.choices?.join(LIST_SEPARATOR);
+    throw new Error(`Invalid value "${flagWord}" for --${flagName}. Use one of: ${String(flagChoiceList)}.`);
   }
 
   const isNotWholeNumber = flag.kind === "integer" && !/^\d+$/u.test(flagWord);
@@ -94,8 +93,9 @@ const checkPositionalWords = (
     const isOutsideChoices =
       positionalWord != null && positionalSpec.choices != null && !positionalSpec.choices.includes(positionalWord);
     if (isOutsideChoices) {
+      const positionalChoiceList = positionalSpec.choices?.join(LIST_SEPARATOR);
       throw new Error(
-        `Invalid ${positionalSpec.name} "${positionalWord}". Use one of: ${String(positionalSpec.choices?.join(LIST_SEPARATOR))}.`,
+        `Invalid ${positionalSpec.name} "${positionalWord}". Use one of: ${String(positionalChoiceList)}.`,
       );
     }
   }
@@ -109,8 +109,10 @@ const checkPositionalWords = (
 const bindPositionals = (
   positionalSpecs: ReadonlyArray<PositionalSpec>,
   positionalWords: ReadonlyArray<string>,
-): Readonly<Record<string, string | undefined>> =>
-  Object.fromEntries(positionalSpecs.map((positionalSpec, index) => [positionalSpec.name, positionalWords[index]]));
+): Readonly<Record<string, string | undefined>> => {
+  const nameWordPairs = positionalSpecs.map((positionalSpec, index) => [positionalSpec.name, positionalWords[index]]);
+  return Object.fromEntries(nameWordPairs);
+};
 
 const dropLeadingSeparator = (restWords: ReadonlyArray<string>): ReadonlyArray<string> => {
   const isSeparatorFirst = restWords[0] === "--";
@@ -145,9 +147,10 @@ const routeLeaf = (request: {
     return createCommandHelpRoute(commandPath, command);
   }
 
+  const parseSettings = createParseSettings(command.flags);
   const parsedArguments = parseArgs({
     args: [...restWords],
-    options: createParseSettings(command.flags),
+    options: parseSettings,
     allowPositionals: true,
     strict: true,
   });

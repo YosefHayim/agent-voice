@@ -319,6 +319,7 @@ const checkRefine = async (settings: Settings): Promise<ReadonlyArray<DoctorChec
 
 const checkSettings = async (settings: Settings): Promise<ReadonlyArray<DoctorCheck>> => {
   const refineChecks = await checkRefine(settings);
+
   return [
     createOkCheck(SETTINGS_CHECK_NAME, "valid"),
     checkWhisperModel(settings),
@@ -347,8 +348,9 @@ const runSettingChecks = async (): Promise<ReadonlyArray<DoctorCheck>> => {
 };
 
 const runDoctorChecks = async (): Promise<ReadonlyArray<DoctorCheck>> => {
+  const nativeModuleChecks = NATIVE_MODULES.map(checkNativeModule);
   const [nativeChecks, keyboardChecks, microphoneCheck, settingChecks] = await Promise.all([
-    Promise.all(NATIVE_MODULES.map(checkNativeModule)),
+    Promise.all(nativeModuleChecks),
     checkKeyboard(),
     checkMicrophone(),
     runSettingChecks(),
@@ -360,6 +362,7 @@ const runDoctorChecks = async (): Promise<ReadonlyArray<DoctorCheck>> => {
     { tool: "pbpaste", purpose: CLIPBOARD_PASTE_PURPOSE },
   ].map(checkSystemTool);
   const hookChecks = checkHooks();
+
   return [
     checkPlatform(),
     checkNode(),
@@ -375,6 +378,7 @@ const runDoctorChecks = async (): Promise<ReadonlyArray<DoctorCheck>> => {
 const printCheck = (check: DoctorCheck): void => {
   const checkLine = `${check.name}: ${check.detail}`;
   const checkLineWithFix = `${checkLine} — ${check.fix ?? ""}`;
+
   switch (check.status) {
     case OK_STATUS:
       TerminalUI.printSuccess(checkLine);

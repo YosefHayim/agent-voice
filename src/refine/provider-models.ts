@@ -109,20 +109,15 @@ const HELP_TIMEOUT_MS = 5_000;
 const MAX_LISTED_MODELS = 80;
 
 // A listing has no caller to cancel it, so its own timeout is its signal.
-const listLines = (request: { readonly executable: string; readonly args: ReadonlyArray<string> }) =>
-  runCliLines({
-    ...request,
-    timeoutMs: LISTING_TIMEOUT_MS,
-    signal: AbortSignal.timeout(LISTING_TIMEOUT_MS),
-  });
+const listLines = (request: { readonly executable: string; readonly args: ReadonlyArray<string> }) => {
+  const timeoutSignal = AbortSignal.timeout(LISTING_TIMEOUT_MS);
+  return runCliLines({ ...request, timeoutMs: LISTING_TIMEOUT_MS, signal: timeoutSignal });
+};
 
-const listHelpLines = (executable: string) =>
-  runCliLines({
-    executable,
-    args: ["--help"],
-    timeoutMs: HELP_TIMEOUT_MS,
-    signal: AbortSignal.timeout(HELP_TIMEOUT_MS),
-  });
+const listHelpLines = (executable: string) => {
+  const timeoutSignal = AbortSignal.timeout(HELP_TIMEOUT_MS);
+  return runCliLines({ executable, args: ["--help"], timeoutMs: HELP_TIMEOUT_MS, signal: timeoutSignal });
+};
 
 const findPatternTokens = (line: string, pattern: RegExp): ReadonlyArray<string> => line.match(pattern) ?? [];
 
@@ -156,7 +151,8 @@ const isVisibleModel = (model: CodexCachedModel): boolean => {
 const readModelSlug = (model: CodexCachedModel): string => (model.slug || model.id || "").trim();
 
 export const listCodexCachedModels = (): ReadonlyArray<string> => {
-  const modelsCache = readDocumentFile({ path: readCodexFile("models_cache.json"), schema: codexModelsCacheSchema });
+  const modelsCachePath = readCodexFile("models_cache.json");
+  const modelsCache = readDocumentFile({ path: modelsCachePath, schema: codexModelsCacheSchema });
 
   const isCacheMissing = modelsCache == null;
   if (isCacheMissing) {
@@ -173,7 +169,8 @@ const isModelSetting = (line: string): boolean =>
   line.startsWith(MODEL_WORD) && !line.startsWith("model_") && line.includes(KEY_PAIR_SEPARATOR);
 
 const listCodexConfiguredModel = (): ReadonlyArray<string> => {
-  const settingsToml = readFileIfReadable(readCodexFile("config.toml")) ?? "";
+  const codexTomlPath = readCodexFile("config.toml");
+  const settingsToml = readFileIfReadable(codexTomlPath) ?? "";
   const modelLine = listNonBlankLines(settingsToml).find(isModelSetting);
   const model = (modelLine || "")
     .split(KEY_PAIR_SEPARATOR)
@@ -352,7 +349,8 @@ const listGrokModels = async (): Promise<ReadonlyArray<string>> => {
   }
 
   const help = await listHelpLines(GROK_PROVIDER_ID);
-  const helpModels = dedupe(listGrokMentionedModels(help));
+  const grokMentionedModels = listGrokMentionedModels(help);
+  const helpModels = dedupe(grokMentionedModels);
 
   const isHelpEmpty = helpModels.length === 0;
   if (isHelpEmpty) {
@@ -572,7 +570,8 @@ export const discoverProviders = async (request: {
     return discoveryCache.providers;
   }
 
-  const described = await Promise.all(PROVIDERS.map(describeProvider));
+  const providerDescriptions = PROVIDERS.map(describeProvider);
+  const described = await Promise.all(providerDescriptions);
   const providers = described.filter((provider): provider is DiscoveredProvider => provider != null);
   discoveryCache.at = Date.now();
   discoveryCache.providers = providers;

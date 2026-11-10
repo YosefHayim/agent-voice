@@ -44,7 +44,8 @@ export const printLine = (message: string): void => {
 };
 
 export const printDocument = (document: unknown): void => {
-  console.log(JSON.stringify(document));
+  const documentLine = JSON.stringify(document);
+  console.log(documentLine);
 };
 
 const readUnderline = (title: string): string => {
@@ -74,9 +75,14 @@ export const askChoice = async <Picked>(request: {
   readonly choices: ReadonlyArray<ChoiceOption<Picked>>;
   readonly initial?: Picked;
 }): Promise<Picked | null> => {
+  const selectChoiceList = request.choices.map((choice) => ({
+    value: choice.pick,
+    label: choice.title,
+    hint: choice.description,
+  }));
   const pickedChoice = await select({
     message: request.message,
-    options: request.choices.map((choice) => ({ value: choice.pick, label: choice.title, hint: choice.description })),
+    options: selectChoiceList,
     initialValue: request.initial,
   });
 

@@ -17,10 +17,12 @@ const joinFrames = (frames: ReadonlyArray<Int16Array>): Float32Array => {
   const length = frames.reduce((total, frame) => total + frame.length, 0);
   const pcm = new Int16Array(length);
   let offset = 0;
+
   for (const frame of frames) {
     pcm.set(frame, offset);
     offset += frame.length;
   }
+
   return readSamplesFromPcm(pcm);
 };
 
@@ -131,6 +133,7 @@ export const openMicrophone = async (clip: ClipBuffer): Promise<Microphone> => {
   const recorder = await startRecorder();
   const readingStop = new AbortController();
   const failure = readFramesUntilStopped({ recorder, clip, stop: readingStop.signal });
+
   return {
     device: recorder.getSelectedDevice(),
     failure,

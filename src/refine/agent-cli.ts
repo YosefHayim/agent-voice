@@ -39,6 +39,7 @@ interface FoundCli {
 // GUI launchers and agent hooks often start with a minimal PATH that hides user-local CLIs.
 const listExtraBinFolders = (): ReadonlyArray<string> => {
   const home = homedir();
+
   return [
     path.join(home, LOCAL_FOLDER_NAME, BIN_FOLDER_NAME),
     path.join(home, ".grok", BIN_FOLDER_NAME),
@@ -103,9 +104,11 @@ export const runCli = (request: {
   readonly signal: AbortSignal;
 }): Promise<CliRun> =>
   new Promise<CliRun>((finishRun, failRun) => {
+    const pathVariable = searchPath();
+    const homeFolder = homedir();
     const child = spawn(request.executable, [...request.args], {
-      cwd: homedir(),
-      env: { ...process.env, ...request.environment, NO_COLOR: "1", PATH: searchPath() },
+      cwd: homeFolder,
+      env: { ...process.env, ...request.environment, NO_COLOR: "1", PATH: pathVariable },
       stdio: ["ignore", PIPE_STDIO, PIPE_STDIO],
       signal: request.signal,
       killSignal: KILL_SIGNAL,
@@ -114,20 +117,25 @@ export const runCli = (request: {
     const stderrChunks: Array<Buffer> = [];
     const timer = setTimeout(() => {
       child.kill(KILL_SIGNAL);
-      failRun(createCliRunError(request.executable, "timed out"));
+      const timeoutError = createCliRunError(request.executable, "timed out");
+      failRun(timeoutError);
     }, request.timeoutMs);
+
     child.stdout.on(STREAM_CHUNK_EVENT, (chunk: Buffer) => stdoutChunks.push(chunk));
     child.stderr.on(STREAM_CHUNK_EVENT, (chunk: Buffer) => stderrChunks.push(chunk));
     child.on("error", (error) => {
       clearTimeout(timer);
-      failRun(createCliRunError(request.executable, error.message));
+      const runError = createCliRunError(request.executable, error.message);
+      failRun(runError);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
       // A child killed by a signal closes without an exit code; that counts as a failed run.
+
       const exitCode = code ?? 1;
       const stdout = Buffer.concat(stdoutChunks).toString(UTF8_ENCODING);
       const stderr = Buffer.concat(stderrChunks).toString(UTF8_ENCODING);
+
       finishRun({ exitCode, stdout, stderr });
     });
   });

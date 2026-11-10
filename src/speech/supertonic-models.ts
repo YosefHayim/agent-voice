@@ -36,9 +36,10 @@ export const ensureSupertonicModels = async (
   const missingFiles = listMissingSupertonicFiles();
 
   for (const file of missingFiles) {
+    const destination = path.join(folder, file);
     await downloadFile({
       url: `https://huggingface.co/Supertone/supertonic-3/resolve/724fb5abbf5502583fb520898d45929e62f02c0b/${file}`,
-      destination: path.join(folder, file),
+      destination,
       onProgress: (receivedBytes) => onProgress(file, receivedBytes),
     });
   }

@@ -20,9 +20,11 @@ export const makeSpeechPlayer = () => {
   const play = (wavFile: string): Promise<void> =>
     new Promise<void>((finish, fail) => {
       const child = spawn("afplay", [wavFile], { stdio: "ignore" });
+
       playing = child;
       child.on("error", (error) => {
-        fail(new Error(`afplay: ${error.message}`, { cause: error }));
+        const afplayError = new Error(`afplay: ${error.message}`, { cause: error });
+        fail(afplayError);
       });
       child.on("exit", () => {
         playing = null;
