@@ -52,8 +52,8 @@ const loggedConfigIssues = new Set<string>();
 // Workers read the config on every decision; a broken file means defaults, never a crashed worker.
 export const readConfigOrDefaults = (): Config => {
   const configFileReading = readConfigFileReading();
-  const isConfigFileBroken = configFileReading.status === "broken";
-  if (!isConfigFileBroken) {
+  const isConfigFileRead = configFileReading.status === "read";
+  if (isConfigFileRead) {
     return configFileReading.config;
   }
 
