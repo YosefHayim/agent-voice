@@ -43,7 +43,8 @@ export const readConfigFileReading = (): ConfigFileReading => {
     const config = readConfig();
     return { status: "read", config };
   } catch (error) {
-    const issue = error instanceof Error ? error.message : String(error);
+    const isErrorInstance = error instanceof Error;
+    const issue = isErrorInstance ? error.message : String(error);
     return { status: "broken", issue };
   }
 };
