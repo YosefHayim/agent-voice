@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const TEXT_BLOCK_TYPE = "text";
+
 interface StopReply {
   readonly markdown: string;
   readonly transcriptPath: string;
@@ -105,7 +107,7 @@ const listTranscriptMessage = (line: string): ReadonlyArray<ChatMessage> => {
 const listMessageBlocks = (message: ChatMessage): ReadonlyArray<MessageBlock> => {
   const isPlainMessage = typeof message.content === "string";
   if (isPlainMessage) {
-    return [{ type: "text", text: message.content }];
+    return [{ type: TEXT_BLOCK_TYPE, text: message.content }];
   }
 
   return message.content;
@@ -124,7 +126,9 @@ const listAssistantReplies = (message: ChatMessage): ReadonlyArray<string> => {
   }
 
   const blocks = listMessageBlocks(message);
-  return blocks.filter((block) => block.type === "text" && block.text.trim() !== "").map((block) => block.text);
+  return blocks
+    .filter((block) => block.type === TEXT_BLOCK_TYPE && block.text.trim() !== "")
+    .map((block) => block.text);
 };
 
 export const replyFromTranscript = (transcript: string): string => {

@@ -58,8 +58,12 @@ const readSupertonicDocument = <Printout>(schema: z.ZodType<Printout>, file: str
 const sampleGaussian = (): number => {
   const first = 1 - Math.random();
   const second = Math.random();
-  const radius = Math.sqrt(-2 * Math.log(first));
-  return radius * Math.cos(2 * Math.PI * second);
+  const boxMullerScale = -2;
+
+  const radius = Math.sqrt(boxMullerScale * Math.log(first));
+  const fullTurnFactor = 2;
+
+  return radius * Math.cos(fullTurnFactor * Math.PI * second);
 };
 
 const listFlatNumbers = (nested: unknown): ReadonlyArray<number> => {

@@ -1,3 +1,38 @@
+const WORDS_PIECE_KIND = "words";
+
+const SEMICOLON_MARK = ";";
+
+const PERIOD_MARK = ".";
+
+const NEW_LINE_KIND = "newLine";
+
+const LINE_WORD = "line";
+
+const NEXT_ITEM_KIND = "nextItem";
+
+const QUESTION_MARK = "?";
+
+const NEW_PARAGRAPH_KIND = "newParagraph";
+
+const NUMBERED_LIST_KIND = "numberedList";
+
+const LIST_WORD = "list";
+
+const NEW_WORD = "new";
+
+const BULLET_WORD = "bullet";
+
+const NEXT_WORD = "next";
+
+const POINT_WORD = "point";
+
+const EXCLAMATION_MARK = "!";
+
+const MARK_WORD = "mark";
+
+const EXCLAMATION_WORD = "exclamation";
+
+const PUNCTUATION_KIND = "punctuation";
 type FormatCommand =
   | { readonly kind: "punctuation"; readonly mark: string }
   | { readonly kind: "newLine" }
@@ -26,35 +61,33 @@ type FormatStatus = {
   readonly nextNumber: number;
 };
 
-const readPunctuation = (mark: string): FormatCommand => ({ kind: "punctuation", mark });
+const readPunctuation = (mark: string): FormatCommand => ({ kind: PUNCTUATION_KIND, mark });
 
 // Longer phrases come first, so "new bullet point" wins over "new bullet" and "bullet".
 const SPOKEN_COMMANDS: ReadonlyArray<SpokenCommand> = [
-  { phrase: ["exclamation", "mark"], command: readPunctuation("!") },
-  { phrase: ["exclamation", "point"], command: readPunctuation("!") },
-  { phrase: ["next", "bullet", "point"], command: { kind: "bullet" } },
-  { phrase: ["new", "bullet", "point"], command: { kind: "bullet" } },
-  { phrase: ["numbered", "list"], command: { kind: "numberedList" } },
-  { phrase: ["new", "paragraph"], command: { kind: "newParagraph" } },
-  { phrase: ["question", "mark"], command: readPunctuation("?") },
-  { phrase: ["bullet", "list"], command: { kind: "bullet" } },
-  { phrase: ["bullet", "point"], command: { kind: "bullet" } },
-  { phrase: ["next", "bullet"], command: { kind: "bullet" } },
-  { phrase: ["new", "bullet"], command: { kind: "bullet" } },
-  { phrase: ["next", "item"], command: { kind: "nextItem" } },
-  { phrase: ["next", "line"], command: { kind: "newLine" } },
-  { phrase: ["full", "stop"], command: readPunctuation(".") },
-  { phrase: ["new", "line"], command: { kind: "newLine" } },
-  { phrase: ["semicolon"], command: readPunctuation(";") },
-  { phrase: ["newline"], command: { kind: "newLine" } },
-  { phrase: ["period"], command: readPunctuation(".") },
+  { phrase: [EXCLAMATION_WORD, MARK_WORD], command: readPunctuation(EXCLAMATION_MARK) },
+  { phrase: [EXCLAMATION_WORD, POINT_WORD], command: readPunctuation(EXCLAMATION_MARK) },
+  { phrase: [NEXT_WORD, BULLET_WORD, POINT_WORD], command: { kind: BULLET_WORD } },
+  { phrase: [NEW_WORD, BULLET_WORD, POINT_WORD], command: { kind: BULLET_WORD } },
+  { phrase: ["numbered", LIST_WORD], command: { kind: NUMBERED_LIST_KIND } },
+  { phrase: [NEW_WORD, "paragraph"], command: { kind: NEW_PARAGRAPH_KIND } },
+  { phrase: ["question", MARK_WORD], command: readPunctuation(QUESTION_MARK) },
+  { phrase: [BULLET_WORD, LIST_WORD], command: { kind: BULLET_WORD } },
+  { phrase: [BULLET_WORD, POINT_WORD], command: { kind: BULLET_WORD } },
+  { phrase: [NEXT_WORD, BULLET_WORD], command: { kind: BULLET_WORD } },
+  { phrase: [NEW_WORD, BULLET_WORD], command: { kind: BULLET_WORD } },
+  { phrase: [NEXT_WORD, "item"], command: { kind: NEXT_ITEM_KIND } },
+  { phrase: [NEXT_WORD, LINE_WORD], command: { kind: NEW_LINE_KIND } },
+  { phrase: ["full", "stop"], command: readPunctuation(PERIOD_MARK) },
+  { phrase: [NEW_WORD, LINE_WORD], command: { kind: NEW_LINE_KIND } },
+  { phrase: ["semicolon"], command: readPunctuation(SEMICOLON_MARK) },
+  { phrase: ["newline"], command: { kind: NEW_LINE_KIND } },
+  { phrase: ["period"], command: readPunctuation(PERIOD_MARK) },
   { phrase: ["comma"], command: readPunctuation(",") },
   { phrase: ["colon"], command: readPunctuation(":") },
-  { phrase: ["bullet"], command: { kind: "bullet" } },
-  { phrase: ["dot"], command: readPunctuation(".") },
+  { phrase: [BULLET_WORD], command: { kind: BULLET_WORD } },
+  { phrase: ["dot"], command: readPunctuation(PERIOD_MARK) },
 ];
-
-const SENTENCE_ENDS = [".", "!", "?"];
 
 const initialFormat: FormatStatus = {
   text: "",
@@ -86,7 +119,7 @@ const listReplacementPair = (line: string): ReadonlyArray<readonly [string, stri
 
 // A blank or one-sided pair is skipped, and a later pair for the same heard words wins.
 export const parseReplacements = (replacementWords: string): ReadonlyMap<string, string> => {
-  const pairs = replacementWords.split(";").flatMap(listReplacementPair);
+  const pairs = replacementWords.split(SEMICOLON_MARK).flatMap(listReplacementPair);
   return new Map(pairs);
 };
 
@@ -122,13 +155,13 @@ const hasPhraseAt = (request: {
   request.words.length >= request.index + request.phrase.length &&
   request.phrase.every((word, offset) => request.words[request.index + offset] === word);
 
-const readCommandAt = (spoken: Spoken, index: number): SpokenCommand | undefined =>
+const readCommandAt = (spoken: Spoken, index: number): SpokenCommand | null =>
   SPOKEN_COMMANDS.find((spokenCommand) =>
     hasPhraseAt({ words: spoken.canonical, index, phrase: spokenCommand.phrase }),
-  );
+  ) ?? null;
 
-const readReplacementAt = (spoken: Spoken, index: number): Phrase | undefined =>
-  spoken.phrases.find((phrase) => hasPhraseAt({ words: spoken.canonical, index, phrase: phrase.words }));
+const readReplacementAt = (spoken: Spoken, index: number): Phrase | null =>
+  spoken.phrases.find((phrase) => hasPhraseAt({ words: spoken.canonical, index, phrase: phrase.words })) ?? null;
 
 // "literal" types the next command or replacement phrase, or one word, as plain words.
 const readLiteralLength = (spoken: Spoken, index: number): number => {
@@ -154,7 +187,7 @@ const readPieceAt = (spoken: Spoken, index: number): { readonly piece: Piece; re
   if (isLiteral) {
     const length = readLiteralLength(spoken, index + 1);
     const literal = spoken.words.slice(index + 1, index + 1 + length).join(" ");
-    return { piece: { kind: "words", text: literal }, length: 1 + length };
+    return { piece: { kind: WORDS_PIECE_KIND, text: literal }, length: 1 + length };
   }
 
   const command = readCommandAt(spoken, index);
@@ -171,10 +204,13 @@ const readPieceAt = (spoken: Spoken, index: number): { readonly piece: Piece; re
     // The heard words' closing punctuation stays: "my name is Joseph." types "My name is Yosef."
     const lastHeard = spoken.words[index + replacement.words.length - 1];
     const closing = readTrailingPunctuation(lastHeard);
-    return { piece: { kind: "words", text: `${replacement.written}${closing}` }, length: replacement.words.length };
+    return {
+      piece: { kind: WORDS_PIECE_KIND, text: `${replacement.written}${closing}` },
+      length: replacement.words.length,
+    };
   }
 
-  return { piece: { kind: "words", text: spoken.words[index] }, length: 1 };
+  return { piece: { kind: WORDS_PIECE_KIND, text: spoken.words[index] }, length: 1 };
 };
 
 const listPiecesFrom = (spoken: Spoken, index: number): ReadonlyArray<Piece> => {
@@ -237,7 +273,7 @@ const startListLine = (formatStatus: FormatStatus, marker: string): FormatStatus
 };
 
 const listNumber = (formatStatus: FormatStatus, kind: "numberedList" | "nextItem"): number => {
-  const isNewList = kind === "numberedList" || formatStatus.nextNumber < 1;
+  const isNewList = kind === NUMBERED_LIST_KIND || formatStatus.nextNumber < 1;
   if (isNewList) {
     return 1;
   }
@@ -247,23 +283,23 @@ const listNumber = (formatStatus: FormatStatus, kind: "numberedList" | "nextItem
 
 const pushPiece = (formatStatus: FormatStatus, piece: Piece): FormatStatus => {
   switch (piece.kind) {
-    case "words":
+    case WORDS_PIECE_KIND:
       return pushWords(formatStatus, piece.text);
-    case "punctuation": {
-      const endsSentence = SENTENCE_ENDS.includes(piece.mark);
+    case PUNCTUATION_KIND: {
+      const endsSentence = [PERIOD_MARK, EXCLAMATION_MARK, QUESTION_MARK].includes(piece.mark);
       const string = `${formatStatus.text}${piece.mark}`;
       return { ...formatStatus, text: string, atLineStart: false, capitalizeNext: endsSentence, needsSpace: true };
     }
-    case "newLine":
+    case NEW_LINE_KIND:
       return readBreakLine(formatStatus, "\n");
-    case "newParagraph":
+    case NEW_PARAGRAPH_KIND:
       return readBreakLine(formatStatus, "\n\n");
-    case "bullet": {
+    case BULLET_WORD: {
       const element = startListLine(formatStatus, "- ");
       return { ...element, nextNumber: 0 };
     }
-    case "numberedList":
-    case "nextItem": {
+    case NUMBERED_LIST_KIND:
+    case NEXT_ITEM_KIND: {
       const number = listNumber(formatStatus, piece.kind);
       const listLine = startListLine(formatStatus, `${String(number)}. `);
       return { ...listLine, nextNumber: number + 1 };

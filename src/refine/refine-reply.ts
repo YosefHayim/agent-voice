@@ -1,6 +1,37 @@
 import { containsAny, listNonBlankLines, parseDocumentOrNull } from "./agent-cli.js";
 
-const REFINE_INSTRUCTIONS = `You refine messy freeform or spoken drafts into a single paste-ready prompt for a coding agent.
+const OUTPUT_KEY = "output";
+
+const CONTENT_KEY = "content";
+
+const RESULT_KEY = "result";
+
+const TEXT_PART_TYPE = "text";
+
+const STRING_KIND = "string";
+
+const REJECTED_STATUS = "rejected";
+
+const CODE_FENCE = "```";
+
+const NEWLINE = "\n";
+
+const DROPPED_LITERAL_REASON = "droppedLiteral";
+
+const CLI_HELP_REASON = "cliHelp";
+
+const EMPTY_REASON = "empty";
+
+const GLOBAL_UNICODE_FLAGS = "gu";
+
+const OPEN_BRACE = "{";
+
+const MESSAGE_FIELD = "message";
+
+const POSITIONALS_LABEL = "positionals:";
+
+export const createRefinePrompt = (draft: string): string =>
+  `${`You refine messy freeform or spoken drafts into a single paste-ready prompt for a coding agent.
 
 Rules:
 1. Preserve exact intent, facts, constraints, code, commands, paths, URLs, quoted literals, and acceptance criteria.
@@ -8,98 +39,90 @@ Rules:
 3. Prefer routing to existing skills when the draft is clearly that workflow (finish-and-push, organize-commits, simplify-code, clean-repo-by-feature, run-tasks-in-parallel, run-local-and-check, deploy-and-check, which-skill, etc.). Lead with the primary skill id when helpful: "finish-and-push: …".
 4. Do not invent a multi-skill plan, a routing chat, or a long report. Output is the agent message the user would paste/send next.
 5. Do not answer the prompt. Do not add commentary, labels, Markdown fences around the whole reply, or invented requirements.
-6. Return only the revised prompt text.`;
-
-export const createRefinePrompt = (draft: string): string =>
-  `${REFINE_INSTRUCTIONS}\n\nDraft to refine:\n---\n${draft}\n---\nReturn only the revised prompt text.`;
-
-// Agent CLIs that print auth or help failures with exit code 0.
-const AUTH_OR_SETTINGS_MARKERS = [
-  "no api key found",
-  "use /login",
-  "not logged in",
-  "not signed in",
-  "no models available",
-  "please log in",
-  "authentication required",
-  "unauthorized",
-  "login required",
-];
-
-const MODEL_UNAVAILABLE_MARKERS = [
-  "model is not supported",
-  "model not found",
-  "unknown model",
-  "invalid model",
-  "unsupported model",
-  "does not exist",
-  "not available for",
-  "not supported when using",
-  "model_not_found",
-  "invalid_model",
-  "no such model",
-  "the requested model is not supported",
-  "model_not_supported",
-];
-
-// Error phrases only: a refined prompt about a budget, a billing page, a disk quota, or RPM is a real prompt.
-const QUOTA_OR_LIMIT_MARKERS = [
-  "quota exceeded",
-  "quota_exceeded",
-  "resource_exhausted",
-  "rate limit",
-  "rate_limit",
-  "ratelimit",
-  "too many requests",
-  'status":429',
-  "status code 429",
-  "http 429",
-  " 429",
-  " 402",
-  'status":402',
-  "usage limit",
-  "usage_limit",
-  "insufficient_quota",
-  "exceeded your current quota",
-  "billing details",
-  "billing_hard_limit",
-  "billing hard limit",
-  "limit reached",
-  "tokens per min",
-  "requests per min",
-  "out of credits",
-  "requires more credits",
-  "can only afford",
-  "openrouter.ai/settings/credits",
-  "payment required",
-  "spending limit",
-  "budget exceeded",
-  "budget has been exceeded",
-  "exceeded your budget",
-  "credit balance",
-  "insufficient credits",
-];
-
-const PAYMENT_ERROR_MARKERS = ['"code":402', '"code": 402', "invalid_request_error"];
-
-const HELP_ANCHORS = ["positionals:", "options:", "show help", "[boolean]"];
+6. Return only the revised prompt text.`}\n\nDraft to refine:\n---\n${draft}\n---\nReturn only the revised prompt text.`;
 
 // A CLI --help dump (say, OpenCode's yargs help printed with exit 0), not a refined prompt.
 export const isCliHelpScreen = (string: string): boolean => {
   const lowercase = string.trim().toLowerCase();
-  const helpAnchors = HELP_ANCHORS.filter((anchor) => lowercase.includes(anchor));
+  const helpAnchors = [POSITIONALS_LABEL, "options:", "show help", "[boolean]"].filter((anchor) =>
+    lowercase.includes(anchor),
+  );
   const isOpencodeHelp =
-    (lowercase.includes("run opencode with a message") && lowercase.includes("positionals:")) ||
+    (lowercase.includes("run opencode with a message") && lowercase.includes(POSITIONALS_LABEL)) ||
     lowercase.startsWith("opencode run [message") ||
     lowercase.includes("opencode run [message..]");
-  return helpAnchors.length >= 3 || isOpencodeHelp;
+  const minimumHelpAnchorCount = 3;
+
+  return helpAnchors.length >= minimumHelpAnchorCount || isOpencodeHelp;
 };
 
-export const isAuthFailureMessage = (string: string): boolean => containsAny(string, AUTH_OR_SETTINGS_MARKERS);
+export const isAuthFailureMessage = (string: string): boolean =>
+  containsAny(string, [
+    "no api key found",
+    "use /login",
+    "not logged in",
+    "not signed in",
+    "no models available",
+    "please log in",
+    "authentication required",
+    "unauthorized",
+    "login required",
+  ]);
 
-export const isModelUnavailableError = (message: string): boolean => containsAny(message, MODEL_UNAVAILABLE_MARKERS);
+export const isModelUnavailableError = (message: string): boolean =>
+  containsAny(message, [
+    "model is not supported",
+    "model not found",
+    "unknown model",
+    "invalid model",
+    "unsupported model",
+    "does not exist",
+    "not available for",
+    "not supported when using",
+    "model_not_found",
+    "invalid_model",
+    "no such model",
+    "the requested model is not supported",
+    "model_not_supported",
+  ]);
 
-export const isQuotaOrLimitError = (message: string): boolean => containsAny(message, QUOTA_OR_LIMIT_MARKERS);
+export const isQuotaOrLimitError = (message: string): boolean =>
+  containsAny(message, [
+    "quota exceeded",
+    "quota_exceeded",
+    "resource_exhausted",
+    "rate limit",
+    "rate_limit",
+    "ratelimit",
+    "too many requests",
+    'status":429',
+    "status code 429",
+    "http 429",
+    " 429",
+    " 402",
+    'status":402',
+    "usage limit",
+    "usage_limit",
+    "insufficient_quota",
+    "exceeded your current quota",
+    "billing details",
+    "billing_hard_limit",
+    "billing hard limit",
+    "limit reached",
+    "tokens per min",
+    "requests per min",
+    "out of credits",
+    "requires more credits",
+    "can only afford",
+    "openrouter.ai/settings/credits",
+    "payment required",
+    "spending limit",
+    "budget exceeded",
+    "budget has been exceeded",
+    "exceeded your budget",
+    "credit balance",
+    "insufficient credits",
+  ]);
 
 // Several agents (pi, OpenRouter wrappers) print 402 or JSON errors with exit code 0; those must never reach the caret.
 export const isFailedModelReply = (string: string): boolean => {
@@ -111,10 +134,12 @@ export const isFailedModelReply = (string: string): boolean => {
     isAuthFailureMessage(trimmed) ||
     isQuotaOrLimitError(trimmed) ||
     isModelUnavailableError(trimmed);
-  const isPaymentError = lowercase.startsWith("402") || containsAny(lowercase, PAYMENT_ERROR_MARKERS);
+  const isPaymentError =
+    lowercase.startsWith("402") || containsAny(lowercase, ['"code":402', '"code": 402', "invalid_request_error"]);
   const hasErrorFields =
-    lowercase.includes('"error"') || (lowercase.includes('"code"') && containsAny(lowercase, ["message", "credits"]));
-  const isDocumentError = trimmed.startsWith("{") && hasErrorFields;
+    lowercase.includes('"error"') ||
+    (lowercase.includes('"code"') && containsAny(lowercase, [MESSAGE_FIELD, "credits"]));
+  const isDocumentError = trimmed.startsWith(OPEN_BRACE) && hasErrorFields;
   return isKnownFailure || isPaymentError || isDocumentError;
 };
 
@@ -124,9 +149,9 @@ const LITERAL_PATTERNS = [
   /```[\s\S]*?```/gu,
   /`[^`\n]+`/gu,
   /https?:\/\/[^\s<>()]+/gu,
-  new RegExp(`${NOT_WORD_CHARACTER_BEFORE}(?:\\.{0,2}/)[^\\s,;:!?]+`, "gu"),
-  new RegExp(`${NOT_WORD_CHARACTER_BEFORE}(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+`, "gu"),
-  new RegExp(`${NOT_WORD_CHARACTER_BEFORE}(?:'[^'\\n]+'|"[^"\\n]+")`, "gu"),
+  new RegExp(`${NOT_WORD_CHARACTER_BEFORE}(?:\\.{0,2}/)[^\\s,;:!?]+`, GLOBAL_UNICODE_FLAGS),
+  new RegExp(`${NOT_WORD_CHARACTER_BEFORE}(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+`, GLOBAL_UNICODE_FLAGS),
+  new RegExp(`${NOT_WORD_CHARACTER_BEFORE}(?:'[^'\\n]+'|"[^"\\n]+")`, GLOBAL_UNICODE_FLAGS),
 ];
 
 type LiteralSpan = { readonly start: number; readonly end: number; readonly literal: string };
@@ -169,24 +194,27 @@ export type RefinedPromptCheck =
 
 export const describeRefineReplyRejection = (rejection: RefineReplyRejection): string => {
   switch (rejection.reason) {
-    case "empty":
+    case EMPTY_REASON:
       return "The model returned an empty prompt";
-    case "cliHelp":
+    case CLI_HELP_REASON:
       return "The model returned CLI help text instead of a refined prompt";
-    case "droppedLiteral":
+    case DROPPED_LITERAL_REASON:
       return `The model changed a protected literal: ${rejection.literal ?? ""}`;
   }
 };
 
 const stripWholeReplyFence = (string: string): string => {
-  const lines = string.split("\n");
+  const lines = string.split(NEWLINE);
 
-  const isNotFenced = !string.startsWith("```") || !string.endsWith("```") || lines.length < 2;
+  const minimumFencedLineCount = 2;
+
+  const isNotFenced =
+    !string.startsWith(CODE_FENCE) || !string.endsWith(CODE_FENCE) || lines.length < minimumFencedLineCount;
   if (isNotFenced) {
     return string;
   }
 
-  return lines.slice(1, -1).join("\n").trim();
+  return lines.slice(1, -1).join(NEWLINE).trim();
 };
 
 export const checkRefinedPrompt = (request: {
@@ -198,12 +226,12 @@ export const checkRefinedPrompt = (request: {
 
   const isPromptEmpty = refinedPrompt === "";
   if (isPromptEmpty) {
-    return { status: "rejected", rejection: { reason: "empty" } };
+    return { status: REJECTED_STATUS, rejection: { reason: EMPTY_REASON } };
   }
 
   const isCliHelpReply = isCliHelpScreen(refinedPrompt);
   if (isCliHelpReply) {
-    return { status: "rejected", rejection: { reason: "cliHelp" } };
+    return { status: REJECTED_STATUS, rejection: { reason: CLI_HELP_REASON } };
   }
 
   const literals = listPromptLiterals(request.draft);
@@ -211,16 +239,13 @@ export const checkRefinedPrompt = (request: {
 
   const hasDroppedLiteral = droppedLiteral != null;
   if (hasDroppedLiteral) {
-    return { status: "rejected", rejection: { reason: "droppedLiteral", literal: droppedLiteral } };
+    return { status: REJECTED_STATUS, rejection: { reason: DROPPED_LITERAL_REASON, literal: droppedLiteral } };
   }
 
   return { status: "accepted", prompt: refinedPrompt };
 };
 
 type DocumentObject = Readonly<Record<string, unknown>>;
-
-const DOCUMENT_STRING_KEYS = ["result", "text", "content", "message", "output", "response"];
-const EVENT_STRING_KEYS = ["result", "text", "content", "message", "output"];
 
 const isDocumentObject = (field: unknown): field is DocumentObject =>
   typeof field === "object" && field !== null && !Array.isArray(field);
@@ -229,7 +254,7 @@ const isNonNullPiece = (string: string | null): string is string => string != nu
 
 // The trimmed text, or null when the value is not a string or is blank.
 const readNonBlankField = (field: unknown): string | null => {
-  const isStringField = typeof field === "string";
+  const isStringField = typeof field === STRING_KIND;
 
   const isNotStringField = !isStringField;
   if (isNotStringField) {
@@ -242,7 +267,7 @@ const readNonBlankField = (field: unknown): string | null => {
 };
 
 const readFieldOrEmpty = (field: unknown): string => {
-  const isStringField = typeof field === "string";
+  const isStringField = typeof field === STRING_KIND;
 
   const isNotStringField = !isStringField;
   if (isNotStringField) {
@@ -256,7 +281,7 @@ const readFieldOrEmpty = (field: unknown): string => {
 const readBlockReply = (block: unknown): string | null => {
   const blockField = isDocumentObject(block) ? block.text : null;
 
-  const isNotStringField = typeof blockField !== "string";
+  const isNotStringField = typeof blockField !== STRING_KIND;
   if (isNotStringField) {
     return null;
   }
@@ -270,7 +295,7 @@ const readJoinedBlocks = (field: unknown): string | null => {
     return null;
   }
 
-  const joined = field.map(readBlockReply).filter(isNonNullPiece).join("\n");
+  const joined = field.map(readBlockReply).filter(isNonNullPiece).join(NEWLINE);
   return readNonBlankField(joined);
 };
 
@@ -278,7 +303,7 @@ const readJoinedBlocks = (field: unknown): string | null => {
 const isReplyPart = (event: DocumentObject, part: DocumentObject): boolean => {
   const partType = readFieldOrEmpty(part.type);
   const eventType = readFieldOrEmpty(event.type);
-  return partType === "" || partType === "text" || eventType === "text";
+  return partType === "" || partType === TEXT_PART_TYPE || eventType === TEXT_PART_TYPE;
 };
 
 const readPartReply = (event: DocumentObject): string | null => {
@@ -305,7 +330,9 @@ const readFieldReply = (document: DocumentObject, key: string): string | null =>
   readNonBlankField(document[key]) ?? readNestedReply(document[key]);
 
 const readDocumentReply = (document: DocumentObject): string | null => {
-  const keyReplies = DOCUMENT_STRING_KEYS.map((key) => readFieldReply(document, key));
+  const keyReplies = [RESULT_KEY, TEXT_PART_TYPE, CONTENT_KEY, MESSAGE_FIELD, OUTPUT_KEY, "response"].map((key) =>
+    readFieldReply(document, key),
+  );
   const firstKeyReply = keyReplies.find(isNonNullPiece) ?? null;
   return firstKeyReply ?? readPartReply(document) ?? readJoinedBlocks(document.content);
 };
@@ -322,7 +349,9 @@ const readMessageReply = (event: DocumentObject): string | null => {
 };
 
 const readEventReply = (event: DocumentObject): string | null => {
-  const directFields = EVENT_STRING_KEYS.map((key) => readNonBlankField(event[key])).filter(isNonNullPiece);
+  const directFields = [RESULT_KEY, TEXT_PART_TYPE, CONTENT_KEY, MESSAGE_FIELD, OUTPUT_KEY]
+    .map((key) => readNonBlankField(event[key]))
+    .filter(isNonNullPiece);
   const lastDirectReply = directFields.at(-1) ?? null;
   return readMessageReply(event) ?? readPartReply(event) ?? lastDirectReply;
 };
@@ -342,7 +371,7 @@ const readWholeReply = (printout: string): string | null => {
 
 const listDocumentLineEvents = (printout: string): ReadonlyArray<DocumentObject> =>
   listNonBlankLines(printout)
-    .filter((line) => line.startsWith("{"))
+    .filter((line) => line.startsWith(OPEN_BRACE))
     .map(parseDocumentOrNull)
     .filter(isDocumentObject);
 
@@ -364,7 +393,7 @@ const readJoinedParts = (parts: ReadonlyArray<string>): string => {
     return longest;
   }
 
-  return parts.join("\n").trim();
+  return parts.join(NEWLINE).trim();
 };
 
 export const readReplyFromDocument = (printout: string): string => {

@@ -7,31 +7,97 @@ import { readDocumentFile, readFileIfReadable } from "#src/storage/state-files.j
 import { containsAny, dedupe, findFirstCli, listNonBlankLines, runCliLines } from "./agent-cli.js";
 import { readCodexLastGoodModel } from "./refine-choices.js";
 
-export const providerIdSchema = z.enum(["codex", "claude", "gemini", "grok", "ollama", "opencode", "pi"]);
+const PIE_EXECUTABLE_NAME = "pie";
+
+const DEFAULT_MODEL_NAME = "default";
+
+const HTTP_MARKER = "http";
+
+const AGENT_EXECUTABLE = "agent";
+
+const AGY_PROVIDER_ID = "agy";
+
+const NOT_LOGGED_IN_PHRASE = "not logged in";
+
+const NEWLINE = "\n";
+
+const LIST_MODELS_FLAG = "--list-models";
+
+const MODELS_COMMAND = "models";
+
+const DASH_PREFIX = "-";
+
+const HAIKU_MODEL_ALIAS = "haiku";
+
+const OPUS_MODEL_ALIAS = "opus";
+
+const SONNET_MODEL_ALIAS = "sonnet";
+
+const KEY_VALUE_SEPARATOR = "=";
+
+const MODEL_WORD = "model";
+
+const LIST_WORD = "list";
+
+const GPT_4_1_MINI_MODEL_ID = "gpt-4.1-mini";
+
+const O4_MINI_MODEL_ID = "o4-mini";
+
+const GPT_5_1_CODEX_MINI_MODEL_ID = "gpt-5.1-codex-mini";
+
+const GPT_5_6_TERRA_MODEL_ID = "gpt-5.6-terra";
+
+const GPT_5_4_MINI_MODEL_ID = "gpt-5.4-mini";
+
+const CODEX_SPARK_MODEL_ID = "gpt-5.3-codex-spark";
+
+const PI_PROVIDER_ID = "pi";
+
+const OPENCODE_PROVIDER_ID = "opencode";
+
+const OLLAMA_PROVIDER_ID = "ollama";
+
+const GROK_PROVIDER_ID = "grok";
+
+const GEMINI_PROVIDER_ID = "gemini";
+
+const CLAUDE_PROVIDER_ID = "claude";
+
+const CODEX_PROVIDER_ID = "codex";
+
+export const providerIdSchema = z.enum([
+  CODEX_PROVIDER_ID,
+  CLAUDE_PROVIDER_ID,
+  GEMINI_PROVIDER_ID,
+  GROK_PROVIDER_ID,
+  OLLAMA_PROVIDER_ID,
+  OPENCODE_PROVIDER_ID,
+  PI_PROVIDER_ID,
+]);
 
 export type ProviderId = z.infer<typeof providerIdSchema>;
 
 // Tried in order when the requested Codex model is missing or not allowed for this account; fast first.
 export const CODEX_MODEL_FALLBACKS = [
-  "gpt-5.3-codex-spark",
-  "gpt-5.4-mini",
-  "gpt-5.6-terra",
-  "gpt-5.1-codex-mini",
-  "o4-mini",
-  "gpt-4.1-mini",
+  CODEX_SPARK_MODEL_ID,
+  GPT_5_4_MINI_MODEL_ID,
+  GPT_5_6_TERRA_MODEL_ID,
+  GPT_5_1_CODEX_MINI_MODEL_ID,
+  O4_MINI_MODEL_ID,
+  GPT_4_1_MINI_MODEL_ID,
 ];
 
 // Offered by the picker after the live ~/.codex/models_cache.json entries.
 export const CODEX_PICKER_MODELS = [
   "gpt-5.6-luna",
-  "gpt-5.6-terra",
+  GPT_5_6_TERRA_MODEL_ID,
   "gpt-5.5",
-  "gpt-5.4-mini",
+  GPT_5_4_MINI_MODEL_ID,
   "gpt-5.4",
-  "gpt-5.3-codex-spark",
-  "gpt-5.1-codex-mini",
-  "o4-mini",
-  "gpt-4.1-mini",
+  CODEX_SPARK_MODEL_ID,
+  GPT_5_1_CODEX_MINI_MODEL_ID,
+  O4_MINI_MODEL_ID,
+  GPT_4_1_MINI_MODEL_ID,
   "gpt-4.1",
 ];
 
@@ -41,8 +107,6 @@ export const REASONING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh"] a
 const LISTING_TIMEOUT_MS = 12_000;
 const HELP_TIMEOUT_MS = 5_000;
 const MAX_LISTED_MODELS = 80;
-
-const EDGE_BRACKETS = /^[()[\],]+|[()[\],]+$/gu;
 
 // A listing has no caller to cancel it, so its own timeout is its signal.
 const listLines = (request: { readonly executable: string; readonly args: ReadonlyArray<string> }) =>
@@ -64,7 +128,7 @@ const findPatternTokens = (line: string, pattern: RegExp): ReadonlyArray<string>
 
 const readFirstWord = (line: string): string => line.split(/\s+/u)[0] ?? "";
 
-const readBareWord = (token: string): string => readFirstWord(token).replace(EDGE_BRACKETS, "");
+const readBareWord = (token: string): string => readFirstWord(token).replace(/^[()[\],]+|[()[\],]+$/gu, "");
 
 const listTopModels = (tokens: ReadonlyArray<string>): ReadonlyArray<string> =>
   dedupe(tokens).slice(0, MAX_LISTED_MODELS);
@@ -84,11 +148,9 @@ const codexModelsCacheSchema = z.object({ models: z.array(codexCachedModelSchema
 
 type CodexCachedModel = z.infer<typeof codexCachedModelSchema>;
 
-const HIDDEN_VISIBILITIES = ["hide", "hidden", "never"];
-
 const isVisibleModel = (model: CodexCachedModel): boolean => {
-  const visibility = (model.visibility || "list").trim().toLowerCase();
-  return !HIDDEN_VISIBILITIES.includes(visibility);
+  const visibility = (model.visibility || LIST_WORD).trim().toLowerCase();
+  return !["hide", "hidden", "never"].includes(visibility);
 };
 
 const readModelSlug = (model: CodexCachedModel): string => (model.slug || model.id || "").trim();
@@ -109,15 +171,15 @@ export const listCodexCachedModels = (): ReadonlyArray<string> => {
 };
 
 const isModelSetting = (line: string): boolean =>
-  line.startsWith("model") && !line.startsWith("model_") && line.includes("=");
+  line.startsWith(MODEL_WORD) && !line.startsWith("model_") && line.includes(KEY_VALUE_SEPARATOR);
 
 const listCodexConfiguredModel = (): ReadonlyArray<string> => {
   const settingsToml = readFileIfReadable(readCodexFile("config.toml")) ?? "";
   const modelLine = listNonBlankLines(settingsToml).find(isModelSetting);
   const model = (modelLine || "")
-    .split("=")
+    .split(KEY_VALUE_SEPARATOR)
     .slice(1)
-    .join("=")
+    .join(KEY_VALUE_SEPARATOR)
     .trim()
     .replace(/^["']|["']$/gu, "");
 
@@ -145,28 +207,35 @@ const listOllamaModelNames = (lines: ReadonlyArray<string>): ReadonlyArray<strin
     .filter((name) => name !== "" && name.toUpperCase() !== "NAME");
 
 const listOllamaModels = async (): Promise<ReadonlyArray<string>> => {
-  const ollamaListLines = await listLines({ executable: "ollama", args: ["list"] });
+  const ollamaListLines = await listLines({ executable: OLLAMA_PROVIDER_ID, args: [LIST_WORD] });
   return listOllamaModelNames(ollamaListLines);
 };
 
-const CLAUDE_FALLBACK = ["claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5", "sonnet", "opus", "haiku"];
-const CLAUDE_ALIASES = ["sonnet", "opus", "haiku"];
-const CLAUDE_LOGGED_OUT_MARKERS = ["not logged in", "please run /login", "please login"];
+const CLAUDE_FALLBACK = [
+  "claude-sonnet-4-5",
+  "claude-opus-4-5",
+  "claude-haiku-4-5",
+  SONNET_MODEL_ALIAS,
+  OPUS_MODEL_ALIAS,
+  HAIKU_MODEL_ALIAS,
+];
 
 const listClaudeModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
   lines
-    .filter((line) => !line.toLowerCase().startsWith("usage") && !line.startsWith("-"))
+    .filter((line) => !line.toLowerCase().startsWith("usage") && !line.startsWith(DASH_PREFIX))
     .flatMap((line) => [
       ...findPatternTokens(line, /\bclaude-[\w.-]+\b/gu),
-      ...line.split(/[\s,|]+/u).filter((part) => CLAUDE_ALIASES.includes(part)),
+      ...line
+        .split(/[\s,|]+/u)
+        .filter((part) => [SONNET_MODEL_ALIAS, OPUS_MODEL_ALIAS, HAIKU_MODEL_ALIAS].includes(part)),
     ]);
 
 const listClaudeModels = async (): Promise<ReadonlyArray<string>> => {
-  for (const argumentList of [["models"], ["--list-models"]]) {
-    const lines = await listLines({ executable: "claude", args: argumentList });
-    const listing = lines.join("\n");
+  for (const argumentList of [[MODELS_COMMAND], [LIST_MODELS_FLAG]]) {
+    const lines = await listLines({ executable: CLAUDE_PROVIDER_ID, args: argumentList });
+    const listing = lines.join(NEWLINE);
 
-    const isLoggedOut = containsAny(listing, CLAUDE_LOGGED_OUT_MARKERS);
+    const isLoggedOut = containsAny(listing, [NOT_LOGGED_IN_PHRASE, "please run /login", "please login"]);
     if (isLoggedOut) {
       return CLAUDE_FALLBACK;
     }
@@ -203,18 +272,18 @@ const listAgyModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string>
 
 // Only agy has a models command; gemini names its models in its help text.
 const listAgyModels = async (cli: { readonly name: string; readonly path: string }): Promise<ReadonlyArray<string>> => {
-  const isNotAgy = cli.name !== "agy";
+  const isNotAgy = cli.name !== AGY_PROVIDER_ID;
   if (isNotAgy) {
     return [];
   }
 
-  const agyLines = await listLines({ executable: cli.path, args: ["models"] });
+  const agyLines = await listLines({ executable: cli.path, args: [MODELS_COMMAND] });
   return listAgyModelTokens(agyLines);
 };
 
 // Models of the CLI refine runs (gemini before agy): agy's list also holds Claude and GPT IDs that gemini rejects.
 const listGeminiModels = async (): Promise<ReadonlyArray<string>> => {
-  const cli = findFirstCli(["gemini", "agy"]);
+  const cli = findFirstCli([GEMINI_PROVIDER_ID, AGY_PROVIDER_ID]);
 
   const isNoCliInstalled = cli == null;
   if (isNoCliInstalled) {
@@ -239,9 +308,6 @@ const listGeminiModels = async (): Promise<ReadonlyArray<string>> => {
   return listTopModels(helpModels);
 };
 
-const GROK_FALLBACK = ["grok-4.5", "grok-4", "grok-3", "grok-3-mini"];
-const GROK_MODEL = /\bgrok-[\w.-]+\b/gu;
-
 const listGrokListedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   const headingIndex = lines.findIndex((line) => line.toLowerCase().includes("available model"));
 
@@ -258,7 +324,7 @@ const listGrokListedModels = (lines: ReadonlyArray<string>): ReadonlyArray<strin
 };
 
 const listGrokMentionedModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
-  lines.flatMap((line) => findPatternTokens(line, GROK_MODEL));
+  lines.flatMap((line) => findPatternTokens(line, /\bgrok-[\w.-]+\b/gu));
 
 const listGrokModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
   const listed = listGrokListedModels(lines);
@@ -267,14 +333,14 @@ const listGrokModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string
 };
 
 const listGrokLines = async (): Promise<ReadonlyArray<string>> => {
-  const grokLines = await listLines({ executable: "grok", args: ["models"] });
+  const grokLines = await listLines({ executable: GROK_PROVIDER_ID, args: [MODELS_COMMAND] });
 
   const hasGrokLines = grokLines.length > 0;
   if (hasGrokLines) {
     return grokLines;
   }
 
-  return listLines({ executable: "agent", args: ["models"] });
+  return listLines({ executable: AGENT_EXECUTABLE, args: [MODELS_COMMAND] });
 };
 
 const listGrokModels = async (): Promise<ReadonlyArray<string>> => {
@@ -286,12 +352,12 @@ const listGrokModels = async (): Promise<ReadonlyArray<string>> => {
     return tokens;
   }
 
-  const help = await listHelpLines("grok");
+  const help = await listHelpLines(GROK_PROVIDER_ID);
   const helpModels = dedupe(listGrokMentionedModels(help));
 
   const isHelpEmpty = helpModels.length === 0;
   if (isHelpEmpty) {
-    return GROK_FALLBACK;
+    return ["grok-4.5", "grok-4", "grok-3", "grok-3-mini"];
   }
 
   return helpModels;
@@ -303,15 +369,15 @@ const listOpencodeLineModels = (line: string): ReadonlyArray<string> => {
     return [line];
   }
 
-  return findPatternTokens(line, /[\w.-]+\/[\w.-]+/gu).filter((token) => !token.includes("http"));
+  return findPatternTokens(line, /[\w.-]+\/[\w.-]+/gu).filter((token) => !token.includes(HTTP_MARKER));
 };
 
 const listOpencodeModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
   lines.filter((line) => !/^(?:usage|error|options)/iu.test(line)).flatMap(listOpencodeLineModels);
 
 const listOpencodeModels = async (): Promise<ReadonlyArray<string>> => {
-  for (const argumentList of [["models"], ["model", "list"]]) {
-    const lines = await listLines({ executable: "opencode", args: argumentList });
+  for (const argumentList of [[MODELS_COMMAND], [MODEL_WORD, LIST_WORD]]) {
+    const lines = await listLines({ executable: OPENCODE_PROVIDER_ID, args: argumentList });
     const found = listOpencodeModelTokens(lines);
 
     const hasFound = found.length > 0;
@@ -323,25 +389,23 @@ const listOpencodeModels = async (): Promise<ReadonlyArray<string>> => {
   return [];
 };
 
-// OAuth providers (codex, copilot) usually work; OpenRouter often needs credits.
-const PI_PREFERRED_PREFIXES = ["openai-codex/", "github-copilot/", "kimi"];
-const PI_TABLE_COLUMNS = ["context", "max-out", "thinking", "images"];
-const PI_HINT_MARKERS = ["login", "api key", "providers.md", "models.md"];
-const PI_LOGGED_OUT_MARKERS = ["no models available", "no api key", "use /login", "not logged in"];
-
 const readPiRank = (token: string): number => {
   const lowercase = token.toLowerCase();
 
   const isOpenrouterInLowercase = lowercase.includes("openrouter");
   if (isOpenrouterInLowercase) {
-    return 9;
+    const openrouterRank = 9;
+
+    return openrouterRank;
   }
 
-  const rank = PI_PREFERRED_PREFIXES.findIndex((prefix) => lowercase.startsWith(prefix));
+  const rank = ["openai-codex/", "github-copilot/", "kimi"].findIndex((prefix) => lowercase.startsWith(prefix));
 
   const isUnranked = rank < 0;
   if (isUnranked) {
-    return 5;
+    const unrankedRank = 5;
+
+    return unrankedRank;
   }
 
   return rank;
@@ -352,7 +416,7 @@ const readByPiRank = (left: string, right: string): number =>
 
 const listPiLineModels = (line: string): ReadonlyArray<string> => {
   const slashTokens = findPatternTokens(line, /\b[a-z][\w.-]*\/[\w.:-]+\b/giu).filter(
-    (token) => !token.toLowerCase().includes("http"),
+    (token) => !token.toLowerCase().includes(HTTP_MARKER),
   );
 
   const hasSlashTokens = slashTokens.length > 0;
@@ -364,9 +428,9 @@ const listPiLineModels = (line: string): ReadonlyArray<string> => {
 
   const isNotModelLine =
     model === "" ||
-    provider.startsWith("-") ||
-    PI_TABLE_COLUMNS.includes(model) ||
-    model.toLowerCase().includes("http");
+    provider.startsWith(DASH_PREFIX) ||
+    ["context", "max-out", "thinking", "images"].includes(model) ||
+    model.toLowerCase().includes(HTTP_MARKER);
   if (isNotModelLine) {
     return [];
   }
@@ -377,15 +441,15 @@ const listPiLineModels = (line: string): ReadonlyArray<string> => {
 const listPiModelTokens = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
   lines
     .filter((line) => !/^(?:usage|options|commands|pi |use |see:|error|provider)/iu.test(line))
-    .filter((line) => !containsAny(line, PI_HINT_MARKERS))
+    .filter((line) => !containsAny(line, ["login", "api key", "providers.md", "models.md"]))
     .flatMap(listPiLineModels);
 
 const rankPiModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
-  const listing = lines.join("\n");
+  const listing = lines.join(NEWLINE);
 
-  const isLoggedOut = containsAny(listing, PI_LOGGED_OUT_MARKERS);
+  const isLoggedOut = containsAny(listing, ["no models available", "no api key", "use /login", NOT_LOGGED_IN_PHRASE]);
   if (isLoggedOut) {
-    return ["default"];
+    return [DEFAULT_MODEL_NAME];
   }
 
   const tokens = listPiModelTokens(lines);
@@ -394,18 +458,18 @@ const rankPiModels = (lines: ReadonlyArray<string>): ReadonlyArray<string> => {
 
   const isRankedEmpty = ranked.length <= 0;
   if (isRankedEmpty) {
-    return ["default"];
+    return [DEFAULT_MODEL_NAME];
   }
 
   return ranked.slice(0, MAX_LISTED_MODELS);
 };
 
-const readPiExecutable = (): string => findFirstCli(["pi", "pie"])?.path ?? "pi";
+const readPiExecutable = (): string => findFirstCli([PI_PROVIDER_ID, PIE_EXECUTABLE_NAME])?.path ?? PI_PROVIDER_ID;
 
 // provider/model IDs from the `pi --list-models` table ("openai-codex  gpt-5.4-mini  272K ..."), from pi or pie.
 const listPiModels = async (): Promise<ReadonlyArray<string>> => {
   const executable = readPiExecutable();
-  const piLines = await listLines({ executable, args: ["--list-models"] });
+  const piLines = await listLines({ executable, args: [LIST_MODELS_FLAG] });
   return rankPiModels(piLines);
 };
 
@@ -418,13 +482,18 @@ interface ProviderSpec {
 
 // id, binary names (first found wins), reasoning-effort support, model lister.
 const PROVIDERS: ReadonlyArray<ProviderSpec> = [
-  { id: "codex", binaries: ["codex"], effort: true, listModels: listCodexModels },
-  { id: "claude", binaries: ["claude"], effort: false, listModels: listClaudeModels },
-  { id: "gemini", binaries: ["gemini", "agy"], effort: true, listModels: listGeminiModels },
-  { id: "grok", binaries: ["grok", "agent"], effort: true, listModels: listGrokModels },
-  { id: "ollama", binaries: ["ollama"], effort: false, listModels: listOllamaModels },
-  { id: "opencode", binaries: ["opencode"], effort: true, listModels: listOpencodeModels },
-  { id: "pi", binaries: ["pi", "pie"], effort: true, listModels: listPiModels },
+  { id: CODEX_PROVIDER_ID, binaries: [CODEX_PROVIDER_ID], effort: true, listModels: listCodexModels },
+  { id: CLAUDE_PROVIDER_ID, binaries: [CLAUDE_PROVIDER_ID], effort: false, listModels: listClaudeModels },
+  {
+    id: GEMINI_PROVIDER_ID,
+    binaries: [GEMINI_PROVIDER_ID, AGY_PROVIDER_ID],
+    effort: true,
+    listModels: listGeminiModels,
+  },
+  { id: GROK_PROVIDER_ID, binaries: [GROK_PROVIDER_ID, AGENT_EXECUTABLE], effort: true, listModels: listGrokModels },
+  { id: OLLAMA_PROVIDER_ID, binaries: [OLLAMA_PROVIDER_ID], effort: false, listModels: listOllamaModels },
+  { id: OPENCODE_PROVIDER_ID, binaries: [OPENCODE_PROVIDER_ID], effort: true, listModels: listOpencodeModels },
+  { id: PI_PROVIDER_ID, binaries: [PI_PROVIDER_ID, PIE_EXECUTABLE_NAME], effort: true, listModels: listPiModels },
 ];
 
 export interface DiscoveredProvider {
@@ -464,7 +533,7 @@ export const listProviderModels = async (provider: ProviderId): Promise<Readonly
 const readModelsOrDefault = (models: ReadonlyArray<string>): ReadonlyArray<string> => {
   const hasNoModels = models.length === 0;
   if (hasNoModels) {
-    return ["default"];
+    return [DEFAULT_MODEL_NAME];
   }
 
   return models;

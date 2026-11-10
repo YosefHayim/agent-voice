@@ -17,6 +17,18 @@ import { type CommandSpec, isFlagOn, readRequiredPositional } from "./command-sp
 import { describeSpeech, prepareModels, restartWorkers } from "./on-command.js";
 import * as TerminalUI from "./terminal-ui.js";
 
+const BAD_USAGE_EXIT_CODE = 2;
+
+const VALUE_NAME = "value";
+
+const OFF_MODE = "off";
+
+const SETTING_POSITIONAL_DESCRIPTION = "Setting name, e.g. speech-mode";
+
+const SETTING_NAME = "setting";
+
+const BOOLEAN_KIND = "boolean";
+
 type SettingDefinition = (typeof settingDefinitions)[number];
 
 const findSetting = (settingName: string): SettingDefinition | null => {
@@ -58,7 +70,7 @@ const listCommand: CommandSpec = {
   name: "list",
   description: "Show every setting with its value and meaning",
   flags: {
-    json: { kind: "boolean", description: "Print one JSON document" },
+    json: { kind: BOOLEAN_KIND, description: "Print one JSON document" },
   },
   positionals: [],
   run: async (parsedCommand) => {
@@ -108,15 +120,15 @@ const getCommand: CommandSpec = {
   name: "get",
   description: "Print one setting's value",
   flags: {},
-  positionals: [{ name: "setting", description: "Setting name, e.g. speech-mode", isRequired: true }],
+  positionals: [{ name: SETTING_NAME, description: SETTING_POSITIONAL_DESCRIPTION, isRequired: true }],
   run: async (parsedCommand) => {
-    const settingName = readRequiredPositional(parsedCommand, "setting");
+    const settingName = readRequiredPositional(parsedCommand, SETTING_NAME);
     const setting = findSetting(settingName);
 
     const isSettingUnknown = setting == null;
     if (isSettingUnknown) {
       TerminalUI.printError(describeUnknownSetting(settingName));
-      return 2;
+      return BAD_USAGE_EXIT_CODE;
     }
 
     const settings = readSettings();
@@ -132,8 +144,8 @@ const applyChange = async (previous: Settings, next: Settings): Promise<void> =>
   const isDictationRunning = isWorkerRunning("dictation");
   const isModelChanged = previousModel.key !== nextModel.key;
   const isHoldKeyChanged = previous.dictationHoldKey !== next.dictationHoldKey;
-  const isSpeechTurnedOn = previous.speechMode === "off" && next.speechMode !== "off";
-  const isSpeechTurnedOff = previous.speechMode !== "off" && next.speechMode === "off";
+  const isSpeechTurnedOn = previous.speechMode === OFF_MODE && next.speechMode !== OFF_MODE;
+  const isSpeechTurnedOff = previous.speechMode !== OFF_MODE && next.speechMode === OFF_MODE;
   const isNewlyMuted = !previous.speechMuted && next.speechMuted;
   const isDictationRestartNeeded = (isModelChanged || isHoldKeyChanged) && isDictationRunning;
   const isSpeechStartNeeded = isSpeechTurnedOn && isDictationRunning;
@@ -184,20 +196,20 @@ const setCommand: CommandSpec = {
   description: "Change one setting, e.g. `agent-voice config set dictation-language he`",
   flags: {},
   positionals: [
-    { name: "setting", description: "Setting name, e.g. speech-mode", isRequired: true },
-    { name: "value", description: "The new value", isRequired: true },
+    { name: SETTING_NAME, description: SETTING_POSITIONAL_DESCRIPTION, isRequired: true },
+    { name: VALUE_NAME, description: "The new value", isRequired: true },
   ],
   run: async (parsedCommand) => {
-    const settingName = readRequiredPositional(parsedCommand, "setting");
+    const settingName = readRequiredPositional(parsedCommand, SETTING_NAME);
     const setting = findSetting(settingName);
 
     const isSettingUnknown = setting == null;
     if (isSettingUnknown) {
       TerminalUI.printError(describeUnknownSetting(settingName));
-      return 2;
+      return BAD_USAGE_EXIT_CODE;
     }
 
-    const enteredWords = readRequiredPositional(parsedCommand, "value");
+    const enteredWords = readRequiredPositional(parsedCommand, VALUE_NAME);
     const answer = parseSettingField({ setting, enteredWords });
     await saveSetting({ setting, answer });
     return 0;
@@ -208,15 +220,15 @@ const unsetCommand: CommandSpec = {
   name: "unset",
   description: "Put one setting back to its default",
   flags: {},
-  positionals: [{ name: "setting", description: "Setting name, e.g. speech-mode", isRequired: true }],
+  positionals: [{ name: SETTING_NAME, description: SETTING_POSITIONAL_DESCRIPTION, isRequired: true }],
   run: async (parsedCommand) => {
-    const settingName = readRequiredPositional(parsedCommand, "setting");
+    const settingName = readRequiredPositional(parsedCommand, SETTING_NAME);
     const setting = findSetting(settingName);
 
     const isSettingUnknown = setting == null;
     if (isSettingUnknown) {
       TerminalUI.printError(describeUnknownSetting(settingName));
-      return 2;
+      return BAD_USAGE_EXIT_CODE;
     }
 
     const defaultAnswer = defaultSettings[setting.key] ?? null;
@@ -322,7 +334,7 @@ const pickRefineCommand: CommandSpec = {
   name: "pick-refine",
   description: "Pick the refine provider, model, and effort from the agent CLIs on this Mac",
   flags: {
-    gui: { kind: "boolean", description: "Use macOS dialogs instead of the terminal menu" },
+    gui: { kind: BOOLEAN_KIND, description: "Use macOS dialogs instead of the terminal menu" },
   },
   positionals: [],
   run: async (parsedCommand) => {
@@ -332,7 +344,7 @@ const pickRefineCommand: CommandSpec = {
     const isNothingPicked = picked == null;
     if (isNothingPicked) {
       TerminalUI.printError("No refine provider picked (none found, or cancelled).");
-      return 2;
+      return BAD_USAGE_EXIT_CODE;
     }
 
     const effort = REASONING_EFFORTS.find((name) => name === picked.effort);

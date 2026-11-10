@@ -9,6 +9,16 @@ import { makeSpeechPlayer, type SpeechPlayer, speakMarkdown } from "./speech-pla
 import { loadSupertonic, type SupertonicEngine } from "./supertonic.js";
 import { ensureSupertonicModels } from "./supertonic-models.js";
 
+const SPEAKING_FILE_SUFFIX = ".speaking";
+
+const OFF_MODE = "off";
+
+const SPOKE_STEP = "spoke";
+
+const WAIT_STEP = "wait";
+
+const JSON_FILE_SUFFIX = ".json";
+
 type SpeakStep = "wait" | "idle" | "spoke";
 
 // Right after a reply the next one is often already queued, so look again sooner.
@@ -24,13 +34,13 @@ export const speakNextReply = async (engine: SupertonicEngine, player: SpeechPla
 
   // Before the dictation wait, so a reply that came in while muted is never kept for after an unmute.
   if (settings.speechMuted) {
-    removeInboxFiles([".json"]);
-    return "wait";
+    removeInboxFiles([JSON_FILE_SUFFIX]);
+    return WAIT_STEP;
   }
 
   const isDictationOwningAudio = isAudioOwnedByDictation();
   if (isDictationOwningAudio) {
-    return "wait";
+    return WAIT_STEP;
   }
 
   const nextReply = await claimNextReply(settings.speechMode);
@@ -51,15 +61,15 @@ export const speakNextReply = async (engine: SupertonicEngine, player: SpeechPla
   } catch (error) {
     appendSpeechLog(`speech failed: ${describeError(error)}`);
     failReply(file);
-    return "spoke";
+    return SPOKE_STEP;
   }
 
   completeReply(file);
-  return "spoke";
+  return SPOKE_STEP;
 };
 
 const pauseAfter = (step: SpeakStep): number => {
-  const isSpokeStep = step === "spoke";
+  const isSpokeStep = step === SPOKE_STEP;
   if (isSpokeStep) {
     return spokeStepPauseMilliseconds;
   }
@@ -71,9 +81,9 @@ const speakUntilStopped = async (engine: SupertonicEngine, player: SpeechPlayer)
   while (!stopRequested()) {
     const settings = readSettingsOrDefaults();
 
-    const isSpeechOff = settings.speechMode === "off";
+    const isSpeechOff = settings.speechMode === OFF_MODE;
     if (isSpeechOff) {
-      removeInboxFiles([".json", ".speaking"]);
+      removeInboxFiles([JSON_FILE_SUFFIX, SPEAKING_FILE_SUFFIX]);
       return;
     }
 
@@ -83,18 +93,20 @@ const speakUntilStopped = async (engine: SupertonicEngine, player: SpeechPlayer)
 };
 
 const logDownload = (file: string, bytes: number): void => {
-  const megabytes = Math.round(bytes / 1e6);
+  const bytesPerMegabyte = 1e6;
+
+  const megabytes = Math.round(bytes / bytesPerMegabyte);
   appendSpeechLog(`downloading ${file}: ${megabytes} MB`);
 };
 
 const loadAndSpeak = async (player: SpeechPlayer): Promise<void> => {
   // A claim left by a crash would otherwise look like speech in progress forever.
-  removeInboxFiles([".speaking"]);
+  removeInboxFiles([SPEAKING_FILE_SUFFIX]);
   const settings = readSettingsOrDefaults();
 
-  const isSpeechOff = settings.speechMode === "off";
+  const isSpeechOff = settings.speechMode === OFF_MODE;
   if (isSpeechOff) {
-    removeInboxFiles([".json"]);
+    removeInboxFiles([JSON_FILE_SUFFIX]);
     return;
   }
 

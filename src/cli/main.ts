@@ -27,7 +27,9 @@ const runRoute = async (route: CommandRoute): Promise<ExitCode> => {
   const isUsageRoute = route.kind === "usage";
   if (isUsageRoute) {
     TerminalUI.printError(route.message);
-    return 2;
+    const badUsageExitCode = 2;
+
+    return badUsageExitCode;
   }
 
   try {
@@ -38,4 +40,6 @@ const runRoute = async (route: CommandRoute): Promise<ExitCode> => {
   }
 };
 
-process.exitCode = await runRoute(parseCommandLine(process.argv.slice(2)));
+const userArgumentsStart = 2;
+
+process.exitCode = await runRoute(parseCommandLine(process.argv.slice(userArgumentsStart)));

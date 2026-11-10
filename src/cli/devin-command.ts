@@ -8,30 +8,32 @@ import { startWorkers } from "#src/workers/worker-processes.js";
 import type { CommandSpec } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
+const DEVIN_EXECUTABLE = "devin";
+
 // A child killed by a signal exits with no code; that counts as a failure.
 const killedExitCode = 1;
 
 const runDevin = (devinArguments: ReadonlyArray<string>): Promise<number> =>
   new Promise<number>((finishRun, failRun) => {
-    const child = spawn("devin", [...devinArguments], { stdio: "inherit" });
+    const child = spawn(DEVIN_EXECUTABLE, [...devinArguments], { stdio: "inherit" });
     child.on("error", (error) => failRun(new Error(`devin: ${error.message}`, { cause: error })));
     child.on("exit", (code) => finishRun(code ?? killedExitCode));
   });
 
 const readSessionFolder = (): string => {
   const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
-  const devinFolder = readStatusFolder("devin");
+  const devinFolder = readStatusFolder(DEVIN_EXECUTABLE);
   return path.join(devinFolder, stamp);
 };
 
 export const devinCommand: CommandSpec = {
-  name: "devin",
+  name: DEVIN_EXECUTABLE,
   description: "Run Devin and read each finished turn aloud from its official ATIF export",
   flags: {},
   positionals: [],
   isPassthrough: true,
   run: async (parsedCommand) => {
-    TerminalUI.printIntro("devin");
+    TerminalUI.printIntro(DEVIN_EXECUTABLE);
     await startWorkers();
     const folder = readSessionFolder();
     // Devin writes the whole session here, so the folder is private.

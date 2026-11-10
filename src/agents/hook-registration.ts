@@ -16,6 +16,10 @@ import type { AgentId } from "./agent-catalog.js";
 import { addReplyHook, isEmptySettings, removeReplyHook, replyHookCommand } from "./hook-settings.js";
 import { type HookSettingsFile, listHookSettingsFiles, rememberClaudeSettingsFolder } from "./hook-settings-files.js";
 
+const ABSENT_CHANGE_KIND = "absent";
+
+const CREATED_HOOK_FILES_STATUS_FILE = "created-hook-files.json";
+
 export type HookChangeKind = "added" | "unchanged" | "removed" | "absent" | "not installed" | "failed";
 
 export interface HookChange {
@@ -35,7 +39,9 @@ const isAgentInstalled = (settings: HookSettingsFile): boolean => existsSync(set
 // millisecond keep both copies, even when both are called .claude.
 const readFolderTag = (folder: string): string => {
   const name = path.basename(folder).replace(/^\./u, "");
-  const pathHash = createHash("sha256").update(folder).digest("hex").slice(0, 8);
+  const folderHashLength = 8;
+
+  const pathHash = createHash("sha256").update(folder).digest("hex").slice(0, folderHashLength);
   return `${name}-${pathHash}`;
 };
 
@@ -48,17 +54,23 @@ const readBackupFile = (settings: HookSettingsFile): string => {
   const settingsName = path.basename(settings.file);
   const backup = path.join(folder, `${settings.agent}-${agentFolder}-${settingsName}-${stamp}`);
   copyFileSync(settings.file, backup);
-  chmodSync(backup, 0o600);
+  const privateFileMode = 0o600;
+
+  chmodSync(backup, privateFileMode);
   return backup;
 };
 
 const readFileMode = (file: string): number => {
   const isFileAbsent = !existsSync(file);
   if (isFileAbsent) {
-    return 0o644;
+    const defaultFileMode = 0o644;
+
+    return defaultFileMode;
   }
 
-  return statSync(file).mode & 0o777;
+  const permissionBitsMask = 0o777;
+
+  return statSync(file).mode & permissionBitsMask;
 };
 
 // The agent's file keeps its permissions; the new text lands through a rename so the agent never reads half of it.
@@ -74,12 +86,12 @@ const writeSettings = (settings: HookSettingsFile, string: string): void => {
 
 // Settings files agent-voice created, so `agent-voice off` can delete one it leaves empty and keep any file that existed before.
 const listCreatedFiles = (): ReadonlyArray<string> => {
-  const createdPath = readStatusFile("created-hook-files.json");
+  const createdPath = readStatusFile(CREATED_HOOK_FILES_STATUS_FILE);
   return readDocumentFile({ path: createdPath, schema: createdFilesSchema }) ?? [];
 };
 
 const saveCreated = (request: { readonly file: string; readonly created: boolean }): void => {
-  const createdPath = readStatusFile("created-hook-files.json");
+  const createdPath = readStatusFile(CREATED_HOOK_FILES_STATUS_FILE);
   const others = listCreatedFiles().filter((file) => file !== request.file);
 
   if (request.created) {
@@ -177,14 +189,14 @@ const unregisterInstalled = (settings: HookSettingsFile): HookChange => {
 
   const isSettingsFileMissing = current == null;
   if (isSettingsFileMissing) {
-    return readHookChange(settings, "absent");
+    return readHookChange(settings, ABSENT_CHANGE_KIND);
   }
 
   const edit = removeReplyHook({ source: current, agent: settings.agent });
 
   const isEditUnchanged = !edit.changed;
   if (isEditUnchanged) {
-    return readHookChange(settings, "absent");
+    return readHookChange(settings, ABSENT_CHANGE_KIND);
   }
 
   const backup = readBackupFile(settings);

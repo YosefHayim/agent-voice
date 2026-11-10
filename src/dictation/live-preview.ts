@@ -80,7 +80,9 @@ const captionOnce = async (request: CaptionRequest): Promise<void> => {
 const captionStep = async (request: CaptionRequest): Promise<void> => {
   const isNotRecording = !request.clip.isRecording();
   if (isNotRecording) {
-    await sleep(50);
+    const captionPollMilliseconds = 50;
+
+    await sleep(captionPollMilliseconds);
     return;
   }
 

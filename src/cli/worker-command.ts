@@ -2,8 +2,9 @@ import { runDictationWorker } from "#src/dictation/dictation-worker.js";
 import { runSpeechWorker } from "#src/speech/speech-worker.js";
 import { type CommandSpec, readRequiredPositional } from "./command-spec.js";
 
+const WORKER_KIND_NAME = "kind";
+
 const DICTATION_WORKER = "dictation";
-const SPEECH_WORKER = "speech";
 
 export const workerCommand: CommandSpec = {
   name: "worker",
@@ -11,14 +12,14 @@ export const workerCommand: CommandSpec = {
   flags: {},
   positionals: [
     {
-      name: "kind",
+      name: WORKER_KIND_NAME,
       description: "Which worker to run",
       isRequired: true,
-      choices: [DICTATION_WORKER, SPEECH_WORKER],
+      choices: [DICTATION_WORKER, "speech"],
     },
   ],
   run: async (parsedCommand) => {
-    const workerKind = readRequiredPositional(parsedCommand, "kind");
+    const workerKind = readRequiredPositional(parsedCommand, WORKER_KIND_NAME);
 
     const isDictationWorker = workerKind === DICTATION_WORKER;
     if (isDictationWorker) {

@@ -8,6 +8,12 @@ import { isWorkerRunning, spawnWorker, startSpeechWorker } from "#src/workers/wo
 import { type AgentId, agentIdSchema } from "./agent-catalog.js";
 import { readStopReply, replyFromTranscript } from "./agent-reply.js";
 
+const AGENT_FLAG_PREFIX = "--agent=";
+
+const OFF_MODE = "off";
+
+const DICTATION_WORKER_NAME = "dictation";
+
 // Only the socket path is kept, never the socket capability.
 const replyOrigin = (): ReplyOrigin => {
   const workspaceId = (process.env.CMUX_WORKSPACE_ID ?? "").trim();
@@ -40,13 +46,13 @@ const readTranscriptReply = (transcriptPath: string): string => {
 
 // A new dictation worker starts speech itself when speech is on.
 const wakeWorkers = (settings: Settings): void => {
-  const isNotWorkerRunningDictation = !isWorkerRunning("dictation");
+  const isNotWorkerRunningDictation = !isWorkerRunning(DICTATION_WORKER_NAME);
   if (isNotWorkerRunningDictation) {
-    spawnWorker("dictation");
+    spawnWorker(DICTATION_WORKER_NAME);
     return;
   }
 
-  const isSpeechOn = settings.speechMode !== "off";
+  const isSpeechOn = settings.speechMode !== OFF_MODE;
   if (isSpeechOn) {
     startSpeechWorker();
   }
@@ -68,7 +74,7 @@ const queueAgentReply = async (agent: AgentId): Promise<void> => {
   // Every finished turn wakes dictation, so it comes back after a reboot even with speech off or muted.
   wakeWorkers(settings);
 
-  const isSpeechSilent = settings.speechMode === "off" || settings.speechMuted;
+  const isSpeechSilent = settings.speechMode === OFF_MODE || settings.speechMuted;
   if (isSpeechSilent) {
     return;
   }
@@ -99,11 +105,11 @@ const parseAgentId = (agentName: string | undefined): AgentId | null => {
 };
 
 const readAgentFromArguments = (argumentList: ReadonlyArray<string>): AgentId | null => {
-  const inlineFlag = argumentList.find((argument) => argument.startsWith("--agent="));
+  const inlineFlag = argumentList.find((argument) => argument.startsWith(AGENT_FLAG_PREFIX));
 
   const hasInlineFlag = inlineFlag != null;
   if (hasInlineFlag) {
-    const agentName = inlineFlag.slice("--agent=".length);
+    const agentName = inlineFlag.slice(AGENT_FLAG_PREFIX.length);
     return parseAgentId(agentName);
   }
 

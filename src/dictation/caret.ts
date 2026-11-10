@@ -8,6 +8,8 @@ import { sleep } from "#src/sleep.js";
 import { appendDictationLog } from "#src/workers/worker-log.js";
 import type { Keyboard } from "./keyboard.js";
 
+const IGNORE_STDIO = "ignore";
+
 // Above this length the clipboard is faster than key events.
 const CLIPBOARD_CHARACTERS = 800;
 
@@ -24,7 +26,7 @@ export const readClipboard = async (): Promise<string> => {
 
 export const writeClipboard = (string: string): Promise<void> =>
   new Promise<void>((finishWrite, failWrite) => {
-    const child = spawn("pbcopy", [], { stdio: ["pipe", "ignore", "ignore"] });
+    const child = spawn("pbcopy", [], { stdio: ["pipe", IGNORE_STDIO, IGNORE_STDIO] });
     child.on("error", (error) => failWrite(new Error(`pbcopy: ${error.message}`, { cause: error })));
     child.on("exit", (code) => {
       const isCopyOk = code === 0;
@@ -43,18 +45,24 @@ const waitForHoldUp = async (keyboard: Keyboard, maxMs: number): Promise<void> =
   const deadline = Date.now() + maxMs;
   keyboard.releaseHoldKey();
   while (keyboard.holdDown() && Date.now() < deadline) {
-    await sleep(10);
+    const holdPollMilliseconds = 10;
+
+    await sleep(holdPollMilliseconds);
   }
 
   // A small settle so the focused app accepts key events after the hotkey release.
-  await sleep(25);
+  const holdReleaseSettleMilliseconds = 25;
+
+  await sleep(holdReleaseSettleMilliseconds);
 };
 
 // Restores only while the clipboard still holds the pasted text, so anything copied meanwhile stays.
 // Runs in the background after the paste, so it logs its own failure instead of throwing.
 const restoreClipboard = async (request: { readonly pasted: string; readonly previous: string }): Promise<void> => {
   try {
-    await sleep(400);
+    const clipboardRestoreDelayMilliseconds = 400;
+
+    await sleep(clipboardRestoreDelayMilliseconds);
     const currentClipboard = await readClipboard();
 
     const isNotClipboardStillPasted = currentClipboard !== request.pasted;
@@ -137,7 +145,9 @@ export const typeAtCaret = async (request: {
     return;
   }
 
-  await waitForHoldUp(request.keyboard, 900);
+  const typeHoldWaitMilliseconds = 900;
+
+  await waitForHoldUp(request.keyboard, typeHoldWaitMilliseconds);
   await typeOrPasteWords(request.keyboard, request.text);
 
   const isPressEnterOff = !request.pressEnter;
@@ -145,6 +155,8 @@ export const typeAtCaret = async (request: {
     return;
   }
 
-  await waitForHoldUp(request.keyboard, 400);
+  const enterHoldWaitMilliseconds = 400;
+
+  await waitForHoldUp(request.keyboard, enterHoldWaitMilliseconds);
   request.keyboard.pressReturn();
 };

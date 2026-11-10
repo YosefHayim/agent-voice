@@ -22,6 +22,44 @@ import {
   readReplyFromDocument,
 } from "./refine-reply.js";
 
+const AGY_PROVIDER_ID = "agy";
+
+const GEMINI_PROVIDER_ID = "gemini";
+
+const TEXT_OUTPUT_VALUE = "text";
+
+const JSON_OUTPUT_VALUE = "json";
+
+const AUTO_VALUE = "auto";
+
+const OPENCODE_PROVIDER_ID = "opencode";
+
+const DEFAULT_MODEL_NAME = "default";
+
+const XHIGH_EFFORT = "xhigh";
+
+const MAX_EFFORT = "max";
+
+const HIGH_EFFORT = "high";
+
+const MEDIUM_EFFORT = "medium";
+
+const LOW_EFFORT = "low";
+
+const MINIMAL_EFFORT = "minimal";
+
+const RUN_COMMAND = "run";
+
+const MODEL_LONG_FLAG = "--model";
+
+const OUTPUT_FORMAT_FLAG = "--output-format";
+
+const PROMPT_SHORT_FLAG = "-p";
+
+const MODEL_SHORT_FLAG = "-m";
+
+const CODEX_PROVIDER_ID = "codex";
+
 export interface RefineAttempt {
   readonly provider: ProviderId;
   readonly model: string;
@@ -34,14 +72,13 @@ type Invocation = { readonly executable: string; readonly args: ReadonlyArray<st
 
 const AGENT_TIMEOUT_MS = 180_000;
 const CODEX_TIMEOUT_MS = 120_000;
-const OLLAMA_GENERATE_URL = "http://127.0.0.1:11434/api/generate";
 const OLLAMA_EMPTY_DETAIL = "ollama returned empty refine output";
-const OPENCODE_HELP_DETAIL =
-  "opencode printed its CLI help instead of a reply (invoke as: opencode run -m provider/model --format json <prompt>)";
 
 // Throws the detail, which the caller prefixes with the provider and model it tried.
 const failAttempt = (detail: string): never => {
-  throw new Error(detail.slice(0, 2_000));
+  const errorDetailCharacters = 2_000;
+
+  throw new Error(detail.slice(0, errorDetailCharacters));
 };
 
 const requireCli = (names: ReadonlyArray<string>): string => {
@@ -56,7 +93,7 @@ const requireCli = (names: ReadonlyArray<string>): string => {
 };
 
 const readTimeout = (provider: ProviderId): number => {
-  const isProviderCodex = provider === "codex";
+  const isProviderCodex = provider === CODEX_PROVIDER_ID;
   if (isProviderCodex) {
     return CODEX_TIMEOUT_MS;
   }
@@ -123,7 +160,7 @@ const listCodexArgumentList = (attempt: RefineAttempt, replyFile: string): Reado
   return [
     "exec",
     ...listOptionalFlag("-c", effortSetting),
-    "-m",
+    MODEL_SHORT_FLAG,
     attempt.model,
     "--ephemeral",
     "--skip-git-repo-check",
@@ -188,16 +225,16 @@ const readGrokReply = async (attempt: RefineAttempt, executable: string, signal:
   const prompt = createRefinePrompt(attempt.draft);
   const model = attempt.model.trim();
   const argumentList = [
-    "-p",
+    PROMPT_SHORT_FLAG,
     prompt,
-    "--output-format",
+    OUTPUT_FORMAT_FLAG,
     "plain",
     "--always-approve",
     "--max-turns",
     "1",
     "--no-subagents",
     "--disable-web-search",
-    ...listOptionalFlag("-m", model),
+    ...listOptionalFlag(MODEL_SHORT_FLAG, model),
     ...listOptionalFlag("--reasoning-effort", attempt.effort),
   ];
   const cliRun = await runSucceeded(attempt, { executable, args: argumentList }, signal);
@@ -230,7 +267,7 @@ const readGeneratedReply = (ollamaLine: string): string => {
 
 const askOllamaOverHttp = async (attempt: RefineAttempt, model: string): Promise<string> => {
   try {
-    const httpReply = await fetch(OLLAMA_GENERATE_URL, {
+    const httpReply = await fetch("http://127.0.0.1:11434/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model, prompt: createRefinePrompt(attempt.draft), stream: false }),
@@ -246,7 +283,7 @@ const askOllamaOverHttp = async (attempt: RefineAttempt, model: string): Promise
 const readOllamaReply = async (attempt: RefineAttempt, executable: string, signal: AbortSignal): Promise<string> => {
   const model = attempt.model.trim() || "llama3.2";
   const prompt = createRefinePrompt(attempt.draft);
-  const cliRun = await run(attempt, { executable, args: ["run", model, prompt] }, signal);
+  const cliRun = await run(attempt, { executable, args: [RUN_COMMAND, model, prompt] }, signal);
 
   const cliReply = readCliReply(cliRun);
 
@@ -272,25 +309,25 @@ const readOllamaReply = async (attempt: RefineAttempt, executable: string, signa
 };
 
 const OPENCODE_VARIANTS = new Map([
-  ["minimal", "minimal"],
-  ["low", "low"],
-  ["medium", "medium"],
-  ["high", "high"],
-  ["max", "max"],
-  ["xhigh", "max"],
+  [MINIMAL_EFFORT, MINIMAL_EFFORT],
+  [LOW_EFFORT, LOW_EFFORT],
+  [MEDIUM_EFFORT, MEDIUM_EFFORT],
+  [HIGH_EFFORT, HIGH_EFFORT],
+  [MAX_EFFORT, MAX_EFFORT],
+  [XHIGH_EFFORT, MAX_EFFORT],
 ]);
 
 // `opencode run [options] <message>`: the message is positional (`--prompt` would print help with exit 0).
 const readOpencodeReply = async (attempt: RefineAttempt, executable: string, signal: AbortSignal): Promise<string> => {
   const effort = attempt.effort.toLowerCase();
   const variant = OPENCODE_VARIANTS.get(effort) ?? "";
-  const model = readNamedModel(attempt.model, ["default", "opencode", "auto"]);
+  const model = readNamedModel(attempt.model, [DEFAULT_MODEL_NAME, OPENCODE_PROVIDER_ID, AUTO_VALUE]);
   const prompt = createRefinePrompt(attempt.draft);
   const argumentList = [
-    "run",
+    RUN_COMMAND,
     "--format",
-    "json",
-    ...listOptionalFlag("-m", model),
+    JSON_OUTPUT_VALUE,
+    ...listOptionalFlag(MODEL_SHORT_FLAG, model),
     ...listOptionalFlag("--variant", variant),
     prompt,
   ];
@@ -300,7 +337,9 @@ const readOpencodeReply = async (attempt: RefineAttempt, executable: string, sig
 
   const isCliHelpReply = isCliHelpScreen(reply);
   if (isCliHelpReply) {
-    return failAttempt(OPENCODE_HELP_DETAIL);
+    return failAttempt(
+      "opencode printed its CLI help instead of a reply (invoke as: opencode run -m provider/model --format json <prompt>)",
+    );
   }
 
   return reply;
@@ -309,22 +348,28 @@ const readOpencodeReply = async (attempt: RefineAttempt, executable: string, sig
 const readClaudeReply = async (attempt: RefineAttempt, executable: string, signal: AbortSignal): Promise<string> => {
   const prompt = createRefinePrompt(attempt.draft);
   const model = attempt.model.trim();
-  const argumentList = ["-p", prompt, "--output-format", "text", ...listOptionalFlag("--model", model)];
+  const argumentList = [
+    PROMPT_SHORT_FLAG,
+    prompt,
+    OUTPUT_FORMAT_FLAG,
+    TEXT_OUTPUT_VALUE,
+    ...listOptionalFlag(MODEL_LONG_FLAG, model),
+  ];
   const cliRun = await runSucceeded(attempt, { executable, args: argumentList }, signal);
   return readDocumentOrPlainReply(cliRun);
 };
 
 // agy accepts low/medium/high only.
 const AGY_EFFORTS = new Map([
-  ["minimal", "low"],
-  ["low", "low"],
-  ["medium", "medium"],
-  ["high", "high"],
-  ["xhigh", "high"],
-  ["max", "high"],
+  [MINIMAL_EFFORT, LOW_EFFORT],
+  [LOW_EFFORT, LOW_EFFORT],
+  [MEDIUM_EFFORT, MEDIUM_EFFORT],
+  [HIGH_EFFORT, HIGH_EFFORT],
+  [XHIGH_EFFORT, HIGH_EFFORT],
+  [MAX_EFFORT, HIGH_EFFORT],
 ]);
 
-const GEMINI_DEFAULT_MODELS = ["default", "gemini", "auto"];
+const GEMINI_DEFAULT_MODELS = [DEFAULT_MODEL_NAME, GEMINI_PROVIDER_ID, AUTO_VALUE];
 
 // -p and --print take the next argument as the prompt.
 const listAgyArgumentList = (attempt: RefineAttempt): ReadonlyArray<string> => {
@@ -333,9 +378,9 @@ const listAgyArgumentList = (attempt: RefineAttempt): ReadonlyArray<string> => {
   const agyEffort = AGY_EFFORTS.get(effort) ?? "";
   const prompt = createRefinePrompt(attempt.draft);
   return [
-    "--output-format",
-    "json",
-    ...listOptionalFlag("--model", model),
+    OUTPUT_FORMAT_FLAG,
+    JSON_OUTPUT_VALUE,
+    ...listOptionalFlag(MODEL_LONG_FLAG, model),
     ...listOptionalFlag("--effort", agyEffort),
     "--print",
     prompt,
@@ -345,14 +390,14 @@ const listAgyArgumentList = (attempt: RefineAttempt): ReadonlyArray<string> => {
 const listGeminiArgumentList = (attempt: RefineAttempt): ReadonlyArray<string> => {
   const model = readNamedModel(attempt.model, GEMINI_DEFAULT_MODELS);
   const prompt = createRefinePrompt(attempt.draft);
-  return ["-p", prompt, ...listOptionalFlag("-m", model)];
+  return [PROMPT_SHORT_FLAG, prompt, ...listOptionalFlag(MODEL_SHORT_FLAG, model)];
 };
 
 // The gemini provider runs Google's gemini, or Antigravity's agy when only agy is installed.
 const listGeminiFamilyArgumentList = (attempt: RefineAttempt, executable: string): ReadonlyArray<string> => {
   const cliName = path.basename(executable).toLowerCase();
 
-  const isAgy = cliName === "agy";
+  const isAgy = cliName === AGY_PROVIDER_ID;
   if (isAgy) {
     return listAgyArgumentList(attempt);
   }
@@ -366,36 +411,42 @@ const readGeminiReply = async (attempt: RefineAttempt, executable: string, signa
   return readDocumentOrPlainReply(cliRun);
 };
 
-const PI_THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "off", "max"];
-
 const readPiThinking = (effort: string): string => {
   const isEffortEmpty = effort === "";
   if (isEffortEmpty) {
     return "";
   }
 
-  const isKnownThinkingLevel = PI_THINKING_LEVELS.includes(effort);
+  const isKnownThinkingLevel = [
+    MINIMAL_EFFORT,
+    LOW_EFFORT,
+    MEDIUM_EFFORT,
+    HIGH_EFFORT,
+    XHIGH_EFFORT,
+    "off",
+    MAX_EFFORT,
+  ].includes(effort);
   if (isKnownThinkingLevel) {
     return effort;
   }
 
-  return "low";
+  return LOW_EFFORT;
 };
 
 // pi (pi-coding-agent) print mode: no tools, no saved session; the model may carry a ":thinking" suffix.
 const readPiReply = async (attempt: RefineAttempt, executable: string, signal: AbortSignal): Promise<string> => {
   const effort = attempt.effort.toLowerCase();
   const thinking = readPiThinking(effort);
-  const model = readNamedModel(attempt.model, ["default", "pi-latest"]);
+  const model = readNamedModel(attempt.model, [DEFAULT_MODEL_NAME, "pi-latest"]);
   const prompt = createRefinePrompt(attempt.draft);
   const argumentList = [
     "--no-tools",
     "--no-session",
     "--mode",
-    "text",
-    ...listOptionalFlag("--model", model),
+    TEXT_OUTPUT_VALUE,
+    ...listOptionalFlag(MODEL_LONG_FLAG, model),
     ...listOptionalFlag("--thinking", thinking),
-    "-p",
+    PROMPT_SHORT_FLAG,
     prompt,
   ];
   const cliRun = await runSucceeded(attempt, { executable, args: argumentList }, signal);
@@ -408,12 +459,12 @@ type ProviderCall = {
 };
 
 const PROVIDER_CALLS: Readonly<Record<ProviderId, ProviderCall>> = {
-  codex: { binaries: ["codex"], reply: readCodexReply },
+  codex: { binaries: [CODEX_PROVIDER_ID], reply: readCodexReply },
   grok: { binaries: ["grok", "agent"], reply: readGrokReply },
   ollama: { binaries: ["ollama"], reply: readOllamaReply },
-  opencode: { binaries: ["opencode"], reply: readOpencodeReply },
+  opencode: { binaries: [OPENCODE_PROVIDER_ID], reply: readOpencodeReply },
   claude: { binaries: ["claude"], reply: readClaudeReply },
-  gemini: { binaries: ["gemini", "agy"], reply: readGeminiReply },
+  gemini: { binaries: [GEMINI_PROVIDER_ID, AGY_PROVIDER_ID], reply: readGeminiReply },
   pi: { binaries: ["pi", "pie"], reply: readPiReply },
 };
 

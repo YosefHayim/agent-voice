@@ -11,11 +11,10 @@ import {
 } from "./provider-models.js";
 import { DEFAULT_REFINE_EFFORT, readCodexLastGoodModel, readSavedChoice } from "./refine-choices.js";
 
+const CODEX_PROVIDER_ID = "codex";
+
 // ASCII hyphens: AppleScript "choose from list" can choke on em dashes.
 export const SKIP_REFINE_LABEL = "-- Skip refine (keep the dictated text) --";
-
-const NO_PROVIDERS_MESSAGE =
-  "No agent CLI found on PATH (codex, claude, gemini, grok, ollama, opencode, pi). Install one, then try again.";
 
 export interface RefinePick {
   readonly provider: ProviderId;
@@ -23,7 +22,6 @@ export interface RefinePick {
   readonly effort: string;
 }
 
-const PICKER_TITLE = "agent-voice refine";
 const DIALOG_TIMEOUT_MS = 300_000;
 const ALERT_TIMEOUT_MS = 60_000;
 
@@ -87,7 +85,7 @@ const chooseFromList = async (request: {
   const prompt = escapeAppleScriptLiteral(request.prompt);
   const script = `try
   set theList to ${labelList}
-  set theChoice to choose from list theList with title "${PICKER_TITLE}" with prompt "${prompt}" default items {item 1 of theList} OK button name "Use" cancel button name "Cancel"
+  set theChoice to choose from list theList with title "${"agent-voice refine"}" with prompt "${prompt}" default items {item 1 of theList} OK button name "Use" cancel button name "Cancel"
   if theChoice is false then
     return "CANCEL"
   end if
@@ -106,7 +104,9 @@ end try`;
 
 const showAlert = async (request: { readonly title: string; readonly message: string }): Promise<void> => {
   const title = escapeAppleScriptLiteral(request.title);
-  const shortMessage = request.message.slice(0, 900);
+  const shortMessageCharacters = 900;
+
+  const shortMessage = request.message.slice(0, shortMessageCharacters);
   const message = escapeAppleScriptLiteral(shortMessage);
   const script = `try\n  display alert "${title}" message "${message}" as warning buttons {"OK"} default button "OK"\nend try`;
   try {
@@ -148,7 +148,7 @@ const readSavedCodexModel = (): string => {
     return "";
   }
 
-  const isNotSavedCodex = saved.provider !== "codex";
+  const isNotSavedCodex = saved.provider !== CODEX_PROVIDER_ID;
   if (isNotSavedCodex) {
     return "";
   }
@@ -165,7 +165,7 @@ export const listPickerModels = (request: {
   const listed = readListedModels(request.providers, request.provider);
   const preferred = pickPreferredModel(request.preferred, request.provider);
 
-  const isNotCodex = request.provider !== "codex";
+  const isNotCodex = request.provider !== CODEX_PROVIDER_ID;
   if (isNotCodex) {
     return dedupe([preferred, ...listed]);
   }
@@ -219,7 +219,11 @@ export const pickRefineTargetWithDialogs = async (request: {
 
   const hasNoProviders = providers.length === 0;
   if (hasNoProviders) {
-    await showAlert({ title: "No refine providers", message: NO_PROVIDERS_MESSAGE });
+    await showAlert({
+      title: "No refine providers",
+      message:
+        "No agent CLI found on PATH (codex, claude, gemini, grok, ollama, opencode, pi). Install one, then try again.",
+    });
     return null;
   }
 

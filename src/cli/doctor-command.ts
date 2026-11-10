@@ -14,6 +14,44 @@ import { listMissingSupertonicFiles, readSupertonicFolder } from "#src/speech/su
 import { type CommandSpec, type ExitCode, isFlagOn } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
+const DOCTOR_TITLE = "doctor";
+
+const CLIPBOARD_PASTE_PURPOSE = "clipboard refine and long pastes";
+
+const CONFIG_CHECK_NAME = "Config";
+
+const CMUX_CHECK_NAME = "cmux";
+
+const REFINE_PROVIDERS_CHECK_NAME = "Refine providers";
+
+const OFF_MODE = "off";
+
+const SUPERTONIC_VOICES_CHECK_NAME = "Supertonic voices";
+
+const WHISPER_MODEL_CHECK_NAME = "Whisper model";
+
+const AGENT_VOICE_ON_COMMAND = "agent-voice on";
+
+const OSASCRIPT_EXECUTABLE = "osascript";
+
+const MICROPHONE_CHECK_NAME = "Microphone";
+
+const WARN_STATUS = "warn";
+
+const INPUT_MONITORING_CHECK_NAME = "Input Monitoring";
+
+const NOT_ALLOWED_DETAIL = "not allowed";
+
+const ACCESSIBILITY_CHECK_NAME = "Accessibility";
+
+const NODE_CHECK_NAME = "Node.js";
+
+const FAIL_STATUS = "fail";
+
+const MACOS_CHECK_NAME = "macOS";
+
+const OK_STATUS = "ok";
+
 type DoctorStatus = "ok" | "warn" | "fail";
 
 interface DoctorCheck {
@@ -33,16 +71,12 @@ interface SystemTool {
   readonly purpose: string;
 }
 
-const createOkCheck = (name: string, detail: string): DoctorCheck => ({ name, status: "ok", detail });
+const createOkCheck = (name: string, detail: string): DoctorCheck => ({ name, status: OK_STATUS, detail });
 
 const REINSTALL = "Reinstall agent-voice: pnpm install";
 const PRIVACY_PANE = "System Settings → Privacy & Security →";
 const ALLOW_TERMINAL = "allow your terminal app (or the app that runs agent-voice).";
 const MICROPHONE_FIX = `${PRIVACY_PANE} Microphone: ${ALLOW_TERMINAL}`;
-
-// AVCaptureDevice through JXA: 3 is authorized, 0 not asked yet, 1 restricted, 2 denied.
-const MICROPHONE_STATUS_SCRIPT =
-  '$.NSBundle.bundleWithPath("/System/Library/Frameworks/AVFoundation.framework").load; $.NSClassFromString("AVCaptureDevice").authorizationStatusForMediaType("soun")';
 
 // Each native module ships a prebuilt darwin-arm64 binary; loading it proves the install is complete.
 const NATIVE_MODULES: ReadonlyArray<NativeModule> = [
@@ -52,27 +86,20 @@ const NATIVE_MODULES: ReadonlyArray<NativeModule> = [
   { name: "onnxruntime-node (speech)", load: () => import("onnxruntime-node") },
 ];
 
-const SYSTEM_TOOLS: ReadonlyArray<SystemTool> = [
-  { tool: "osascript", purpose: "the pill, ⌘V paste, and the refine picker" },
-  { tool: "afplay", purpose: "speech playback" },
-  { tool: "pbcopy", purpose: "clipboard refine and long pastes" },
-  { tool: "pbpaste", purpose: "clipboard refine and long pastes" },
-];
-
 const checkPlatform = (): DoctorCheck => {
   const isMac = process.platform === "darwin";
 
   const isNotMac = !isMac;
   if (isNotMac) {
     return {
-      name: "macOS",
-      status: "fail",
+      name: MACOS_CHECK_NAME,
+      status: FAIL_STATUS,
       detail: process.platform,
       fix: "agent-voice runs only on macOS.",
     };
   }
 
-  return createOkCheck("macOS", `${process.platform} ${process.arch}`);
+  return createOkCheck(MACOS_CHECK_NAME, `${process.platform} ${process.arch}`);
 };
 
 const minimumNodeMajor = 22;
@@ -84,10 +111,10 @@ const checkNode = (): DoctorCheck => {
   const isTooOld = !isSupported;
   if (isTooOld) {
     const fix = "Install Node 22 or newer: brew install node";
-    return { name: "Node.js", status: "fail", detail: process.versions.node, fix };
+    return { name: NODE_CHECK_NAME, status: FAIL_STATUS, detail: process.versions.node, fix };
   }
 
-  return createOkCheck("Node.js", process.versions.node);
+  return createOkCheck(NODE_CHECK_NAME, process.versions.node);
 };
 
 const checkNativeModule = async (nativeModule: NativeModule): Promise<DoctorCheck> => {
@@ -95,7 +122,7 @@ const checkNativeModule = async (nativeModule: NativeModule): Promise<DoctorChec
     await nativeModule.load();
     return createOkCheck(nativeModule.name, "loads");
   } catch (error) {
-    return { name: nativeModule.name, status: "fail", detail: String(error), fix: REINSTALL };
+    return { name: nativeModule.name, status: FAIL_STATUS, detail: String(error), fix: REINSTALL };
   }
 };
 
@@ -107,7 +134,7 @@ const checkSystemTool = (systemTool: SystemTool): DoctorCheck => {
     const detail = `missing (${systemTool.purpose})`;
     return {
       name: systemTool.tool,
-      status: "fail",
+      status: FAIL_STATUS,
       detail,
       fix: "It ships with macOS; check PATH.",
     };
@@ -122,10 +149,10 @@ const checkAccessibility = (keyboard: Keyboard): DoctorCheck => {
   const isTypingBlocked = !canType;
   if (isTypingBlocked) {
     const fix = `${PRIVACY_PANE} Accessibility: ${ALLOW_TERMINAL}`;
-    return { name: "Accessibility", status: "fail", detail: "not allowed", fix };
+    return { name: ACCESSIBILITY_CHECK_NAME, status: FAIL_STATUS, detail: NOT_ALLOWED_DETAIL, fix };
   }
 
-  return createOkCheck("Accessibility", "agent-voice can type at the caret");
+  return createOkCheck(ACCESSIBILITY_CHECK_NAME, "agent-voice can type at the caret");
 };
 
 const checkInputMonitoring = (keyboard: Keyboard): DoctorCheck => {
@@ -134,10 +161,10 @@ const checkInputMonitoring = (keyboard: Keyboard): DoctorCheck => {
   const isReadingBlocked = !canReadKeys;
   if (isReadingBlocked) {
     const fix = `${PRIVACY_PANE} Input Monitoring: ${ALLOW_TERMINAL}`;
-    return { name: "Input Monitoring", status: "warn", detail: "not allowed", fix };
+    return { name: INPUT_MONITORING_CHECK_NAME, status: WARN_STATUS, detail: NOT_ALLOWED_DETAIL, fix };
   }
 
-  return createOkCheck("Input Monitoring", "agent-voice can read keyboard state");
+  return createOkCheck(INPUT_MONITORING_CHECK_NAME, "agent-voice can read keyboard state");
 };
 
 const checkKeyboard = async (): Promise<ReadonlyArray<DoctorCheck>> => {
@@ -145,38 +172,45 @@ const checkKeyboard = async (): Promise<ReadonlyArray<DoctorCheck>> => {
     const keyboard = await loadKeyboard();
     return [checkAccessibility(keyboard), checkInputMonitoring(keyboard)];
   } catch (error) {
-    return [{ name: "Keyboard access", status: "fail", detail: describeError(error), fix: REINSTALL }];
+    return [{ name: "Keyboard access", status: FAIL_STATUS, detail: describeError(error), fix: REINSTALL }];
   }
 };
 
 const checkMicrophoneAuthorization = (authorization: string): DoctorCheck => {
   const isAllowed = authorization === "3";
   if (isAllowed) {
-    return createOkCheck("Microphone", "allowed");
+    return createOkCheck(MICROPHONE_CHECK_NAME, "allowed");
   }
 
   const isNotAskedYet = authorization === "0";
   if (isNotAskedYet) {
     const fix = "Run agent-voice on and accept the prompt.";
-    return { name: "Microphone", status: "warn", detail: "not asked yet", fix };
+    return { name: MICROPHONE_CHECK_NAME, status: WARN_STATUS, detail: "not asked yet", fix };
   }
 
-  return { name: "Microphone", status: "fail", detail: "denied", fix: MICROPHONE_FIX };
+  return { name: MICROPHONE_CHECK_NAME, status: FAIL_STATUS, detail: "denied", fix: MICROPHONE_FIX };
 };
 
 const checkMicrophone = async (): Promise<DoctorCheck> => {
   try {
+    const timeoutMilliseconds = 10_000;
+
     const authorizationRun = await runCli({
-      executable: "osascript",
-      args: ["-l", "JavaScript", "-e", MICROPHONE_STATUS_SCRIPT],
-      timeoutMs: 10_000,
+      executable: OSASCRIPT_EXECUTABLE,
+      args: [
+        "-l",
+        "JavaScript",
+        "-e",
+        '$.NSBundle.bundleWithPath("/System/Library/Frameworks/AVFoundation.framework").load; $.NSClassFromString("AVCaptureDevice").authorizationStatusForMediaType("soun")',
+      ],
+      timeoutMs: timeoutMilliseconds,
       signal: new AbortController().signal,
     });
     const authorization = authorizationRun.stdout.trim();
     return checkMicrophoneAuthorization(authorization);
   } catch (error) {
     const detail = `could not ask macOS: ${describeError(error)}`;
-    return { name: "Microphone", status: "warn", detail, fix: MICROPHONE_FIX };
+    return { name: MICROPHONE_CHECK_NAME, status: WARN_STATUS, detail, fix: MICROPHONE_FIX };
   }
 };
 
@@ -197,9 +231,9 @@ const checkHooks = (): ReadonlyArray<DoctorCheck> => {
 
     return {
       name,
-      status: "warn",
+      status: WARN_STATUS,
       detail: `not registered in ${settings.file}`,
-      fix: "agent-voice on",
+      fix: AGENT_VOICE_ON_COMMAND,
     };
   });
 };
@@ -211,15 +245,15 @@ const checkWhisperModel = (settings: Settings): DoctorCheck => {
   const isModelAbsent = !isWhisperModelDownloaded(model);
   if (isModelAbsent) {
     return {
-      name: "Whisper model",
-      status: "warn",
+      name: WHISPER_MODEL_CHECK_NAME,
+      status: WARN_STATUS,
       detail: `${model.label} not downloaded`,
-      fix: "agent-voice on",
+      fix: AGENT_VOICE_ON_COMMAND,
     };
   }
 
   const modelPath = readWhisperModelPath(model);
-  return createOkCheck("Whisper model", modelPath);
+  return createOkCheck(WHISPER_MODEL_CHECK_NAME, modelPath);
 };
 
 const checkSupertonicVoices = (settings: Settings): DoctorCheck => {
@@ -228,54 +262,54 @@ const checkSupertonicVoices = (settings: Settings): DoctorCheck => {
   const isEverythingPresent = missingFiles.length === 0;
   if (isEverythingPresent) {
     const folder = readSupertonicFolder();
-    return createOkCheck("Supertonic voices", folder);
+    return createOkCheck(SUPERTONIC_VOICES_CHECK_NAME, folder);
   }
 
-  const isSpeechOff = settings.speechMode === "off";
+  const isSpeechOff = settings.speechMode === OFF_MODE;
   if (isSpeechOff) {
-    return createOkCheck("Supertonic voices", "not needed (speech is off)");
+    return createOkCheck(SUPERTONIC_VOICES_CHECK_NAME, "not needed (speech is off)");
   }
 
   const detail = `${String(missingFiles.length)} files missing`;
-  return { name: "Supertonic voices", status: "warn", detail, fix: "agent-voice on" };
+  return { name: SUPERTONIC_VOICES_CHECK_NAME, status: WARN_STATUS, detail, fix: AGENT_VOICE_ON_COMMAND };
 };
 
 const checkRefineProviders = (providers: ReadonlyArray<DiscoveredProvider>): DoctorCheck => {
   const isNoProviderFound = providers.length === 0;
   if (isNoProviderFound) {
     const fix = "Install one of codex, claude, gemini, grok, ollama, opencode, pi.";
-    return { name: "Refine providers", status: "fail", detail: "no agent CLI on PATH", fix };
+    return { name: REFINE_PROVIDERS_CHECK_NAME, status: FAIL_STATUS, detail: "no agent CLI on PATH", fix };
   }
 
   const names = providers.map((provider) => provider.id).join(", ");
-  return createOkCheck("Refine providers", names);
+  return createOkCheck(REFINE_PROVIDERS_CHECK_NAME, names);
 };
 
 const checkCmux = (settings: Settings): DoctorCheck => {
   const isSentToCaret = settings.refineSendTo === "caret";
   if (isSentToCaret) {
-    return createOkCheck("cmux", "not needed (refine sends to the caret)");
+    return createOkCheck(CMUX_CHECK_NAME, "not needed (refine sends to the caret)");
   }
 
-  const cmuxPath = findCli("cmux");
+  const cmuxPath = findCli(CMUX_CHECK_NAME);
 
   const isCmuxMissing = cmuxPath == null;
   if (isCmuxMissing) {
     return {
-      name: "cmux",
-      status: "fail",
+      name: CMUX_CHECK_NAME,
+      status: FAIL_STATUS,
       detail: "not on PATH",
       fix: "Install cmux or set refine-send-to caret.",
     };
   }
 
-  return createOkCheck("cmux", cmuxPath);
+  return createOkCheck(CMUX_CHECK_NAME, cmuxPath);
 };
 
 const checkRefine = async (settings: Settings): Promise<ReadonlyArray<DoctorCheck>> => {
-  const isRefineOff = settings.refineMode === "off";
+  const isRefineOff = settings.refineMode === OFF_MODE;
   if (isRefineOff) {
-    return [createOkCheck("Refine", "off")];
+    return [createOkCheck("Refine", OFF_MODE)];
   }
 
   const providers = await discoverProviders({ refresh: true });
@@ -285,7 +319,7 @@ const checkRefine = async (settings: Settings): Promise<ReadonlyArray<DoctorChec
 const checkSettings = async (settings: Settings): Promise<ReadonlyArray<DoctorCheck>> => {
   const refineChecks = await checkRefine(settings);
   return [
-    createOkCheck("Config", "valid"),
+    createOkCheck(CONFIG_CHECK_NAME, "valid"),
     checkWhisperModel(settings),
     checkSupertonicVoices(settings),
     ...refineChecks,
@@ -293,8 +327,8 @@ const checkSettings = async (settings: Settings): Promise<ReadonlyArray<DoctorCh
 };
 
 const createSettingsFailedCheck = (error: unknown): DoctorCheck => ({
-  name: "Config",
-  status: "fail",
+  name: CONFIG_CHECK_NAME,
+  status: FAIL_STATUS,
   detail: describeError(error),
   fix: "Fix the file, or reset a setting: agent-voice config unset <name>",
 });
@@ -318,7 +352,12 @@ const runDoctorChecks = async (): Promise<ReadonlyArray<DoctorCheck>> => {
     checkMicrophone(),
     runSettingChecks(),
   ]);
-  const toolChecks = SYSTEM_TOOLS.map(checkSystemTool);
+  const toolChecks = [
+    { tool: OSASCRIPT_EXECUTABLE, purpose: "the pill, ⌘V paste, and the refine picker" },
+    { tool: "afplay", purpose: "speech playback" },
+    { tool: "pbcopy", purpose: CLIPBOARD_PASTE_PURPOSE },
+    { tool: "pbpaste", purpose: CLIPBOARD_PASTE_PURPOSE },
+  ].map(checkSystemTool);
   const hookChecks = checkHooks();
   return [
     checkPlatform(),
@@ -336,27 +375,27 @@ const printCheck = (check: DoctorCheck): void => {
   const checkLine = `${check.name}: ${check.detail}`;
   const checkLineWithFix = `${checkLine} — ${check.fix ?? ""}`;
   switch (check.status) {
-    case "ok":
+    case OK_STATUS:
       TerminalUI.printSuccess(checkLine);
       return;
-    case "warn":
+    case WARN_STATUS:
       TerminalUI.printWarning(checkLineWithFix);
       return;
-    case "fail":
+    case FAIL_STATUS:
       TerminalUI.printFailure(checkLineWithFix);
       return;
   }
 };
 
 const printChecks = (checks: ReadonlyArray<DoctorCheck>): void => {
-  TerminalUI.printIntro("doctor");
+  TerminalUI.printIntro(DOCTOR_TITLE);
   for (const check of checks) {
     printCheck(check);
   }
 };
 
 export const doctorCommand: CommandSpec = {
-  name: "doctor",
+  name: DOCTOR_TITLE,
   description: "Check macOS, native modules, system tools, models, permissions, and agent hooks",
   flags: {
     json: { kind: "boolean", description: "Print one JSON document" },
@@ -372,7 +411,7 @@ export const doctorCommand: CommandSpec = {
       printChecks(checks);
     }
 
-    const failedCount = checks.filter((check) => check.status === "fail").length;
+    const failedCount = checks.filter((check) => check.status === FAIL_STATUS).length;
 
     const isNoCheckFailed = failedCount <= 0;
     if (isNoCheckFailed) {

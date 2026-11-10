@@ -1,11 +1,13 @@
 import type { CommandSpec, FlagSpec, PositionalSpec } from "./command-spec.js";
 
+const NEWLINE = "\n";
+
+const COMMANDS_SECTION_TITLE = "Commands";
+
 interface HelpLine {
   readonly label: string;
   readonly description: string;
 }
-
-const INDENT = "  ";
 
 const flagUsage = (flagName: string, flag: FlagSpec): string => {
   const isBooleanFlag = flag.kind === "boolean";
@@ -43,7 +45,7 @@ const readUsageLabel = (commandPath: string, command: CommandSpec): string => {
 
 const listTableLines = (storedList: ReadonlyArray<HelpLine>): ReadonlyArray<string> => {
   const labelWidth = Math.max(...storedList.map((helpLine) => helpLine.label.length));
-  return storedList.map((helpLine) => `${INDENT}${helpLine.label.padEnd(labelWidth)}  ${helpLine.description}`);
+  return storedList.map((helpLine) => `${"  "}${helpLine.label.padEnd(labelWidth)}  ${helpLine.description}`);
 };
 
 const listSectionLines = (title: string, storedList: ReadonlyArray<HelpLine>): ReadonlyArray<string> => {
@@ -64,10 +66,10 @@ export const createRootHelp = (commands: ReadonlyArray<CommandSpec>): string => 
     "agent-voice · Hold Shift to dictate into any text field and hear coding-agent replies read aloud.",
     "",
     "Usage: agent-voice <command> [options]",
-    ...listSectionLines("Commands", storedCommandList),
+    ...listSectionLines(COMMANDS_SECTION_TITLE, storedCommandList),
     "",
     "Run agent-voice <command> --help for the options of one command.",
-  ].join("\n");
+  ].join(NEWLINE);
 };
 
 export const createCommandHelp = (commandPath: string, command: CommandSpec): string => {
@@ -87,8 +89,8 @@ export const createCommandHelp = (commandPath: string, command: CommandSpec): st
     `${commandPath} — ${command.description}`,
     "",
     `Usage: ${readUsageLabel(commandPath, command)}`,
-    ...listSectionLines("Commands", storedSubcommandList),
+    ...listSectionLines(COMMANDS_SECTION_TITLE, storedSubcommandList),
     ...listSectionLines("Arguments", storedPositionalList),
     ...listSectionLines("Options", storedFlagList),
-  ].join("\n");
+  ].join(NEWLINE);
 };

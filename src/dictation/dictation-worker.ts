@@ -18,6 +18,8 @@ import { type ClipBuffer, type Microphone, makeClipBuffer, openMicrophone } from
 import { loadTranscriber, readWhisperBackend, type Transcriber } from "./transcriber.js";
 import { ensureWhisperModel, selectWhisperModel } from "./whisper-models.js";
 
+const STARTING_STAGE = "starting";
+
 const stopCheckMilliseconds = 100;
 
 // Waits until `agent-voice off` or `agent-voice reset` asks the worker to stop.
@@ -124,13 +126,15 @@ const loadModelAndRun = async (): Promise<void> => {
   const environment = readEnvironment();
   const model = selectWhisperModel({ environment, config: settings });
   const loading = makeStatusWriter({ model: model.file, backend: readWhisperBackend(), recording: () => false });
-  loading.write("starting", `Loading ${model.label}`);
+  loading.write(STARTING_STAGE, `Loading ${model.label}`);
 
   const modelPath = await ensureWhisperModel({
     model,
     onProgress: (bytes) => {
-      const megabytes = Math.round(bytes / 1e6);
-      loading.write("starting", `Downloading ${model.label}: ${String(megabytes)} MB`);
+      const bytesPerMegabyte = 1e6;
+
+      const megabytes = Math.round(bytes / bytesPerMegabyte);
+      loading.write(STARTING_STAGE, `Downloading ${model.label}: ${String(megabytes)} MB`);
     },
   });
   const loadStarted = performance.now();

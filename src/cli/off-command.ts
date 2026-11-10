@@ -4,13 +4,15 @@ import type { CommandSpec } from "./command-spec.js";
 import { printHookChanges } from "./on-command.js";
 import * as TerminalUI from "./terminal-ui.js";
 
+const OFF_COMMAND_NAME = "off";
+
 export const offCommand: CommandSpec = {
-  name: "off",
+  name: OFF_COMMAND_NAME,
   description: "Stop dictation and speech and remove agent-voice's agent hooks (everything else stays)",
   flags: {},
   positionals: [],
   run: async () => {
-    TerminalUI.printIntro("off");
+    TerminalUI.printIntro(OFF_COMMAND_NAME);
     // Hooks first, so an agent turn that ends meanwhile cannot start a worker after the workers are stopped.
     TerminalUI.printStep("Removing agent-voice's Stop hook from the agent settings");
     const changes = unregisterReplyHooks();

@@ -36,7 +36,9 @@ const TURN_SETTLE_MS = 800;
 const POLL_INTERVAL_MS = 200;
 
 // After Devin exits, long enough for a turn written as it exits to be seen, settle, and be queued.
-const exitGraceMilliseconds = TURN_SETTLE_MS + 2 * POLL_INTERVAL_MS;
+const exitGracePollCount = 2;
+
+const exitGraceMilliseconds = TURN_SETTLE_MS + exitGracePollCount * POLL_INTERVAL_MS;
 
 // The agent messages after the latest user step, joined; the turn ID is the last agent step's ID.
 export const readLatestDevinTurn = (atif: AtifExport): DevinTurn => {

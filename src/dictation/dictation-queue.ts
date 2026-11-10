@@ -16,6 +16,8 @@ import type { Keyboard } from "./keyboard.js";
 import type { Transcriber } from "./transcriber.js";
 import { cleanTranscript, isShortPhrase } from "./transcript-text.js";
 
+const INACTIVE_STAGE = "inactive";
+
 export interface DictationJob {
   readonly samples: Float32Array;
   // Typed when the final decode hears nothing, which happens on short clips.
@@ -182,7 +184,9 @@ const describeNoSpeech = (request: { readonly seconds: string; readonly ranWhisp
 
 const decodeAndDeliverJob = async (pipeline: DictationPipeline, job: DictationJob): Promise<void> => {
   const generation = String(job.generation);
-  const seconds = (job.samples.length / SAMPLE_RATE).toFixed(2);
+  const secondsDecimalPlaces = 2;
+
+  const seconds = (job.samples.length / SAMPLE_RATE).toFixed(secondsDecimalPlaces);
   pipeline.status.write("finishing", `Decoding ${String(job.samples.length)} samples…`);
   const settings = readSettingsOrDefaults();
   const started = performance.now();
@@ -194,7 +198,9 @@ const decodeAndDeliverJob = async (pipeline: DictationPipeline, job: DictationJo
   });
   const dictated = cleanTranscript(transcription.text) || cleanTranscript(job.fallbackCaption);
   const decodeMs = transcription.decodeMs.toFixed(1);
-  const level = transcription.inputLevel.toFixed(4);
+  const inputLevelDecimalPlaces = 4;
+
+  const level = transcription.inputLevel.toFixed(inputLevelDecimalPlaces);
   appendDictationLog(
     `stt gen=${generation} secs=${seconds} decode_ms=${decodeMs} level=${level} whisper=${String(transcription.ranWhisper)} text=${JSON.stringify(dictated)}`,
   );
@@ -202,7 +208,7 @@ const decodeAndDeliverJob = async (pipeline: DictationPipeline, job: DictationJo
   const isNoSpeech = dictated === "";
   if (isNoSpeech) {
     const detail = describeNoSpeech({ seconds, ranWhisper: transcription.ranWhisper });
-    pipeline.status.write("inactive", detail);
+    pipeline.status.write(INACTIVE_STAGE, detail);
     return;
   }
 
@@ -210,7 +216,7 @@ const decodeAndDeliverJob = async (pipeline: DictationPipeline, job: DictationJo
   const delivered = await deliverPrompt({ pipeline, config: settings, prompt });
   const totalMs = (performance.now() - started).toFixed(1);
   appendDictationLog(`delivered gen=${generation} total_ms=${totalMs} text=${JSON.stringify(delivered)}`);
-  pipeline.status.write("inactive", "");
+  pipeline.status.write(INACTIVE_STAGE, "");
 };
 
 const runDictationJob = async (pipeline: DictationPipeline, job: DictationJob): Promise<void> => {
@@ -245,7 +251,7 @@ export const startDictationQueue = (pipeline: DictationPipeline): DictationQueue
 
       const isIdleShowingDetail = isIdle() && showsDetail;
       if (isIdleShowingDetail) {
-        pipeline.status.write("inactive", "");
+        pipeline.status.write(INACTIVE_STAGE, "");
       }
     }, idleDetailHoldMilliseconds);
   };

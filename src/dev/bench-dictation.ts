@@ -9,11 +9,15 @@ import { readSyntheticSpeech, SAMPLE_RATE } from "#src/dictation/clip-audio.js";
 import { loadTranscriber, readWhisperBackend, type Transcriber } from "#src/dictation/transcriber.js";
 import { ensureWhisperModel, whisperModels } from "#src/dictation/whisper-models.js";
 
+const TENTHS_PER_UNIT = 10;
+
+const STRING_KIND = "string";
+
 const { values: fields } = parseArgs({
   options: {
-    models: { type: "string", default: "tiny,base,small,turbo-q5" },
-    seconds: { type: "string", default: "1,2,4" },
-    runs: { type: "string", default: "3" },
+    models: { type: STRING_KIND, default: "tiny,base,small,turbo-q5" },
+    seconds: { type: STRING_KIND, default: "1,2,4" },
+    runs: { type: STRING_KIND, default: "3" },
   },
 });
 
@@ -23,7 +27,7 @@ const listCommaSeparatedList = (commaSeparatedNames: string) =>
     .map((word) => word.trim())
     .filter((word) => word !== "");
 
-const roundToTenth = (amount: number) => Math.round(amount * 10) / 10;
+const roundToTenth = (amount: number) => Math.round(amount * TENTHS_PER_UNIT) / TENTHS_PER_UNIT;
 
 // A malformed --seconds or --runs stops the bench instead of timing an empty clip or no decodes at all.
 const durationsSchema = z.array(z.coerce.number().positive());
@@ -113,6 +117,8 @@ for (const key of modelKeys) {
 
 const backend = readWhisperBackend();
 
+const jsonIndentSpaces = 2;
+
 const benchReport = JSON.stringify(
   {
     backend,
@@ -120,7 +126,7 @@ const benchReport = JSON.stringify(
     models: modelReports,
   },
   null,
-  2,
+  jsonIndentSpaces,
 );
 
 process.stdout.write(`${benchReport}\n`);

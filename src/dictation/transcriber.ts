@@ -69,8 +69,12 @@ const importWhisper = async (): Promise<WhisperModule> => {
 
 const readThreadCount = (): number => {
   const cores = availableParallelism();
-  const atLeastTwo = Math.max(cores, 2);
-  return Math.min(atLeastTwo, 8);
+  const minimumThreadCount = 2;
+
+  const atLeastTwo = Math.max(cores, minimumThreadCount);
+  const maximumThreadCount = 8;
+
+  return Math.min(atLeastTwo, maximumThreadCount);
 };
 
 const THREADS = readThreadCount();

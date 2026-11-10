@@ -1,3 +1,14 @@
+const LISTENING_HOLD_STATUS = "listening";
+
+const CANCEL_EVENT = "cancel";
+
+const SHORTCUT_EVENT = "shortcut";
+
+const NONE_EVENT = "none";
+
+const IDLE_HOLD_STATUS = "idle";
+
+const WAITING_HOLD_STATUS = "waiting";
 export const holdKeyLabels = { shift: "Shift", "right-option": "Right Option" } as const;
 
 export type HoldStatus = "idle" | "waiting" | "shortcut" | "listening";
@@ -21,29 +32,29 @@ export const HOLD_POLL_MS = 8;
 
 const holdSteps: Record<HoldStatus, Record<HoldEvent, HoldStep>> = {
   idle: {
-    holdDown: ["waiting", "schedule"],
-    holdUp: ["idle", "none"],
-    otherDown: ["idle", "none"],
-    holdElapsed: ["idle", "none"],
+    holdDown: [WAITING_HOLD_STATUS, "schedule"],
+    holdUp: [IDLE_HOLD_STATUS, NONE_EVENT],
+    otherDown: [IDLE_HOLD_STATUS, NONE_EVENT],
+    holdElapsed: [IDLE_HOLD_STATUS, NONE_EVENT],
   },
   waiting: {
-    holdDown: ["waiting", "none"],
-    holdUp: ["idle", "tap"],
-    otherDown: ["shortcut", "cancel"],
-    holdElapsed: ["listening", "start"],
+    holdDown: [WAITING_HOLD_STATUS, NONE_EVENT],
+    holdUp: [IDLE_HOLD_STATUS, "tap"],
+    otherDown: [SHORTCUT_EVENT, CANCEL_EVENT],
+    holdElapsed: [LISTENING_HOLD_STATUS, "start"],
   },
   shortcut: {
-    holdDown: ["shortcut", "none"],
-    holdUp: ["idle", "none"],
-    otherDown: ["shortcut", "none"],
-    holdElapsed: ["shortcut", "none"],
+    holdDown: [SHORTCUT_EVENT, NONE_EVENT],
+    holdUp: [IDLE_HOLD_STATUS, NONE_EVENT],
+    otherDown: [SHORTCUT_EVENT, NONE_EVENT],
+    holdElapsed: [SHORTCUT_EVENT, NONE_EVENT],
   },
   // A slow shortcut can outlast the threshold, so another key drops the clip.
   listening: {
-    holdDown: ["listening", "none"],
-    holdUp: ["idle", "stop"],
-    otherDown: ["shortcut", "cancel"],
-    holdElapsed: ["listening", "none"],
+    holdDown: [LISTENING_HOLD_STATUS, NONE_EVENT],
+    holdUp: [IDLE_HOLD_STATUS, "stop"],
+    otherDown: [SHORTCUT_EVENT, CANCEL_EVENT],
+    holdElapsed: [LISTENING_HOLD_STATUS, NONE_EVENT],
   },
 };
 
@@ -71,17 +82,21 @@ const readNextStreaks = (debounce: HoldDebounce, sample: HoldSample) => {
 export const debounceHold = (debounce: HoldDebounce, sample: HoldSample): readonly [HoldDebounce, HoldEdge] => {
   const streaks = readNextStreaks(debounce, sample);
 
-  const isPressed = streaks.downStreak >= 2 && !debounce.isDown;
+  const minimumDownStreakForPress = 2;
+
+  const isPressed = streaks.downStreak >= minimumDownStreakForPress && !debounce.isDown;
   if (isPressed) {
     return [{ isDown: true, ...streaks }, "holdDown"];
   }
 
-  const isReleased = streaks.upStreak >= 4 && debounce.isDown;
+  const minimumUpStreakForRelease = 4;
+
+  const isReleased = streaks.upStreak >= minimumUpStreakForRelease && debounce.isDown;
   if (isReleased) {
     return [{ isDown: false, ...streaks }, "holdUp"];
   }
 
-  return [{ isDown: debounce.isDown, ...streaks }, "none"];
+  return [{ isDown: debounce.isDown, ...streaks }, NONE_EVENT];
 };
 
 type HoldTracker = { readonly debounce: HoldDebounce; readonly heldAtHoldDown: bigint };
@@ -89,7 +104,7 @@ type HoldTracker = { readonly debounce: HoldDebounce; readonly heldAtHoldDown: b
 export const initialHoldTracker: HoldTracker = { debounce: initialHoldDebounce, heldAtHoldDown: 0n };
 
 const listEdgeEvents = (edge: HoldEdge): ReadonlyArray<HoldEvent> => {
-  const isEdgeNone = edge === "none";
+  const isEdgeNone = edge === NONE_EVENT;
   if (isEdgeNone) {
     return [];
   }
@@ -152,12 +167,12 @@ export const readDoubleTapAction = (request: {
 };
 
 export const classifyTap = (request: {
-  readonly lastTapAt: number | undefined;
+  readonly lastTapAt: number | null;
   readonly now: number;
-}): { readonly double: boolean; readonly rememberedTapAt: number | undefined } => {
+}): { readonly double: boolean; readonly rememberedTapAt: number | null } => {
   const double = request.lastTapAt != null && request.now - request.lastTapAt <= DOUBLE_TAP_MS;
   if (double) {
-    return { double, rememberedTapAt: undefined };
+    return { double, rememberedTapAt: null };
   }
 
   return { double, rememberedTapAt: request.now };

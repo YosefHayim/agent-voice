@@ -12,7 +12,11 @@ const appendLogLine = (fileName: "dictation.log" | "speech-worker.log", line: st
 };
 
 export const appendDictationLog = (line: string): void => {
-  const seconds = (Date.now() / 1_000).toFixed(3);
+  const secondsDecimalPlaces = 3;
+
+  const millisecondsPerSecond = 1_000;
+
+  const seconds = (Date.now() / millisecondsPerSecond).toFixed(secondsDecimalPlaces);
   appendLogLine("dictation.log", `${seconds} ${line}`);
 };
 

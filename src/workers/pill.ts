@@ -4,9 +4,16 @@ import { readAgentVoiceHome, readStatusFile } from "#src/settings/agent-voice-ho
 import { removeFileIfExists } from "#src/storage/state-files.js";
 import { readRunningPid, sendSignalToGroup, writePid } from "./worker-processes.js";
 
-// A bottom-centre panel that shows the dictation stage from status.json. It is a JavaScript for Automation script
-// run by `osascript`, so it needs no compiler and no app bundle, and it exits when the worker it serves is gone.
-const PILL_SCRIPT = `
+const PILL_PID_FILE = "pill.pid";
+
+const IGNORE_STDIO = "ignore";
+
+export const startPill = (workerPid: number): ChildProcess => {
+  stopPill();
+  const child = spawn("osascript", ["-l", "JavaScript", "-", String(workerPid), readAgentVoiceHome()], {
+    stdio: ["pipe", IGNORE_STDIO, IGNORE_STDIO],
+  });
+  child.stdin?.end(`
 ObjC.import("Cocoa");
 ObjC.import("QuartzCore");
 ObjC.import("signal");
@@ -195,31 +202,24 @@ function run(argv) {
   }
   return "";
 }
-`;
-
-export const startPill = (workerPid: number): ChildProcess => {
-  stopPill();
-  const child = spawn("osascript", ["-l", "JavaScript", "-", String(workerPid), readAgentVoiceHome()], {
-    stdio: ["pipe", "ignore", "ignore"],
-  });
-  child.stdin?.end(PILL_SCRIPT);
+`);
 
   const hasChildPid = child.pid != null;
   if (hasChildPid) {
-    writePid("pill.pid", child.pid);
+    writePid(PILL_PID_FILE, child.pid);
   }
 
   return child;
 };
 
 export const stopPill = (): void => {
-  const pillPid = readRunningPid("pill.pid");
+  const pillPid = readRunningPid(PILL_PID_FILE);
 
   const isPillRunning = pillPid != null;
   if (isPillRunning) {
     sendSignalToGroup(pillPid, "SIGKILL");
   }
 
-  const pidPath = readStatusFile("pill.pid");
+  const pidPath = readStatusFile(PILL_PID_FILE);
   removeFileIfExists(pidPath);
 };

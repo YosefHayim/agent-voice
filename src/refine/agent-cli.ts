@@ -3,6 +3,28 @@ import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
+const NEWLINE = "\n";
+
+const UTF8_ENCODING = "utf8";
+
+const DATA_EVENT = "data";
+
+const KILL_SIGNAL = "SIGKILL";
+
+const PIPE_STDIO = "pipe";
+
+const PATH_SEPARATOR = ":";
+
+const SHARE_FOLDER_NAME = "share";
+
+const PNPM_FOLDER_NAME = "pnpm";
+
+const LIBRARY_FOLDER_NAME = "Library";
+
+const BIN_FOLDER_NAME = "bin";
+
+const LOCAL_FOLDER_NAME = ".local";
+
 export interface CliRun {
   readonly exitCode: number;
   readonly stdout: string;
@@ -18,13 +40,13 @@ interface FoundCli {
 const listExtraBinFolders = (): ReadonlyArray<string> => {
   const home = homedir();
   return [
-    path.join(home, ".local", "bin"),
-    path.join(home, ".grok", "bin"),
-    path.join(home, ".npm-global", "bin"),
-    path.join(home, "Library", "pnpm"),
-    path.join(home, "Library", "pnpm", "bin"),
-    path.join(home, ".local", "share", "pnpm"),
-    path.join(home, ".local", "share", "pnpm", "bin"),
+    path.join(home, LOCAL_FOLDER_NAME, BIN_FOLDER_NAME),
+    path.join(home, ".grok", BIN_FOLDER_NAME),
+    path.join(home, ".npm-global", BIN_FOLDER_NAME),
+    path.join(home, LIBRARY_FOLDER_NAME, PNPM_FOLDER_NAME),
+    path.join(home, LIBRARY_FOLDER_NAME, PNPM_FOLDER_NAME, BIN_FOLDER_NAME),
+    path.join(home, LOCAL_FOLDER_NAME, SHARE_FOLDER_NAME, PNPM_FOLDER_NAME),
+    path.join(home, LOCAL_FOLDER_NAME, SHARE_FOLDER_NAME, PNPM_FOLDER_NAME, BIN_FOLDER_NAME),
     "/usr/local/bin",
     "/opt/homebrew/bin",
   ];
@@ -32,10 +54,10 @@ const listExtraBinFolders = (): ReadonlyArray<string> => {
 
 const searchPath = (): string => {
   const inheritedPath = process.env.PATH || "/usr/bin:/bin";
-  const inheritedFolders = inheritedPath.split(":");
+  const inheritedFolders = inheritedPath.split(PATH_SEPARATOR);
   const extraFolders = listExtraBinFolders();
   const folders = new Set([...inheritedFolders, ...extraFolders]);
-  return [...folders].filter((folder) => folder !== "").join(":");
+  return [...folders].filter((folder) => folder !== "").join(PATH_SEPARATOR);
 };
 
 const isExecutableFile = (candidate: string): boolean => {
@@ -49,7 +71,7 @@ const isExecutableFile = (candidate: string): boolean => {
 
 // The full path of the first executable with this name on the search path, or null when none is installed.
 export const findCli = (name: string): string | null => {
-  const folders = searchPath().split(":");
+  const folders = searchPath().split(PATH_SEPARATOR);
   const candidates = folders.map((folder) => path.join(folder, name));
   return candidates.find(isExecutableFile) ?? null;
 };
@@ -84,18 +106,18 @@ export const runCli = (request: {
     const child = spawn(request.executable, [...request.args], {
       cwd: homedir(),
       env: { ...process.env, ...request.environment, NO_COLOR: "1", PATH: searchPath() },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", PIPE_STDIO, PIPE_STDIO],
       signal: request.signal,
-      killSignal: "SIGKILL",
+      killSignal: KILL_SIGNAL,
     });
     const stdoutChunks: Array<Buffer> = [];
     const stderrChunks: Array<Buffer> = [];
     const timer = setTimeout(() => {
-      child.kill("SIGKILL");
+      child.kill(KILL_SIGNAL);
       failRun(createCliRunError(request.executable, "timed out"));
     }, request.timeoutMs);
-    child.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+    child.stdout.on(DATA_EVENT, (chunk: Buffer) => stdoutChunks.push(chunk));
+    child.stderr.on(DATA_EVENT, (chunk: Buffer) => stderrChunks.push(chunk));
     child.on("error", (error) => {
       clearTimeout(timer);
       failRun(createCliRunError(request.executable, error.message));
@@ -104,8 +126,8 @@ export const runCli = (request: {
       clearTimeout(timer);
       // A child killed by a signal closes without an exit code; that counts as a failed run.
       const exitCode = code ?? 1;
-      const stdout = Buffer.concat(stdoutChunks).toString("utf8");
-      const stderr = Buffer.concat(stderrChunks).toString("utf8");
+      const stdout = Buffer.concat(stdoutChunks).toString(UTF8_ENCODING);
+      const stderr = Buffer.concat(stderrChunks).toString(UTF8_ENCODING);
       finishRun({ exitCode, stdout, stderr });
     });
   });
@@ -114,7 +136,7 @@ export const readCliReply = (run: CliRun): string => run.stdout.trim() || run.st
 
 // stderr comes first: partial stdout must never hide the error that explains the exit.
 export const readCliFailureReason = (run: CliRun): string =>
-  [run.stderr.trim(), run.stdout.trim()].filter((string) => string !== "").join("\n");
+  [run.stderr.trim(), run.stdout.trim()].filter((string) => string !== "").join(NEWLINE);
 
 export const containsAny = (string: string, markers: ReadonlyArray<string>): boolean => {
   const lowercase = string.toLowerCase();
@@ -123,7 +145,7 @@ export const containsAny = (string: string, markers: ReadonlyArray<string>): boo
 
 export const listNonBlankLines = (string: string): ReadonlyArray<string> =>
   string
-    .split("\n")
+    .split(NEWLINE)
     .map((line) => line.trim())
     .filter((line) => line !== "");
 
