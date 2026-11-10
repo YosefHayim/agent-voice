@@ -1,10 +1,23 @@
-// agent-voice's one Stop entry is added and removed by text edits at jsonc-parser offsets: comments, key order, and spacing
-// of everything else stay byte for byte, and removing the entry right after adding it restores the original text.
-
 import { findNodeAtLocation, getNodeValue, type Node, type ParseError, parseTree } from "jsonc-parser";
 
 import type { AgentId } from "./agent-catalog.js";
 
+const CLOSING_CHARACTER_COUNT = 2;
+
+const ARRAY_TYPE_NAME = "array";
+
+const STOP_HOOK_KEY = "Stop";
+
+const HOOKS_KEY = "hooks";
+
+const COMMAND_KEY = "command";
+
+const NEWLINE = "\n";
+
+const OBJECT_TYPE_NAME = "object";
+
+// agent-voice's one Stop entry is added and removed by text edits at jsonc-parser offsets: comments, key order, and spacing
+// of everything else stay byte for byte, and removing the entry right after adding it restores the original text.
 export interface SettingsEdit {
   readonly source: string;
   readonly changed: boolean;
@@ -56,7 +69,7 @@ const parseSettings = (code: string): Node => {
   const errors: Array<ParseError> = [];
   const root = parseTree(code, errors, { allowTrailingComma: true, disallowComments: false });
 
-  const isRootObject = root?.type === "object";
+  const isRootObject = root?.type === OBJECT_TYPE_NAME;
 
   const isSettingsUnreadable = errors.length > 0 || !isRootObject;
   if (isSettingsUnreadable) {
@@ -67,7 +80,7 @@ const parseSettings = (code: string): Node => {
 };
 
 const readLineIndent = (code: string, offset: number): string => {
-  const lineStart = code.lastIndexOf("\n", offset - 1) + 1;
+  const lineStart = code.lastIndexOf(NEWLINE, offset - 1) + 1;
   const line = code.slice(lineStart);
   return /^[ \t]*/u.exec(line)?.[0] || "";
 };
@@ -78,7 +91,7 @@ const stringifyWithIndent = (request: {
   readonly value: unknown;
   readonly unit: string;
   readonly baseIndent: string;
-}) => JSON.stringify(request.value, null, request.unit).split("\n").join(`\n${request.baseIndent}`);
+}) => JSON.stringify(request.value, null, request.unit).split(NEWLINE).join(`\n${request.baseIndent}`);
 
 const splice = (code: string, edit: { readonly offset: number; readonly length: number; readonly text: string }) =>
   code.slice(0, edit.offset) + edit.text + code.slice(edit.offset + edit.length);
@@ -106,7 +119,7 @@ const appendMember = (request: {
   const innerIndent = outerIndent + readIndentUnit(request.source);
   return splice(request.source, {
     offset: request.container.offset + 1,
-    length: request.container.length - 2,
+    length: request.container.length - CLOSING_CHARACTER_COUNT,
     text: `\n${innerIndent}${request.member(innerIndent)}\n${outerIndent}`,
   });
 };
@@ -142,13 +155,13 @@ const removeMember = (request: {
 
   return splice(request.source, {
     offset: request.container.offset + 1,
-    length: request.container.length - 2,
+    length: request.container.length - CLOSING_CHARACTER_COUNT,
     text: "",
   });
 };
 
 const readHookCommand = (hook: Node): string => {
-  const commandNode = findNodeAtLocation(hook, ["command"]);
+  const commandNode = findNodeAtLocation(hook, [COMMAND_KEY]);
 
   const isThereNoCommandNode = commandNode == null;
   if (isThereNoCommandNode) {
@@ -161,17 +174,17 @@ const readHookCommand = (hook: Node): string => {
 };
 
 const findReplyHook = (root: Node, hits: (command: string) => boolean): ReplyHookLocation | null => {
-  const stopArray = findNodeAtLocation(root, ["hooks", "Stop"]);
+  const stopArray = findNodeAtLocation(root, [HOOKS_KEY, STOP_HOOK_KEY]);
 
-  const isStopArrayTypeNotArray = stopArray?.type !== "array";
+  const isStopArrayTypeNotArray = stopArray?.type !== ARRAY_TYPE_NAME;
   if (isStopArrayTypeNotArray) {
     return null;
   }
 
   const locations = (stopArray.children || []).flatMap((group) => {
-    const groupHooks = findNodeAtLocation(group, ["hooks"]);
+    const groupHooks = findNodeAtLocation(group, [HOOKS_KEY]);
 
-    const isGroupHooksTypeNotArray = groupHooks?.type !== "array";
+    const isGroupHooksTypeNotArray = groupHooks?.type !== ARRAY_TYPE_NAME;
     if (isGroupHooksTypeNotArray) {
       return [];
     }
@@ -186,9 +199,8 @@ const findReplyHook = (root: Node, hits: (command: string) => boolean): ReplyHoo
 };
 
 const isEmptyContainer = (node: Node | undefined): boolean =>
-  (node?.type === "array" || node?.type === "object") && (node.children || []).length === 0;
+  (node?.type === ARRAY_TYPE_NAME || node?.type === OBJECT_TYPE_NAME) && (node.children || []).length === 0;
 
-// Remove an object property, or nothing, once removing agent-voice's entry left its value empty.
 const pruneIfEmpty = (request: { readonly source: string; readonly path: ReadonlyArray<string> }): string => {
   const root = parseSettings(request.source);
   const parentPath = request.path.slice(0, -1);
@@ -216,7 +228,6 @@ const removeHookLine = (code: string, location: ReplyHookLocation): string => {
   return removeMember({ source: code, container: location.stopArray, member: location.group });
 };
 
-// A container left empty by the removal goes too.
 export const removeReplyHook = (request: { readonly source: string; readonly agent: AgentId }): SettingsEdit => {
   const root = parseSettings(request.source);
   const location = findReplyHook(root, (command) => isReplyHookCommand(command, request.agent));
@@ -227,23 +238,22 @@ export const removeReplyHook = (request: { readonly source: string; readonly age
   }
 
   const withoutHook = removeHookLine(request.source, location);
-  const withoutStop = pruneIfEmpty({ source: withoutHook, path: ["hooks", "Stop"] });
-  const withoutHooks = pruneIfEmpty({ source: withoutStop, path: ["hooks"] });
+  const withoutStop = pruneIfEmpty({ source: withoutHook, path: [HOOKS_KEY, STOP_HOOK_KEY] });
+  const withoutHooks = pruneIfEmpty({ source: withoutStop, path: [HOOKS_KEY] });
   return { source: withoutHooks, changed: true };
 };
 
-// agent-voice's hook group goes into the Stop array, into a new Stop key in hooks, or into a new hooks key.
 const readHookInsertion = (root: Node, command: string): HookInsertion => {
-  const hookGroup = { hooks: [{ type: "command", command }] };
-  const hooks = findNodeAtLocation(root, ["hooks"]);
-  const stopArray = findNodeAtLocation(root, ["hooks", "Stop"]);
+  const hookGroup = { hooks: [{ type: COMMAND_KEY, command }] };
+  const hooks = findNodeAtLocation(root, [HOOKS_KEY]);
+  const stopArray = findNodeAtLocation(root, [HOOKS_KEY, STOP_HOOK_KEY]);
 
-  const isHooksWrongType = hooks != null && hooks.type !== "object";
+  const isHooksWrongType = hooks != null && hooks.type !== OBJECT_TYPE_NAME;
   if (isHooksWrongType) {
     throw new Error("hooks is not an object");
   }
 
-  const isStopArrayWrongType = stopArray != null && stopArray.type !== "array";
+  const isStopArrayWrongType = stopArray != null && stopArray.type !== ARRAY_TYPE_NAME;
   if (isStopArrayWrongType) {
     throw new Error("hooks.Stop is not an array");
   }

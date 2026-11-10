@@ -13,11 +13,21 @@ import {
 } from "#src/storage/state-files.js";
 import { type CmuxFocus, readCmuxFocus } from "./cmux-focus.js";
 
-const terminalOriginSchema = z.object({ kind: z.literal("terminal") });
+const SECONDS_PER_MINUTE = 60;
+const MINUTES_PER_HOUR = 60;
+
+const REPLY_FILE_SUFFIX = ".json";
+
+const SPEAKING_FILE_SUFFIX = ".speaking";
+
+const CMUX_TARGET = "cmux";
+
+const TERMINAL_TARGET = "terminal";
+
+const terminalOriginSchema = z.object({ kind: z.literal(TERMINAL_TARGET) });
 
 const cmuxOriginSchema = z.object({
-  kind: z.literal("cmux"),
-  // Cmux control socket that can say which surface is focused.
+  kind: z.literal(CMUX_TARGET),
   socketPath: z.string(),
   workspaceId: z.string(),
   surfaceId: z.string(),
@@ -28,7 +38,6 @@ const replyOriginSchema = z.union([terminalOriginSchema, cmuxOriginSchema]);
 export type ReplyOrigin = z.infer<typeof replyOriginSchema>;
 
 const queuedReplySchema = z.object({
-  // Complete agent reply as Markdown.
   markdown: z.string(),
   // Where the agent ran: a plain terminal or a Cmux surface.
   origin: replyOriginSchema,
@@ -36,7 +45,6 @@ const queuedReplySchema = z.object({
   receivedAt: z.number(),
   // The agent's reply or turn ID, else the content token.
   agentReplyId: z.string(),
-  // Agent ID that produced the reply.
   source: z.string(),
 });
 
@@ -44,7 +52,9 @@ export type QueuedReply = z.infer<typeof queuedReplySchema>;
 
 const seenKeysSchema = z.record(z.string(), z.number());
 
-const readNowSeconds = () => Date.now() / 1_000;
+const millisecondsPerSecond = 1_000;
+
+const readNowSeconds = () => Date.now() / millisecondsPerSecond;
 
 const readInboxFolder = () => readStatusFolder("inbox");
 
@@ -55,16 +65,20 @@ export const readMessageToken = (markdown: string): string => {
   const bytes = Buffer.from(markdown, "utf8");
   const hash = bytes.reduce((current, byte) => {
     const mixed = (current ^ BigInt(byte)) * 0x100000001b3n;
-    return BigInt.asUintN(64, mixed);
+    const hashBitCount = 64;
+
+    return BigInt.asUintN(hashBitCount, mixed);
   }, 0xcbf29ce484222325n);
-  const hexHash = hash.toString(16).padStart(16, "0");
+  const hexRadix = 16;
+  const hexDigitCount = 16;
+  const hexHash = hash.toString(hexRadix).padStart(hexDigitCount, "0");
   return `${hexHash}:${bytes.length}`;
 };
 
 export const readSurfaceIdentity = (reply: QueuedReply): string => {
   const { origin } = reply;
 
-  const isOriginUnusable = origin.kind !== "cmux" || origin.workspaceId === "" || origin.surfaceId === "";
+  const isOriginUnusable = origin.kind !== CMUX_TARGET || origin.workspaceId === "" || origin.surfaceId === "";
   if (isOriginUnusable) {
     return "";
   }
@@ -74,7 +88,7 @@ export const readSurfaceIdentity = (reply: QueuedReply): string => {
 
 const replyPlace = (reply: QueuedReply): string => {
   const agentId = reply.source || "unknown";
-  const surface = readSurfaceIdentity(reply) || "terminal";
+  const surface = readSurfaceIdentity(reply) || TERMINAL_TARGET;
   return `${agentId}:${surface}`;
 };
 
@@ -133,7 +147,7 @@ export const removeInboxFiles = (extensions: ReadonlyArray<".json" | ".speaking"
 };
 
 // A claimed reply exists only while the speech worker is speaking it.
-export const isSpeaking = (): boolean => listInboxFiles(".speaking").length > 0;
+export const isSpeaking = (): boolean => listInboxFiles(SPEAKING_FILE_SUFFIX).length > 0;
 
 const readSeenKeys = (): ReadonlyMap<string, number> => {
   const now = readNowSeconds();
@@ -144,7 +158,8 @@ const readSeenKeys = (): ReadonlyMap<string, number> => {
     return new Map();
   }
 
-  const seenTtlSeconds = 24 * 60 * 60;
+  const hoursPerDay = 24;
+  const seenTtlSeconds = hoursPerDay * MINUTES_PER_HOUR * SECONDS_PER_MINUTE;
   const freshStamps = Object.entries(savedStamps).filter(([, stamp]) => now - stamp <= seenTtlSeconds);
   return new Map(freshStamps);
 };
@@ -191,8 +206,12 @@ export const queueReply = (request: {
   const folder = readInboxFolder();
   makePrivateFolder(folder);
   // Wall-clock milliseconds order replies across processes; the high-resolution counter orders them within one.
-  const milliseconds = Date.now().toString().padStart(15, "0");
-  const counter = process.hrtime.bigint().toString().padStart(20, "0");
+  const timestampDigits = 15;
+
+  const milliseconds = Date.now().toString().padStart(timestampDigits, "0");
+  const counterDigits = 20;
+
+  const counter = process.hrtime.bigint().toString().padStart(counterDigits, "0");
   const replyFile = path.join(folder, `${milliseconds}-${counter}-${randomUUID()}.json`);
   writeDocumentAtomically({ path: replyFile, value: reply });
 };
@@ -204,14 +223,14 @@ interface PendingReply {
 
 const isSpeakable = (reply: QueuedReply): boolean => {
   const ageSeconds = readNowSeconds() - reply.receivedAt;
-  const pendingTtlSeconds = 60 * 60;
+  const pendingTtlSeconds = MINUTES_PER_HOUR * SECONDS_PER_MINUTE;
   const isExpired = reply.receivedAt > 0 && ageSeconds > pendingTtlSeconds;
   return reply.markdown.trim() !== "" && !isExpired;
 };
 
 // Oldest first; an unreadable, empty, or expired file is deleted.
 const listPendingReplies = (): ReadonlyArray<PendingReply> => {
-  const files = listInboxFiles(".json");
+  const files = listInboxFiles(REPLY_FILE_SUFFIX);
   return files.flatMap((file) => {
     const storedReply = readDocumentFile({ path: file, schema: queuedReplySchema });
 
@@ -253,7 +272,7 @@ const isSpeaksNow = async (request: {
   const { origin } = request.reply;
   const surface = readSurfaceIdentity(request.reply);
 
-  const isSpokenAtOnce = request.mode === "immediate" || surface === "" || origin.kind !== "cmux";
+  const isSpokenAtOnce = request.mode === "immediate" || surface === "" || origin.kind !== CMUX_TARGET;
   if (isSpokenAtOnce) {
     return true;
   }
@@ -264,7 +283,7 @@ const isSpeaksNow = async (request: {
 
 // Another process may have claimed or deleted the file since it was listed.
 const claimFile = (file: string): string | null => {
-  const claimed = file.replace(/\.json$/u, ".speaking");
+  const claimed = file.replace(/\.json$/u, SPEAKING_FILE_SUFFIX);
   try {
     renameSync(file, claimed);
     return claimed;
@@ -279,7 +298,7 @@ export const claimNextReply = async (mode: Settings["speechMode"]): Promise<Pend
 
   const isModeOff = mode === "off";
   if (isModeOff) {
-    removeInboxFiles([".json"]);
+    removeInboxFiles([REPLY_FILE_SUFFIX]);
     return null;
   }
 

@@ -30,15 +30,15 @@ interface WatchStatus {
 
 const noTurn: DevinTurn = { markdown: "", turnId: "" };
 
-// How long a turn ID must stay the same before the turn is queued.
 const TURN_SETTLE_MS = 800;
 
 const POLL_INTERVAL_MS = 200;
 
 // After Devin exits, long enough for a turn written as it exits to be seen, settle, and be queued.
-const exitGraceMilliseconds = TURN_SETTLE_MS + 2 * POLL_INTERVAL_MS;
+const exitGracePollCount = 2;
 
-// The agent messages after the latest user step, joined; the turn ID is the last agent step's ID.
+const exitGraceMilliseconds = TURN_SETTLE_MS + exitGracePollCount * POLL_INTERVAL_MS;
+
 export const readLatestDevinTurn = (atif: AtifExport): DevinTurn => {
   const lastUser = atif.steps.map((step) => step.source).lastIndexOf("user");
   const agentSteps = atif.steps
@@ -130,7 +130,6 @@ const pollTurn = (exportFile: string, watchStatus: WatchStatus): WatchStatus => 
   return settleTurn(exportFile, tracked);
 };
 
-// Polls until shutdown is aborted. A read failure is logged and ends the watch.
 const watchDevinExport = async (exportFile: string, shutdown: AbortSignal): Promise<void> => {
   try {
     const firstTurn = readTurn(exportFile);

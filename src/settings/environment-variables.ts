@@ -1,4 +1,3 @@
-// The names are the environment variables themselves, so each one can be read as process.env.<name>.
 export interface AgentVoiceEnvironment {
   readonly AGENT_VOICE_HOME: string;
   readonly AGENT_VOICE_CONFIG_FILE: string;

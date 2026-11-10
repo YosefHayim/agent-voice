@@ -1,4 +1,3 @@
-// Exit codes: 0 ok, 1 failed, 2 bad usage. Commands return one; only main.ts sets the process exit code.
 export type ExitCode = 0 | 1 | 2;
 
 export type ParsedFlags = Readonly<Record<string, string | boolean | ReadonlyArray<string | boolean> | undefined>>;

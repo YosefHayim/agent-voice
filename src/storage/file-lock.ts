@@ -20,7 +20,9 @@ type HeldLock = { readonly descriptor: number; readonly filePath: string };
 // Another open file holds the lock, in any process, this one included. Returns null in that case.
 const openLocked = (filePath: string): number | null => {
   try {
-    return openSync(filePath, lockOpenFlags, 0o600);
+    const lockFileMode = 0o600;
+
+    return openSync(filePath, lockOpenFlags, lockFileMode);
   } catch (error) {
     const isHeldElsewhere = isErrorWithCode(error, "EAGAIN");
     if (isHeldElsewhere) {

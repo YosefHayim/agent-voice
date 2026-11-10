@@ -1,6 +1,3 @@
-// whisper.cpp in-process through @fugood/whisper.node (Metal on Apple Silicon): the model loads once per worker,
-// and one context serves the final decode and the live caption, one at a time.
-
 import { availableParallelism } from "node:os";
 import path from "node:path";
 
@@ -15,10 +12,11 @@ export interface Transcription {
   readonly decodeMs: number;
   // RMS of the capture before normalizing, for the log.
   readonly inputLevel: number;
-  // False when the clip was silence and Whisper was skipped.
   readonly ranWhisper: boolean;
 }
 
+// whisper.cpp in-process through @fugood/whisper.node (Metal on Apple Silicon): the model loads once per worker,
+// and one context serves the final decode and the live caption, one at a time.
 export interface Transcriber {
   readonly modelName: string;
   readonly transcribe: (request: TranscribeRequest) => Promise<Transcription>;
@@ -69,8 +67,12 @@ const importWhisper = async (): Promise<WhisperModule> => {
 
 const readThreadCount = (): number => {
   const cores = availableParallelism();
-  const atLeastTwo = Math.max(cores, 2);
-  return Math.min(atLeastTwo, 8);
+  const minimumThreadCount = 2;
+
+  const atLeastTwo = Math.max(cores, minimumThreadCount);
+  const maximumThreadCount = 8;
+
+  return Math.min(atLeastTwo, maximumThreadCount);
 };
 
 const THREADS = readThreadCount();

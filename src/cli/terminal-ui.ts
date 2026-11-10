@@ -48,7 +48,9 @@ export const printDocument = (document: unknown): void => {
 };
 
 const readUnderline = (title: string): string => {
-  const width = Math.min(title.length, 40);
+  const maximumTitleWidth = 40;
+
+  const width = Math.min(title.length, maximumTitleWidth);
   return "─".repeat(width);
 };
 

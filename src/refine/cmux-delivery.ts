@@ -17,17 +17,36 @@ import {
   runCli,
 } from "./agent-cli.js";
 
+const WORKSPACE_CREATE_STEP = "workspace create";
+
+const WORKSPACE_REF_FIELD = "workspace_ref";
+
+const WORKSPACE_ID_FIELD = "workspace_id";
+
+const WORKSPACE_LIST_STEP = "workspace list";
+
+const WORKSPACE_COMMAND = "workspace";
+
+const MACHINE_READABLE_FLAG = "--json";
+
+const IDENTIFY_COMMAND = "identify";
+
+const SURFACE_SEND_KEY_METHOD = "surface.send_key";
+
+const SURFACE_ID_FIELD = "surface_id";
+
+const SURFACE_REF_FIELD = "surface_ref";
+
+const CMUX_EXECUTABLE = "cmux";
+
 const CMUX_TIMEOUT_MS = 15_000;
 
-const KNOWN_CMUX_PATHS = [
-  "/Applications/cmux.app/Contents/Resources/bin/cmux",
-  "/usr/local/bin/cmux",
-  "/opt/homebrew/bin/cmux",
-];
+const pickKnownCmuxPath = (): string =>
+  ["/Applications/cmux.app/Contents/Resources/bin/cmux", "/usr/local/bin/cmux", "/opt/homebrew/bin/cmux"].find(
+    (candidate) => existsSync(candidate),
+  ) || CMUX_EXECUTABLE;
 
-const pickKnownCmuxPath = (): string => KNOWN_CMUX_PATHS.find((candidate) => existsSync(candidate)) || "cmux";
-
-const pickCmuxExecutable = (): string => findCli("cmux") ?? pickKnownCmuxPath();
+const pickCmuxExecutable = (): string => findCli(CMUX_EXECUTABLE) ?? pickKnownCmuxPath();
 
 // Every failure is an Error that names the cmux step, so the log says which call failed.
 const createCmuxError = (step: string, detail: string): Error => new Error(`cmux ${step}: ${detail}`);
@@ -54,7 +73,6 @@ const readNonEmptyField = (field: unknown): string | null => {
   return field;
 };
 
-// The first key whose value is a non-empty string.
 const readFirstFilledField = (field: unknown, keys: ReadonlyArray<string>): string | null => {
   const stored = readPlainObject(field);
 
@@ -129,10 +147,10 @@ const runCmuxDocument = async (request: {
 const readSurfaceKey = (surface: string): string => {
   const isSurfaceRef = surface.startsWith("surface:");
   if (isSurfaceRef) {
-    return "surface_ref";
+    return SURFACE_REF_FIELD;
   }
 
-  return "surface_id";
+  return SURFACE_ID_FIELD;
 };
 
 export const readSurfaceParameters = (
@@ -153,11 +171,11 @@ const pressEnterKey = async (surface: string): Promise<void> => {
   const enterParameters = readSurfaceParameters(surface, { key: "enter" });
   const returnParameters = readSurfaceParameters(surface, { key: "return" });
   try {
-    await callRpc("surface.send_key", enterParameters);
+    await callRpc(SURFACE_SEND_KEY_METHOD, enterParameters);
   } catch (enterError) {
     console.error({ surface, enterError });
     try {
-      await callRpc("surface.send_key", returnParameters);
+      await callRpc(SURFACE_SEND_KEY_METHOD, returnParameters);
     } catch (returnError) {
       console.error({ surface, returnError });
     }
@@ -189,7 +207,10 @@ const readFocusedOrCaller = (identity: unknown): unknown => {
 };
 
 const identifyFocus = async (): Promise<unknown> => {
-  const identity = await runCmuxDocument({ args: ["identify", "--json", "--id-format", "both"], step: "identify" });
+  const identity = await runCmuxDocument({
+    args: [IDENTIFY_COMMAND, MACHINE_READABLE_FLAG, "--id-format", "both"],
+    step: IDENTIFY_COMMAND,
+  });
   return readFocusedOrCaller(identity);
 };
 
@@ -210,10 +231,13 @@ const readWorkspaces = (listing: unknown): ReadonlyArray<unknown> => {
 
 const listWorkspaces = async (): Promise<ReadonlyArray<unknown>> => {
   try {
-    const listing = await runCmuxDocument({ args: ["workspace", "list", "--json"], step: "workspace list" });
+    const listing = await runCmuxDocument({
+      args: [WORKSPACE_COMMAND, "list", MACHINE_READABLE_FLAG],
+      step: WORKSPACE_LIST_STEP,
+    });
     return readWorkspaces(listing);
   } catch (error) {
-    console.error({ step: "workspace list", error });
+    console.error({ step: WORKSPACE_LIST_STEP, error });
     return [];
   }
 };
@@ -221,9 +245,9 @@ const listWorkspaces = async (): Promise<ReadonlyArray<unknown>> => {
 const readFocusedWorkspaceId = async (): Promise<string> => {
   try {
     const focus = await identifyFocus();
-    return readFirstFilledField(focus, ["workspace_id", "workspace_ref"]) ?? "";
+    return readFirstFilledField(focus, [WORKSPACE_ID_FIELD, WORKSPACE_REF_FIELD]) ?? "";
   } catch (error) {
-    console.error({ step: "identify", error });
+    console.error({ step: IDENTIFY_COMMAND, error });
     return "";
   }
 };
@@ -232,7 +256,7 @@ const readWorkspaceDirectory = (workspace: unknown): string | null =>
   readFirstFilledField(workspace, ["current_directory"]);
 
 const isFocusedWorkspace = (workspace: unknown, focusId: string): boolean => {
-  const id = readFirstFilledField(workspace, ["id", "workspace_id", "ref"]) ?? "";
+  const id = readFirstFilledField(workspace, ["id", WORKSPACE_ID_FIELD, "ref"]) ?? "";
 
   const isUnknownWorkspace = id === "" || focusId === "";
   if (isUnknownWorkspace) {
@@ -301,7 +325,9 @@ export const expandCommandTemplate = (request: {
 export const readWorkspaceTitle = (word: string): string => {
   const firstLine = word.split("\n")[0] || "";
   const characters = [...firstLine.trim()];
-  const shortLine = characters.slice(0, 40).join("");
+  const shortLineCharacterCount = 40;
+
+  const shortLine = characters.slice(0, shortLineCharacterCount).join("");
 
   const isLineEmpty = shortLine === "";
   if (isLineEmpty) {
@@ -323,7 +349,7 @@ const createWorkspaceArgumentList = (request: {
   readonly folder: string;
 }): ReadonlyArray<string> => {
   const title = readWorkspaceTitle(request.promptText);
-  return ["workspace", "create", "--name", title, "--cwd", request.folder, "--focus", "true"];
+  return [WORKSPACE_COMMAND, "create", "--name", title, "--cwd", request.folder, "--focus", "true"];
 };
 
 const runInNewWorkspace = async (request: {
@@ -340,10 +366,10 @@ const runInNewWorkspace = async (request: {
   });
   const createArgumentList = createWorkspaceArgumentList({ promptText: request.promptText, folder: request.folder });
   const created = await runCmuxDocument({
-    args: [...createArgumentList, "--command", command, "--json"],
-    step: "workspace create",
+    args: [...createArgumentList, "--command", command, MACHINE_READABLE_FLAG],
+    step: WORKSPACE_CREATE_STEP,
   });
-  const workspace = readFirstFilledField(created, ["workspace_ref", "workspace_id"]) ?? "?";
+  const workspace = readFirstFilledField(created, [WORKSPACE_REF_FIELD, WORKSPACE_ID_FIELD]) ?? "?";
   return `cmux-new ran a command in workspace ${workspace}`;
 };
 
@@ -356,12 +382,15 @@ const pasteInNewWorkspace = async (request: {
   readonly pressEnter: boolean;
 }): Promise<string> => {
   const createArgumentList = createWorkspaceArgumentList({ promptText: request.promptText, folder: request.folder });
-  const created = await runCmuxDocument({ args: [...createArgumentList, "--json"], step: "workspace create" });
-  const surface = readFirstFilledField(created, ["surface_id", "surface_ref"]);
+  const created = await runCmuxDocument({
+    args: [...createArgumentList, MACHINE_READABLE_FLAG],
+    step: WORKSPACE_CREATE_STEP,
+  });
+  const surface = readFirstFilledField(created, [SURFACE_ID_FIELD, SURFACE_REF_FIELD]);
 
   const hasNoSurface = surface == null;
   if (hasNoSurface) {
-    throw createCmuxError("workspace create", "no surface id in the reply");
+    throw createCmuxError(WORKSPACE_CREATE_STEP, "no surface id in the reply");
   }
 
   await sleep(surfaceReadyDelayMilliseconds);
@@ -393,11 +422,11 @@ const deliverToFocusedSurface = async (request: {
   readonly config: Settings;
 }): Promise<string> => {
   const focus = await identifyFocus();
-  const surface = readFirstFilledField(focus, ["surface_id", "surface_ref"]);
+  const surface = readFirstFilledField(focus, [SURFACE_ID_FIELD, SURFACE_REF_FIELD]);
 
   const hasNoSurface = surface == null;
   if (hasNoSurface) {
-    throw createCmuxError("identify", "no focused surface");
+    throw createCmuxError(IDENTIFY_COMMAND, "no focused surface");
   }
 
   await sendMessageToSurface({

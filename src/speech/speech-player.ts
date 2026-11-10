@@ -10,9 +10,11 @@ import { chunkSpeech, readSpeedFromWordsPerMinute, SPEECH_CHUNK_CHARACTERS } fro
 import type { SupertonicEngine } from "./supertonic.js";
 import { encodeWav } from "./wav-file.js";
 
+const STOPPED_STATUS = "stopped";
+
 // One afplay at a time; `stop` kills it at once and makes the current reply end early.
 export const makeSpeechPlayer = () => {
-  let playing: ChildProcess | undefined;
+  let playing: ChildProcess | null = null;
   let stopped = false;
 
   const play = (wavFile: string): Promise<void> =>
@@ -23,7 +25,7 @@ export const makeSpeechPlayer = () => {
         fail(new Error(`afplay: ${error.message}`, { cause: error }));
       });
       child.on("exit", () => {
-        playing = undefined;
+        playing = null;
         finish();
       });
     });
@@ -56,7 +58,9 @@ const createPieceSynthesizer = (engine: SupertonicEngine, voice: Voice) => {
 
 const chunkFile = (index: number): string => {
   const audioFolder = readStatusFolder("audio");
-  return path.join(audioFolder, `speech-${process.pid}-${index % 2}.wav`);
+  const playbackSlotCount = 2;
+
+  return path.join(audioFolder, `speech-${process.pid}-${index % playbackSlotCount}.wav`);
 };
 
 // The next piece renders while the current one plays, so the first words start quickly.
@@ -78,7 +82,7 @@ export const speakMarkdown = async (request: {
 
       const isStoppedBeforePlay = request.player.isStopped();
       if (isStoppedBeforePlay) {
-        return "stopped";
+        return STOPPED_STATUS;
       }
 
       const hasNextPiece = index + 1 < pieces.length;
@@ -98,13 +102,12 @@ export const speakMarkdown = async (request: {
 
   const isStoppedAtEnd = request.player.isStopped();
   if (isStoppedAtEnd) {
-    return "stopped";
+    return STOPPED_STATUS;
   }
 
   return "completed";
 };
 
-// Returns the length of the WAV file in seconds.
 export const writeMarkdownWav = async (request: {
   readonly engine: SupertonicEngine;
   readonly markdown: string;

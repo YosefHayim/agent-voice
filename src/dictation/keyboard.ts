@@ -1,8 +1,7 @@
-// Reads keys from HID state, which works without an event tap, and posts key events through CoreGraphics.
-
 import { readSettingsOrDefaults } from "#src/settings/config-file.js";
 import type { Settings } from "#src/settings/config-schema.js";
 
+// Reads keys from HID state, which works without an event tap, and posts key events through CoreGraphics.
 export interface Keyboard {
   readonly holdKey: Settings["dictationHoldKey"];
   readonly holdDown: () => boolean;
@@ -96,7 +95,9 @@ const importKoffi = async () => {
 export const loadKeyboard = async (): Promise<Keyboard> => {
   const settings = readSettingsOrDefaults();
   const holdKeys = { shift: SHIFT_KEYS, "right-option": [RIGHT_OPTION_KEY] }[settings.dictationHoldKey];
-  const otherKeys = Array.from({ length: 0x80 }, (_unused, key) => key).filter(
+  const keyCodeCount = 0x80;
+
+  const otherKeys = Array.from({ length: keyCodeCount }, (_unused, key) => key).filter(
     (key) => !holdKeys.includes(key) && key !== CAPS_LOCK_KEY,
   );
   const otherModifiers = MODIFIER_KEYS.filter((key) => !holdKeys.includes(key));

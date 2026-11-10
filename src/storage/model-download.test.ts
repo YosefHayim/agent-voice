@@ -77,12 +77,6 @@ afterEach(async () => {
   rmSync(folder, { recursive: true, force: true });
 });
 
-const DOWNLOADER = `
-const [modulePath, url, destination] = process.argv.slice(1);
-const { downloadFile } = await import(modulePath);
-await downloadFile({ url, destination, onProgress: () => undefined });
-`;
-
 // Another process downloading the same file with the same code, as a second `agent-voice on` or worker would.
 const startDownloader = (request: { readonly url: string; readonly destination: string }) => {
   // Same source condition as run-agent-voice.ts: without it, "#src/*" resolves to dist/, which may not be built.
@@ -94,7 +88,11 @@ const startDownloader = (request: { readonly url: string; readonly destination: 
       "tsx",
       "--input-type=module",
       "-e",
-      DOWNLOADER,
+      `
+const [modulePath, url, destination] = process.argv.slice(1);
+const { downloadFile } = await import(modulePath);
+await downloadFile({ url, destination, onProgress: () => undefined });
+`,
       modelDownloadModule,
       request.url,
       request.destination,

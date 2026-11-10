@@ -14,7 +14,7 @@ import { readWorkerStatus } from "#src/workers/worker-status.js";
 import { type CommandSpec, isFlagOn } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
-const NOT_STARTED = { stage: "starting", detail: "", model: "", backend: "" };
+const OFF_MODE = "off";
 
 const BYTES_PER_MEGABYTE = 1_000_000;
 
@@ -29,7 +29,7 @@ interface ModelLine {
 
 interface DictationStatus {
   readonly running: boolean;
-  readonly pid: number | undefined;
+  readonly pid: number | null;
   readonly stage: string;
   readonly detail: string;
   readonly model: string;
@@ -76,8 +76,8 @@ const listModelLines = (selectedKey: string): ReadonlyArray<ModelLine> =>
 const readDictationStatus = (settings: Settings): DictationStatus => {
   const selected = selectWhisperModel({ environment: readEnvironment(), config: settings });
   const isRunning = isWorkerRunning("dictation");
-  const pid = readPid("dictation.pid") ?? undefined;
-  const saved = readWorkerStatus() ?? NOT_STARTED;
+  const pid = readPid("dictation.pid");
+  const saved = readWorkerStatus() ?? { stage: "starting", detail: "", model: "", backend: "" };
   const dictation = {
     running: isRunning,
     pid,
@@ -131,7 +131,7 @@ const readCurrentStatus = (): AgentVoiceStatus => {
 const readDictationLine = (dictation: DictationStatus): string => {
   const isDictationNotRunning = !dictation.running;
   if (isDictationNotRunning) {
-    return "off";
+    return OFF_MODE;
   }
 
   const line = `on (pid ${String(dictation.pid)}) · ${dictation.stage}`;
@@ -151,7 +151,7 @@ const readModelLine = (dictation: DictationStatus): string => {
 
 const readSpeechLine = (speech: SpeechStatus): string => {
   const isSpeechOn = speech.running;
-  const line = `${isSpeechOn ? "on" : "off"} · mode ${speech.mode} · voice ${speech.voice}`;
+  const line = `${isSpeechOn ? "on" : OFF_MODE} · mode ${speech.mode} · voice ${speech.voice}`;
 
   if (speech.muted) {
     return `${line} · muted`;
@@ -161,9 +161,9 @@ const readSpeechLine = (speech: SpeechStatus): string => {
 };
 
 const readRefineLine = (refine: RefineStatus): string => {
-  const isRefineModeOff = refine.mode === "off";
+  const isRefineModeOff = refine.mode === OFF_MODE;
   if (isRefineModeOff) {
-    return "off";
+    return OFF_MODE;
   }
 
   const model = refine.model || "default";

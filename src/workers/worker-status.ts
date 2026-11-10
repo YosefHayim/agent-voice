@@ -3,14 +3,27 @@ import { z } from "zod";
 import { readStatusFile } from "#src/settings/agent-voice-home.js";
 import { readDocumentFile, writeDocumentAtomically } from "#src/storage/state-files.js";
 
-const dictationStages = ["starting", "inactive", "listening", "finishing", "refining", "done", "unavailable"] as const;
+const STATUS_FILE_NAME = "status.json";
+
+const LISTENING_STAGE = "listening";
+
+const STARTING_STAGE = "starting";
+
+const dictationStages = [
+  STARTING_STAGE,
+  "inactive",
+  LISTENING_STAGE,
+  "finishing",
+  "refining",
+  "done",
+  "unavailable",
+] as const;
 
 type DictationStage = (typeof dictationStages)[number];
 
 // status.json is read by the pill every 80 ms and by `agent-voice status`.
 const workerStatusSchema = z.object({
   stage: z.enum(dictationStages),
-  // Short text for the pill and `agent-voice status`.
   detail: z.string(),
   // Live caption while the hold key is held; never typed.
   preview: z.string(),
@@ -24,10 +37,15 @@ const workerStatusSchema = z.object({
 type WorkerStatus = z.infer<typeof workerStatusSchema>;
 
 export const readWorkerStatus = (): WorkerStatus | null =>
-  readDocumentFile({ path: readStatusFile("status.json"), schema: workerStatusSchema });
+  readDocumentFile({ path: readStatusFile(STATUS_FILE_NAME), schema: workerStatusSchema });
+
+const millisecondsPerSecond = 1_000;
 
 export const writeWorkerStatus = (status: Omit<WorkerStatus, "updatedAt">): void =>
-  writeDocumentAtomically({ path: readStatusFile("status.json"), value: { ...status, updatedAt: Date.now() / 1_000 } });
+  writeDocumentAtomically({
+    path: readStatusFile(STATUS_FILE_NAME),
+    value: { ...status, updatedAt: Date.now() / millisecondsPerSecond },
+  });
 
 // Every write records whether the mic is capturing a hold, so a queued clip's "finishing" or "refining" never lets
 // speech into a newer hold.
@@ -41,7 +59,7 @@ export const makeStatusWriter = (request: {
     write: (stage: DictationStage, detail: string) =>
       writeWorkerStatus({ ...readStatusFields(), stage, detail, preview: "" }),
     writePreview: (caption: string) =>
-      writeWorkerStatus({ ...readStatusFields(), stage: "listening", detail: "", preview: caption }),
+      writeWorkerStatus({ ...readStatusFields(), stage: LISTENING_STAGE, detail: "", preview: caption }),
     stage: (): DictationStage | null => readWorkerStatus()?.stage ?? null,
   };
 };
@@ -57,6 +75,6 @@ export const isAudioOwnedByDictation = (): boolean => {
     return false;
   }
 
-  const isStarting = status.stage === "starting";
+  const isStarting = status.stage === STARTING_STAGE;
   return isStarting || status.recording;
 };

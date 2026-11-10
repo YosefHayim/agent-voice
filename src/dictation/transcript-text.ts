@@ -1,5 +1,7 @@
 import { SAMPLE_RATE } from "./clip-audio.js";
 
+const SPACE = " ";
+
 // Strict for short clips, looser for long holds so real speech is never cut.
 const MAX_WORDS_PER_SECOND_SHORT = 4;
 const MAX_WORDS_PER_SECOND_LONG = 6;
@@ -22,20 +24,6 @@ const SINGLE_WORD_NOISE = new Set([
   "inaudible",
 ]);
 
-const NOISE_PHRASES = [
-  "thank you for watching",
-  "thanks for watching",
-  "please subscribe",
-  "like and subscribe",
-  "see you next time",
-  "thanks for listening",
-  "subtitles by",
-  "transcript by",
-];
-
-const NO_SPEECH_TAGS = ["[MUSIC]", "[BLANK_AUDIO]", "[Silence]", "[silence]", "(music)", "(blank)", "♪"];
-const NO_SPEECH_STRINGS = ["", "no speech", "no speech detected", ".", "..."];
-
 const splitWords = (string: string): ReadonlyArray<string> => string.split(/\s+/u).filter((word) => word !== "");
 
 const readWordsPerSecond = (seconds: number): number => {
@@ -50,7 +38,9 @@ const readWordsPerSecond = (seconds: number): number => {
 // Whisper invents prose on near-silence, so a clip keeps only the words its length could hold.
 export const limitWordsToDuration = (string: string, sampleCount: number): string => {
   const words = splitWords(string);
-  const seconds = Math.max(sampleCount / SAMPLE_RATE, 0.15);
+  const minimumSpeechSeconds = 0.15;
+
+  const seconds = Math.max(sampleCount / SAMPLE_RATE, minimumSpeechSeconds);
   const wordsPerSecond = readWordsPerSecond(seconds);
 
   const maxWords = Math.ceil(seconds * wordsPerSecond);
@@ -60,13 +50,13 @@ export const limitWordsToDuration = (string: string, sampleCount: number): strin
     return string;
   }
 
-  return words.slice(0, maxWords).join(" ");
+  return words.slice(0, maxWords).join(SPACE);
 };
 
 export const collapseRepeatedRuns = (string: string): string => {
   const words = splitWords(string);
   const kept = words.filter((word, index) => word.toLowerCase() !== words[index - 1]?.toLowerCase());
-  return kept.join(" ");
+  return kept.join(SPACE);
 };
 
 export const rejectNoiseHallucination = (string: string, sampleCount: number): string => {
@@ -75,10 +65,28 @@ export const rejectNoiseHallucination = (string: string, sampleCount: number): s
   const lowercase = clean.toLowerCase();
   const lettersOnly = lowercase.replace(/[^\p{L}\p{N}\s]/gu, "");
   const words = splitWords(lettersOnly);
-  const bareWords = words.join(" ");
-  const isNoiseWord = words.length === 1 && seconds < 2.5 && SINGLE_WORD_NOISE.has(bareWords);
+  const bareWords = words.join(SPACE);
+  const singleWordNoiseSeconds = 2.5;
 
-  const isNoisePhrase = seconds < 4 && words.length <= 8 && NOISE_PHRASES.some((phrase) => bareWords.includes(phrase));
+  const isNoiseWord = words.length === 1 && seconds < singleWordNoiseSeconds && SINGLE_WORD_NOISE.has(bareWords);
+
+  const noisePhraseMaximumWords = 8;
+
+  const noisePhraseSeconds = 4;
+
+  const isNoisePhrase =
+    seconds < noisePhraseSeconds &&
+    words.length <= noisePhraseMaximumWords &&
+    [
+      "thank you for watching",
+      "thanks for watching",
+      "please subscribe",
+      "like and subscribe",
+      "see you next time",
+      "thanks for listening",
+      "subtitles by",
+      "transcript by",
+    ].some((phrase) => bareWords.includes(phrase));
 
   const isNoise = isNoiseWord || isNoisePhrase;
   if (isNoise) {
@@ -97,11 +105,14 @@ export const tidyWhisperTranscript = (string: string, sampleCount: number): stri
 
 // An empty transcript is never typed.
 export const cleanTranscript = (string: string): string => {
-  const untagged = NO_SPEECH_TAGS.reduce((current, tag) => current.replaceAll(tag, ""), string);
-  const clean = splitWords(untagged).join(" ");
+  const untagged = ["[MUSIC]", "[BLANK_AUDIO]", "[Silence]", "[silence]", "(music)", "(blank)", "♪"].reduce(
+    (current, tag) => current.replaceAll(tag, ""),
+    string,
+  );
+  const clean = splitWords(untagged).join(SPACE);
   const lowercase = clean.toLowerCase();
 
-  const isNoSpeech = NO_SPEECH_STRINGS.includes(lowercase);
+  const isNoSpeech = ["", "no speech", "no speech detected", ".", "..."].includes(lowercase);
   if (isNoSpeech) {
     return "";
   }

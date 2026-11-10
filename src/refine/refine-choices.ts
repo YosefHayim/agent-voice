@@ -85,13 +85,15 @@ export const saveRefineChoice = (request: {
     return;
   }
 
+  const millisecondsPerSecond = 1_000;
+
   writeDocumentAtomically({
     path: readStatusFile(CHOICE_FILE),
     value: {
       provider: request.provider,
       model,
       effort: request.effort || DEFAULT_REFINE_EFFORT,
-      updatedAt: Date.now() / 1_000,
+      updatedAt: Date.now() / millisecondsPerSecond,
     },
   });
 

@@ -14,17 +14,40 @@ import {
 } from "#src/storage/state-files.js";
 import { readWorkerStatus, writeWorkerStatus } from "./worker-status.js";
 
+const STARTING_STAGE = "starting";
+
+const SPEECH_WORKER_NAME = "speech";
+
+const DICTATION_WORKER_NAME = "dictation";
+
+const KILL_SIGNAL = "SIGKILL";
+
+const NEWLINE = "\n";
+
+const STOP_STATUS_NAME = "stop";
+
+const ZOMBIE_PROCESS_STATUS = "Z";
+
+const PS_PID_FLAG = "-p";
+
+const PS_FIELDS_FLAG = "-o";
+
+const PILL_PID_FILE = "pill.pid";
+
+const SPEECH_PID_FILE = "speech.pid";
+
+const DICTATION_PID_FILE = "dictation.pid";
+
 type WorkerKind = "dictation" | "speech";
 
 type PidFileName = "dictation.pid" | "speech.pid" | "pill.pid";
 
 const WORKER_FILES = {
-  dictation: { pid: "dictation.pid", lock: "dictation.lock", log: "dictation-worker.log" },
-  speech: { pid: "speech.pid", lock: "speech.lock", log: "speech-worker.log" },
+  dictation: { pid: DICTATION_PID_FILE, lock: "dictation.lock", log: "dictation-worker.log" },
+  speech: { pid: SPEECH_PID_FILE, lock: "speech.lock", log: "speech-worker.log" },
 } as const;
 
 const PS_LINE_PATTERN = /^\s*(\S+)\s+(.*)$/u;
-const WORKER_COMMAND = / worker (?:dictation|speech)$/u;
 
 const readWorkerLockPath = (kind: WorkerKind): string => readStatusFile(WORKER_FILES[kind].lock);
 
@@ -46,8 +69,8 @@ const sendSignal = (pid: number, signal: NodeJS.Signals | 0): boolean => {
 
 // A zombie still answers signal 0 until it is reaped, so it is checked by its ps state.
 const isZombie = (pid: number): boolean => {
-  const processStatus = runPs(["-o", "state=", "-p", String(pid)]);
-  return processStatus.startsWith("Z");
+  const processStatus = runPs([PS_FIELDS_FLAG, "state=", PS_PID_FLAG, String(pid)]);
+  return processStatus.startsWith(ZOMBIE_PROCESS_STATUS);
 };
 
 const isProcessAlive = (pid: number): boolean => sendSignal(pid, 0) && !isZombie(pid);
@@ -83,17 +106,17 @@ export const writePid = (name: PidFileName, pid: number): void => {
 // only while that pid still runs the command line the file names.
 const isNamedProcess = (name: PidFileName, commandLine: string): boolean => {
   switch (name) {
-    case "dictation.pid":
+    case DICTATION_PID_FILE:
       return commandLine.endsWith(" worker dictation");
-    case "speech.pid":
+    case SPEECH_PID_FILE:
       return commandLine.endsWith(" worker speech");
-    case "pill.pid":
+    case PILL_PID_FILE:
       return isPillCommand(commandLine);
   }
 };
 
 const isRunningAs = (name: PidFileName, pid: number): boolean => {
-  const psLine = runPs(["-o", "state=,args=", "-p", String(pid)]);
+  const psLine = runPs([PS_FIELDS_FLAG, "state=,args=", PS_PID_FLAG, String(pid)]);
 
   const parsedPsLine = PS_LINE_PATTERN.exec(psLine);
 
@@ -104,7 +127,7 @@ const isRunningAs = (name: PidFileName, pid: number): boolean => {
 
   const processStatus = parsedPsLine[1] || "";
   const commandLine = parsedPsLine[2] || "";
-  return !processStatus.startsWith("Z") && isNamedProcess(name, commandLine);
+  return !processStatus.startsWith(ZOMBIE_PROCESS_STATUS) && isNamedProcess(name, commandLine);
 };
 
 // The pid from the pid file, only when that process still runs as the named worker.
@@ -137,7 +160,7 @@ export const isWorkerRunning = (kind: WorkerKind): boolean => {
 
 // The speech worker drops the reply it is reading on SIGUSR2.
 export const stopSpeech = (): void => {
-  const speechPid = readRunningPid("speech.pid");
+  const speechPid = readRunningPid(SPEECH_PID_FILE);
 
   const isSpeechRunning = speechPid != null;
   if (isSpeechRunning) {
@@ -146,7 +169,7 @@ export const stopSpeech = (): void => {
 };
 
 const readProcessGroupId = (pid: number): number => {
-  const group = runPs(["-o", "pgid=", "-p", String(pid)]);
+  const group = runPs([PS_FIELDS_FLAG, "pgid=", PS_PID_FLAG, String(pid)]);
   return Number(group);
 };
 
@@ -235,14 +258,16 @@ export const spawnWorker = (kind: WorkerKind): void => {
 };
 
 export const stopRequested = (): boolean => {
-  const stopPath = readStatusFile("stop");
+  const stopPath = readStatusFile(STOP_STATUS_NAME);
   return existsSync(stopPath);
 };
 
 const readLastLogLines = (kind: WorkerKind): string => {
   const logPath = readWorkerLogPath(kind);
   const logFileReading = readFileIfReadable(logPath) ?? "";
-  return logFileReading.trimEnd().split("\n").slice(-6).join("\n");
+  const lastLogLinesFrom = -6;
+
+  return logFileReading.trimEnd().split(NEWLINE).slice(lastLogLinesFrom).join(NEWLINE);
 };
 
 const waitUntil = async (request: { readonly done: () => boolean; readonly timeoutMs: number }): Promise<void> => {
@@ -254,13 +279,12 @@ const waitUntil = async (request: { readonly done: () => boolean; readonly timeo
 };
 
 const listRunningWorkerPids = (): ReadonlyArray<number> => [
-  ...listRunningPidList("dictation.pid"),
-  ...listRunningPidList("speech.pid"),
+  ...listRunningPidList(DICTATION_PID_FILE),
+  ...listRunningPidList(SPEECH_PID_FILE),
 ];
 
-// Asks both workers to stop, forces any survivor, and clears their pid, lock, and stop files.
 export const stopWorkers = async (): Promise<void> => {
-  const stopPath = readStatusFile("stop");
+  const stopPath = readStatusFile(STOP_STATUS_NAME);
   touchFile(stopPath);
   const stoppingPids = listRunningWorkerPids();
   for (const pid of stoppingPids) {
@@ -269,29 +293,28 @@ export const stopWorkers = async (): Promise<void> => {
   const stopTimeoutMilliseconds = 4_000;
   await waitUntil({ done: () => !stoppingPids.some(isProcessAlive), timeoutMs: stopTimeoutMilliseconds });
 
-  const survivors = [...listRunningWorkerPids(), ...listRunningPidList("pill.pid")];
+  const survivors = [...listRunningWorkerPids(), ...listRunningPidList(PILL_PID_FILE)];
   for (const pid of survivors) {
-    sendSignalToGroup(pid, "SIGKILL");
+    sendSignalToGroup(pid, KILL_SIGNAL);
   }
-  for (const name of ["dictation.pid", "speech.pid", "pill.pid", "stop"] as const) {
+  for (const name of [DICTATION_PID_FILE, SPEECH_PID_FILE, PILL_PID_FILE, STOP_STATUS_NAME] as const) {
     const filePath = readStatusFile(name);
     removeFileIfExists(filePath);
   }
   // A lock some worker still holds (say one that started after the pids were read) must stay, or a second could start.
-  for (const kind of ["dictation", "speech"] as const) {
+  for (const kind of [DICTATION_WORKER_NAME, SPEECH_WORKER_NAME] as const) {
     const lock = readWorkerLockPath(kind);
     removeFreeLock(lock);
   }
   removeInboxFiles([".speaking"]);
 };
 
-// Every agent-voice worker or pill process on this Mac, found by its command line.
 const listStrayAgentVoiceProcesses = (): ReadonlyArray<number> => {
-  const processList = runPs(["-ax", "-o", "pid=,args="]);
-  return processList.split("\n").flatMap((line) => {
+  const processList = runPs(["-ax", PS_FIELDS_FLAG, "pid=,args="]);
+  return processList.split(NEWLINE).flatMap((line) => {
     const parsedPsLine = PS_LINE_PATTERN.exec(line);
     const commandLine = parsedPsLine?.[2] || "";
-    const isWorker = commandLine.includes("agent-voice") && WORKER_COMMAND.test(commandLine);
+    const isWorker = commandLine.includes("agent-voice") && / worker (?:dictation|speech)$/u.test(commandLine);
 
     const isNotStray = !isWorker && !isPillCommand(commandLine);
     if (isNotStray) {
@@ -305,12 +328,12 @@ const listStrayAgentVoiceProcesses = (): ReadonlyArray<number> => {
 export const resetWorkers = async (): Promise<void> => {
   await stopWorkers();
   for (const pid of listStrayAgentVoiceProcesses()) {
-    sendSignalToGroup(pid, "SIGKILL");
+    sendSignalToGroup(pid, KILL_SIGNAL);
   }
 };
 
 const readDictationStartFailureMessage = (lastLines: string): string => {
-  const summary = `The dictation worker did not start. See ${readWorkerLogPath("dictation")}.`;
+  const summary = `The dictation worker did not start. See ${readWorkerLogPath(DICTATION_WORKER_NAME)}.`;
 
   const isLastLinesEmpty = lastLines === "";
   if (isLastLinesEmpty) {
@@ -322,29 +345,29 @@ const readDictationStartFailureMessage = (lastLines: string): string => {
 
 // The dictation worker starts the speech worker itself. Throws an Error with the worker's last log lines when it fails.
 export const startWorkers = async (): Promise<"started" | "already running"> => {
-  const isDictationAlreadyRunning = isWorkerRunning("dictation");
+  const isDictationAlreadyRunning = isWorkerRunning(DICTATION_WORKER_NAME);
   if (isDictationAlreadyRunning) {
     return "already running";
   }
 
-  const stopPath = readStatusFile("stop");
+  const stopPath = readStatusFile(STOP_STATUS_NAME);
   removeFileIfExists(stopPath);
   writeWorkerStatus({
-    stage: "starting",
+    stage: STARTING_STAGE,
     detail: "Loading the dictation model",
     preview: "",
     recording: false,
     model: "",
     backend: "",
   });
-  spawnWorker("dictation");
+  spawnWorker(DICTATION_WORKER_NAME);
   const spawnedAt = Date.now();
   // Ready once the worker leaves "starting"; failed once it is gone after having had time to start.
   const isSettled = () => {
     const currentStatus = readWorkerStatus();
-    const hasLeftStarting = currentStatus != null && currentStatus.stage !== "starting";
+    const hasLeftStarting = currentStatus != null && currentStatus.stage !== STARTING_STAGE;
     const startupGraceMilliseconds = 3_000;
-    const hasDied = Date.now() - spawnedAt > startupGraceMilliseconds && !isWorkerRunning("dictation");
+    const hasDied = Date.now() - spawnedAt > startupGraceMilliseconds && !isWorkerRunning(DICTATION_WORKER_NAME);
     return hasLeftStarting || hasDied;
   };
   const startTimeoutMilliseconds = 120_000;
@@ -353,20 +376,20 @@ export const startWorkers = async (): Promise<"started" | "already running"> => 
   const status = readWorkerStatus();
   const isAvailable = status != null && status.stage !== "unavailable";
 
-  const isDictationStarted = isAvailable && isWorkerRunning("dictation");
+  const isDictationStarted = isAvailable && isWorkerRunning(DICTATION_WORKER_NAME);
   if (isDictationStarted) {
     return "started";
   }
 
   const statusDetail = status?.detail ?? "";
-  const lastLines = statusDetail || readLastLogLines("dictation");
+  const lastLines = statusDetail || readLastLogLines(DICTATION_WORKER_NAME);
   throw new Error(readDictationStartFailureMessage(lastLines));
 };
 
 export const startSpeechWorker = (): void => {
-  if (isWorkerRunning("speech")) {
+  if (isWorkerRunning(SPEECH_WORKER_NAME)) {
     return;
   }
 
-  spawnWorker("speech");
+  spawnWorker(SPEECH_WORKER_NAME);
 };

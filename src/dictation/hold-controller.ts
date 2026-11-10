@@ -23,6 +23,18 @@ import type { Keyboard } from "./keyboard.js";
 import type { LiveCaption } from "./live-preview.js";
 import type { ClipBuffer } from "./microphone.js";
 
+const WAITING_HOLD_STATUS = "waiting";
+
+const LISTENING_STAGE = "listening";
+
+const FINISHING_STAGE = "finishing";
+
+const DONE_STAGE = "done";
+
+const SPEECH_STOPPED_DETAIL = "Speech stopped";
+
+const INACTIVE_STAGE = "inactive";
+
 // The clipboard refine's outcome stays on the pill for a few seconds.
 const clipboardVerdictHoldMilliseconds = 4_000;
 
@@ -35,7 +47,7 @@ const stopTappedSpeech = (status: StatusWriter): void => {
     return;
   }
 
-  status.write("inactive", "Speech stopped");
+  status.write(INACTIVE_STAGE, SPEECH_STOPPED_DETAIL);
 };
 
 interface ClipboardRefineRequest {
@@ -61,7 +73,7 @@ const refineCopiedPrompt = async (request: ClipboardRefineRequest): Promise<void
       log: appendDictationLog,
     });
     await writeClipboard(refinedPrompt);
-    request.status.write("done", "Refined prompt copied — press ⌘V to paste");
+    request.status.write(DONE_STAGE, "Refined prompt copied — press ⌘V to paste");
 
     const isSpeechOff = settings.speechMode === "off";
     if (isSpeechOff) {
@@ -70,14 +82,14 @@ const refineCopiedPrompt = async (request: ClipboardRefineRequest): Promise<void
 
     queueReply({ markdown: refinedPrompt, source: "refine", agentReplyId: "", origin: { kind: "terminal" } });
   } catch (error) {
-    request.status.write("done", `Refine failed: ${describeError(error)}`);
+    request.status.write(DONE_STAGE, `Refine failed: ${describeError(error)}`);
   }
 };
 
 const refineClipboard = async (request: ClipboardRefineRequest): Promise<void> => {
   await refineCopiedPrompt(request);
   await sleep(clipboardVerdictHoldMilliseconds);
-  request.status.write("inactive", "");
+  request.status.write(INACTIVE_STAGE, "");
 };
 
 const toggleSpeechMute = (status: StatusWriter): void => {
@@ -88,15 +100,15 @@ const toggleSpeechMute = (status: StatusWriter): void => {
 
     const isNotGoingToMute = !willBeMuted;
     if (isNotGoingToMute) {
-      status.write("inactive", "Speech unmuted");
+      status.write(INACTIVE_STAGE, "Speech unmuted");
       return;
     }
 
     // A reply can be mid-claim, with no .speaking file yet, so the double tap did not count as stopping speech.
     stopSpeech();
-    status.write("inactive", "Speech muted (double-tap Shift to unmute)");
+    status.write(INACTIVE_STAGE, "Speech muted (double-tap Shift to unmute)");
   } catch (error) {
-    status.write("inactive", `Mute failed: ${describeError(error)}`);
+    status.write(INACTIVE_STAGE, `Mute failed: ${describeError(error)}`);
   }
 };
 
@@ -111,11 +123,11 @@ export const makeHoldController = (request: {
   const { keyboard, clip, caption, status, queue, shutdown } = request;
   let tracker = initialHoldTracker;
   let holdStatus: HoldStatus = "idle";
-  let deadline: number | undefined;
+  let deadline: number | null = null;
   let generation = 0;
-  let lastTapAt: number | undefined;
+  let lastTapAt: number | null = null;
   let isListeningAnnounced = false;
-  let finishingGeneration: number | undefined;
+  let finishingGeneration: number | null = null;
 
   const cancelClip = (): void => {
     clip.cancel();
@@ -126,30 +138,32 @@ export const makeHoldController = (request: {
       return;
     }
 
-    status.write("inactive", "");
+    status.write(INACTIVE_STAGE, "");
     isListeningAnnounced = false;
   };
 
   // The queue never blocks the next hold.
   const endClip = (clipGeneration: number): void => {
-    finishingGeneration = undefined;
+    finishingGeneration = null;
     const samples = clip.end();
     const fallbackCaption = caption.take();
 
     const isClipEmpty = samples.length === 0 && fallbackCaption === "";
     if (isClipEmpty) {
-      status.write("inactive", "No audio captured");
+      status.write(INACTIVE_STAGE, "No audio captured");
       return;
     }
 
-    status.write("finishing", `${String(samples.length)} samples`);
+    status.write(FINISHING_STAGE, `${String(samples.length)} samples`);
     queue.offer({ samples, fallbackCaption, generation: clipGeneration });
   };
 
   // Keeps listening after release so the last word is not clipped, unless a newer hold already took over.
   const endClipAfterKeepListening = (clipGeneration: number): void => {
     const settings = readSettingsOrDefaults();
-    const keepListeningMs = Math.round(settings.dictationKeepListeningSeconds * 1_000);
+    const millisecondsPerSecond = 1_000;
+
+    const keepListeningMs = Math.round(settings.dictationKeepListeningSeconds * millisecondsPerSecond);
     setTimeout(() => {
       const isNewerHoldActive = finishingGeneration !== clipGeneration;
       if (isNewerHoldActive) {
@@ -181,7 +195,7 @@ export const makeHoldController = (request: {
     switch (action) {
       case "stopSpeaking":
         stopSpeech();
-        status.write("inactive", "Speech stopped");
+        status.write(INACTIVE_STAGE, SPEECH_STOPPED_DETAIL);
         return;
       case "refineClipboard":
         // Runs in the background so the poll keeps sampling the key. refineClipboard never rejects.
@@ -206,7 +220,7 @@ export const makeHoldController = (request: {
     }
 
     clip.confirm();
-    status.write("listening", "Recording");
+    status.write(LISTENING_STAGE, "Recording");
     appendDictationLog("hold start");
     isListeningAnnounced = true;
   };
@@ -230,7 +244,7 @@ export const makeHoldController = (request: {
     isListeningAnnounced = false;
     finishingGeneration = generation;
     appendDictationLog(`hold stop gen=${String(generation)}`);
-    status.write("finishing", "Decoding…");
+    status.write(FINISHING_STAGE, "Decoding…");
     endClipAfterKeepListening(generation);
   };
 
@@ -240,15 +254,15 @@ export const makeHoldController = (request: {
         scheduleHold();
         return;
       case "start":
-        deadline = undefined;
+        deadline = null;
         beginListening();
         return;
       case "cancel":
-        deadline = undefined;
+        deadline = null;
         cancelClip();
         return;
       case "tap":
-        deadline = undefined;
+        deadline = null;
         cancelClip();
         runTapAction();
         return;
@@ -281,7 +295,7 @@ export const makeHoldController = (request: {
   };
 
   const listTimerEvents = (): ReadonlyArray<HoldEvent> => {
-    const isNotHoldElapsed = deadline == null || holdStatus !== "waiting" || Date.now() < deadline;
+    const isNotHoldElapsed = deadline == null || holdStatus !== WAITING_HOLD_STATUS || Date.now() < deadline;
     if (isNotHoldElapsed) {
       return [];
     }
@@ -291,7 +305,7 @@ export const makeHoldController = (request: {
 
   // Recording with no dictation hold and no release tail means a signal was lost: never leave the mic on.
   const stopLostRecording = (): void => {
-    const isHeld = holdStatus === "waiting" || holdStatus === "listening";
+    const isHeld = holdStatus === WAITING_HOLD_STATUS || holdStatus === LISTENING_STAGE;
 
     const isNotLost = !clip.isRecording() || finishingGeneration != null || isHeld;
     if (isNotLost) {

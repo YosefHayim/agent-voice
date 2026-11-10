@@ -17,6 +17,8 @@ import type { ZodType } from "zod";
 import { isErrorWithCode } from "#src/error-code.js";
 import { readAgentVoiceHome } from "#src/settings/agent-voice-home.js";
 
+const UTF8_ENCODING = "utf8";
+
 // Dictated, refined, and reply text is readable by the user alone: its files are 0600 and its folders 0700.
 const PRIVATE_FILE_MODE = 0o600;
 
@@ -77,7 +79,7 @@ export const writeFileAtomically = (request: { readonly path: string; readonly c
   const folder = path.dirname(request.path);
   const fileName = path.basename(request.path);
   const staging = path.join(folder, `.${fileName}.${randomUUID()}.partial`);
-  writeFileSync(staging, request.contents, { encoding: "utf8", mode: PRIVATE_FILE_MODE });
+  writeFileSync(staging, request.contents, { encoding: UTF8_ENCODING, mode: PRIVATE_FILE_MODE });
   renameSync(staging, request.path);
 };
 
@@ -90,7 +92,7 @@ export const writeDocumentAtomically = (request: { readonly path: string; readon
 // mistakes an unreadable file for a missing one.
 export const readFileIfExists = (filePath: string): string | null => {
   try {
-    return readFileSync(filePath, "utf8");
+    return readFileSync(filePath, UTF8_ENCODING);
   } catch (error) {
     const isMissing = isErrorWithCode(error, "ENOENT");
     if (isMissing) {

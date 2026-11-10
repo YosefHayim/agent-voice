@@ -1,6 +1,3 @@
-// The live caption while the hold key is held: a Whisper pass over the last 8 s every 700 ms, shown in the pill only.
-// The final text always comes from the queue; the best caption is its fallback for short clips.
-
 import { readSettingsOrDefaults } from "#src/settings/config-file.js";
 import { sleep } from "#src/sleep.js";
 import { appendDictationLog } from "#src/workers/worker-log.js";
@@ -17,6 +14,8 @@ const CAPTION_TAIL_SECONDS = 8;
 const MIN_CAPTION_SAMPLES = SAMPLE_RATE * 0.4;
 
 // A shorter later tail never replaces a better mid-hold caption.
+// The live caption while the hold key is held: a Whisper pass over the last 8 s every 700 ms, shown in the pill only.
+// The final text always comes from the queue; the best caption is its fallback for short clips.
 export const makeLiveCaption = () => {
   let best = "";
   return {
@@ -80,7 +79,9 @@ const captionOnce = async (request: CaptionRequest): Promise<void> => {
 const captionStep = async (request: CaptionRequest): Promise<void> => {
   const isNotRecording = !request.clip.isRecording();
   if (isNotRecording) {
-    await sleep(50);
+    const captionPollMilliseconds = 50;
+
+    await sleep(captionPollMilliseconds);
     return;
   }
 

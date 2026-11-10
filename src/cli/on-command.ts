@@ -18,6 +18,18 @@ import { startWorkers, stopWorkers } from "#src/workers/worker-processes.js";
 import { type CommandSpec, type ExitCode, isFlagOn } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
+const ON_COMMAND_NAME = "on";
+
+const SHIFT_HOLD_KEY = "shift";
+
+const BOTH_REFINE_MODE = "both";
+
+const OFF_MODE = "off";
+
+const UNCHANGED_CHANGE_KIND = "unchanged";
+
+const ADDED_CHANGE_KIND = "added";
+
 const readBackupNote = (change: HookChange): string => {
   const isChangeBackupMissing = change.backup == null;
   if (isChangeBackupMissing) {
@@ -30,11 +42,11 @@ const readBackupNote = (change: HookChange): string => {
 const printHookChange = (change: HookChange): void => {
   const where = `${change.displayName}: ${change.file}`;
   switch (change.change) {
-    case "added":
+    case ADDED_CHANGE_KIND:
     case "removed":
       TerminalUI.printSuccess(`${where} (${change.change}${readBackupNote(change)})`);
       return;
-    case "unchanged":
+    case UNCHANGED_CHANGE_KIND:
       TerminalUI.printDetail(`${where} (already registered)`);
       return;
     case "absent":
@@ -56,7 +68,9 @@ export const printHookChanges = (changes: ReadonlyArray<HookChange>): void => {
 };
 
 const readMegabytes = (bytes: number): string => {
-  const rounded = Math.round(bytes / 1e6);
+  const bytesPerMegabyte = 1e6;
+
+  const rounded = Math.round(bytes / bytesPerMegabyte);
   return `${String(rounded)} MB`;
 };
 
@@ -109,7 +123,7 @@ export const prepareModels = async (settings: Settings): Promise<void> => {
     });
   }
 
-  const isVoiceDownloadNeeded = settings.speechMode !== "off" && listMissingSupertonicFiles().length > 0;
+  const isVoiceDownloadNeeded = settings.speechMode !== OFF_MODE && listMissingSupertonicFiles().length > 0;
   if (isVoiceDownloadNeeded) {
     TerminalUI.printStep("Downloading the Supertonic voices (~400 MB)");
     await ensureSupertonicModels(() => undefined);
@@ -138,7 +152,7 @@ const describeRefine = (settings: Settings): string => {
 };
 
 export const describeSpeech = (settings: Settings): string => {
-  const isSettingsSpeechModeOff = settings.speechMode === "off";
+  const isSettingsSpeechModeOff = settings.speechMode === OFF_MODE;
   if (isSettingsSpeechModeOff) {
     return "Speech: off (turn on with `agent-voice config set speech-mode auto`).";
   }
@@ -153,19 +167,19 @@ export const describeSpeech = (settings: Settings): string => {
 };
 
 const printOnSummary = (settings: Settings): void => {
-  const isClipboardRefineOn = settings.refineMode === "clipboard" || settings.refineMode === "both";
-  const isDictationRefineOn = settings.refineMode === "dictation" || settings.refineMode === "both";
+  const isClipboardRefineOn = settings.refineMode === "clipboard" || settings.refineMode === BOTH_REFINE_MODE;
+  const isDictationRefineOn = settings.refineMode === "dictation" || settings.refineMode === BOTH_REFINE_MODE;
   const holdLabel = holdKeyLabels[settings.dictationHoldKey];
   TerminalUI.printDetail(`Hold ${holdLabel} alone to dictate; release to finish.`);
 
-  const isSettingsDictationHoldKeyShift = settings.dictationHoldKey === "shift";
+  const isSettingsDictationHoldKeyShift = settings.dictationHoldKey === SHIFT_HOLD_KEY;
   if (isSettingsDictationHoldKeyShift) {
     TerminalUI.printDetail("Tap Shift to stop speech.");
   }
 
   TerminalUI.printDetail(describeSpeech(settings));
 
-  const isClipboardRefineWithShiftHold = isClipboardRefineOn && settings.dictationHoldKey === "shift";
+  const isClipboardRefineWithShiftHold = isClipboardRefineOn && settings.dictationHoldKey === SHIFT_HOLD_KEY;
   if (isClipboardRefineWithShiftHold) {
     TerminalUI.printDetail("Double-tap Shift to refine the copied prompt, then press ⌘V.");
   }
@@ -195,7 +209,9 @@ const restartWorkersWithRetry = async (): Promise<void> => {
 };
 
 const printHooksOnlyOutro = (changes: ReadonlyArray<HookChange>): void => {
-  const isNotRegistered = !changes.some((change) => change.change === "added" || change.change === "unchanged");
+  const isNotRegistered = !changes.some(
+    (change) => change.change === ADDED_CHANGE_KIND || change.change === UNCHANGED_CHANGE_KIND,
+  );
   if (isNotRegistered) {
     TerminalUI.printOutro("No agent hook was confirmed as registered (see above).");
     return;
@@ -205,7 +221,7 @@ const printHooksOnlyOutro = (changes: ReadonlyArray<HookChange>): void => {
 };
 
 export const onCommand: CommandSpec = {
-  name: "on",
+  name: ON_COMMAND_NAME,
   description: "Register the agent Stop hooks, download missing models, and start dictation and speech",
   flags: {
     "hooks-only": {
@@ -215,7 +231,7 @@ export const onCommand: CommandSpec = {
   },
   positionals: [],
   run: async (parsedCommand): Promise<ExitCode> => {
-    TerminalUI.printIntro("on");
+    TerminalUI.printIntro(ON_COMMAND_NAME);
     TerminalUI.printStep("Registering `agent-voice reply` as the Stop hook of each installed agent");
     const changes = registerReplyHooks();
     printHookChanges(changes);

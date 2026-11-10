@@ -1,6 +1,3 @@
-// The dictation worker (`agent-voice worker dictation`): Whisper loads once, the mic stays open, the hold key is polled every
-// 8 ms, the pill shows, and the speech worker starts. It runs until `agent-voice off` or `agent-voice reset`.
-
 import { describeError } from "#src/error-message.js";
 import { readSettingsOrDefaults } from "#src/settings/config-file.js";
 import { readEnvironment } from "#src/settings/environment-variables.js";
@@ -18,9 +15,10 @@ import { type ClipBuffer, type Microphone, makeClipBuffer, openMicrophone } from
 import { loadTranscriber, readWhisperBackend, type Transcriber } from "./transcriber.js";
 import { ensureWhisperModel, selectWhisperModel } from "./whisper-models.js";
 
+const STARTING_STAGE = "starting";
+
 const stopCheckMilliseconds = 100;
 
-// Waits until `agent-voice off` or `agent-voice reset` asks the worker to stop.
 const waitForStop = async (): Promise<void> => {
   const isStopRequested = stopRequested();
   if (isStopRequested) {
@@ -124,13 +122,15 @@ const loadModelAndRun = async (): Promise<void> => {
   const environment = readEnvironment();
   const model = selectWhisperModel({ environment, config: settings });
   const loading = makeStatusWriter({ model: model.file, backend: readWhisperBackend(), recording: () => false });
-  loading.write("starting", `Loading ${model.label}`);
+  loading.write(STARTING_STAGE, `Loading ${model.label}`);
 
   const modelPath = await ensureWhisperModel({
     model,
     onProgress: (bytes) => {
-      const megabytes = Math.round(bytes / 1e6);
-      loading.write("starting", `Downloading ${model.label}: ${String(megabytes)} MB`);
+      const bytesPerMegabyte = 1e6;
+
+      const megabytes = Math.round(bytes / bytesPerMegabyte);
+      loading.write(STARTING_STAGE, `Downloading ${model.label}: ${String(megabytes)} MB`);
     },
   });
   const loadStarted = performance.now();
@@ -151,6 +151,8 @@ const loadModelAndRun = async (): Promise<void> => {
 
 // A failure goes to status.json for `agent-voice on` and `agent-voice status`, and the next agent turn (or `agent-voice on`)
 // starts a fresh worker.
+// The dictation worker (`agent-voice worker dictation`): Whisper loads once, the mic stays open, the hold key is polled every
+// 8 ms, the pill shows, and the speech worker starts. It runs until `agent-voice off` or `agent-voice reset`.
 export const runDictationWorker = async (): Promise<void> => {
   const releaseWorkerLock = claimWorkerLock("dictation");
 

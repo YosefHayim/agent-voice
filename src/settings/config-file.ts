@@ -2,6 +2,8 @@ import { readFileIfExists, writeFileAtomically } from "#src/storage/state-files.
 import { readSettingsFilePath } from "./agent-voice-home.js";
 import { decodeSettings, defaultSettings, type Settings } from "./config-schema.js";
 
+const READ_STATUS = "read";
+
 const readSavedFile = (filePath: string): string | null => {
   try {
     return readFileIfExists(filePath);
@@ -41,7 +43,7 @@ type SettingsFileReading =
 export const readSettingsFileReading = (): SettingsFileReading => {
   try {
     const settings = readSettings();
-    return { status: "read", config: settings };
+    return { status: READ_STATUS, config: settings };
   } catch (error) {
     const isErrorInstance = error instanceof Error;
     const issue = isErrorInstance ? error.message : String(error);
@@ -55,7 +57,7 @@ const loggedSettingsIssues = new Set<string>();
 // Workers read the config on every decision; a broken file means defaults, never a crashed worker.
 export const readSettingsOrDefaults = (): Settings => {
   const settingsFileReading = readSettingsFileReading();
-  const isSettingsFileRead = settingsFileReading.status === "read";
+  const isSettingsFileRead = settingsFileReading.status === READ_STATUS;
   if (isSettingsFileRead) {
     return settingsFileReading.config;
   }
@@ -71,6 +73,8 @@ export const readSettingsOrDefaults = (): Settings => {
 };
 
 export const saveSettings = (settings: Settings): void => {
-  const savedFileMessages = JSON.stringify(settings, null, 2);
+  const indentSpaceCount = 2;
+
+  const savedFileMessages = JSON.stringify(settings, null, indentSpaceCount);
   writeFileAtomically({ path: readSettingsFilePath(), contents: `${savedFileMessages}\n` });
 };

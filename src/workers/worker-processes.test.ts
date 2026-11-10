@@ -95,7 +95,16 @@ describe("worker pid files", () => {
 // A starter: once the `go` file exists it claims the dictation lock, prints "owner" or "busy", and an owner keeps the
 // lock for holdMs, so every racer tries while the winner still holds it. Its command line ends like a real dictation
 // worker's, so `ps` takes each starter for one.
-const STARTER = `
+const startStarter = (request: { readonly go: string; readonly holdMs: number }) => {
+  const child = spawn(
+    process.execPath,
+    [
+      ...[
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        `
 const [modulePath, go, holdMs] = process.argv.slice(1);
 const { existsSync } = await import("node:fs");
 const { claimWorkerLock } = await import(modulePath);
@@ -109,13 +118,8 @@ if (releaseLock === null) {
   await new Promise((resolve) => setTimeout(resolve, Number(holdMs)));
   releaseLock();
 }
-`;
-
-const startStarter = (request: { readonly go: string; readonly holdMs: number }) => {
-  const child = spawn(
-    process.execPath,
-    [
-      ...["--import", "tsx", "--input-type=module", "-e", STARTER],
+`,
+      ],
       ...[workerProcessesModule, request.go, String(request.holdMs), "worker", "dictation"],
     ],
     { cwd: repositoryRoot, env: { ...process.env, AGENT_VOICE_HOME: home }, stdio: ["ignore", "pipe", "inherit"] },

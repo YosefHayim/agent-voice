@@ -7,40 +7,48 @@ import { type CommandSpec, isFlagOn, readOptionalPositional, readStringFlag } fr
 import { speakAloud } from "./speak-command.js";
 import * as TerminalUI from "./terminal-ui.js";
 
-const refineSendTargets = ["caret", "cmux-new", "cmux-resume"] as const;
+const PROMPT_NAME = "prompt";
+
+const FREEFORM_KIND = "text";
+
+const BOOLEAN_KIND = "boolean";
+
+const CARET_SEND_TARGET = "caret";
+
+const refineSendTargets = [CARET_SEND_TARGET, "cmux-new", "cmux-resume"] as const;
 
 export const refineCommand: CommandSpec = {
   name: "refine",
   description: "Refine one prompt with an agent CLI (codex, claude, grok, …) and print the result",
   flags: {
-    speak: { kind: "boolean", description: "Read the refined prompt aloud" },
+    speak: { kind: BOOLEAN_KIND, description: "Read the refined prompt aloud" },
     provider: {
-      kind: "text",
+      kind: FREEFORM_KIND,
       description: "Provider for this run (default: refine-provider)",
       choices: refineProviders,
     },
-    model: { kind: "text", description: "Model for this run (default: refine-model)" },
+    model: { kind: FREEFORM_KIND, description: "Model for this run (default: refine-model)" },
     effort: {
-      kind: "text",
+      kind: FREEFORM_KIND,
       description: "Reasoning effort for this run (default: refine-effort)",
       choices: REASONING_EFFORTS,
     },
     "send-to": {
-      kind: "text",
+      kind: FREEFORM_KIND,
       description: "Also send the result to cmux (caret only prints it)",
       choices: refineSendTargets,
     },
     "cmux-command": {
-      kind: "text",
+      kind: FREEFORM_KIND,
       description: "Command template for cmux-new ({{prompt_file}}, {{prompt}}, {{cwd}}, each shell-quoted)",
     },
-    "press-enter": { kind: "boolean", description: "Press Enter after sending to cmux" },
+    "press-enter": { kind: BOOLEAN_KIND, description: "Press Enter after sending to cmux" },
     "list-providers": {
-      kind: "boolean",
+      kind: BOOLEAN_KIND,
       description: "Print the agent CLIs found on this Mac and their models as JSON, then exit",
     },
   },
-  positionals: [{ name: "prompt", description: "The draft prompt to refine", isRequired: false }],
+  positionals: [{ name: PROMPT_NAME, description: "The draft prompt to refine", isRequired: false }],
   run: async (parsedCommand) => {
     const isListProvidersWanted = isFlagOn(parsedCommand, "list-providers");
     if (isListProvidersWanted) {
@@ -49,12 +57,14 @@ export const refineCommand: CommandSpec = {
       return 0;
     }
 
-    const draft = readOptionalPositional(parsedCommand, "prompt") ?? "";
+    const draft = readOptionalPositional(parsedCommand, PROMPT_NAME) ?? "";
 
     const isDraftMissing = draft.trim() === "";
     if (isDraftMissing) {
       TerminalUI.printError("Pass the prompt to refine, or --list-providers.");
-      return 2;
+      const badUsageExitCode = 2;
+
+      return badUsageExitCode;
     }
 
     const savedSettings = readSettings();
@@ -84,7 +94,7 @@ export const refineCommand: CommandSpec = {
       await speakAloud(refinedPrompt, settings);
     }
 
-    const isSentToCaret = settings.refineSendTo === "caret";
+    const isSentToCaret = settings.refineSendTo === CARET_SEND_TARGET;
     if (isSentToCaret) {
       return 0;
     }

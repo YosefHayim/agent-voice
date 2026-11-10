@@ -1,5 +1,3 @@
-// Whisper ggml models: which file dictation loads, where it lives, and where it downloads from.
-
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 
@@ -8,7 +6,41 @@ import type { Settings } from "#src/settings/config-schema.js";
 import type { AgentVoiceEnvironment } from "#src/settings/environment-variables.js";
 import { downloadFile } from "#src/storage/model-download.js";
 
-export const whisperModelKeys = ["tiny", "base", "small", "turbo-q5", "turbo-q8", "turbo", "ivrit"] as const;
+const TURBO_MODEL_FILE = "ggml-large-v3-turbo.bin";
+
+const TURBO_Q8_MODEL_FILE = "ggml-large-v3-turbo-q8_0.bin";
+
+const TURBO_Q5_MODEL_FILE = "ggml-large-v3-turbo-q5_0.bin";
+
+const SMALL_MODEL_FILE = "ggml-small.en.bin";
+
+const BASE_MODEL_FILE = "ggml-base.en.bin";
+
+const TINY_MODEL_FILE = "ggml-tiny.en.bin";
+
+const IVRIT_MODEL_KEY = "ivrit";
+
+const TURBO_MODEL_KEY = "turbo";
+
+const TURBO_Q8_MODEL_KEY = "turbo-q8";
+
+const TURBO_Q5_MODEL_KEY = "turbo-q5";
+
+const SMALL_MODEL_KEY = "small";
+
+const BASE_MODEL_KEY = "base";
+
+const TINY_MODEL_KEY = "tiny";
+
+export const whisperModelKeys = [
+  TINY_MODEL_KEY,
+  BASE_MODEL_KEY,
+  SMALL_MODEL_KEY,
+  TURBO_Q5_MODEL_KEY,
+  TURBO_Q8_MODEL_KEY,
+  TURBO_MODEL_KEY,
+  IVRIT_MODEL_KEY,
+] as const;
 
 type WhisperModelKey = (typeof whisperModelKeys)[number];
 
@@ -23,78 +55,92 @@ interface WhisperModel {
 const createModelUrl = (file: string) =>
   `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${file}?download=true`;
 
+const ivritApproximateBytes = 1_624_555_275;
+
+const turboApproximateBytes = 1_624_000_000;
+
+const turboQ8ApproximateBytes = 874_000_000;
+
+const turboQ5ApproximateBytes = 574_000_000;
+
+const smallApproximateBytes = 488_000_000;
+
+const baseApproximateBytes = 148_000_000;
+
+const tinyApproximateBytes = 78_000_000;
+
 export const whisperModels: ReadonlyArray<WhisperModel> = [
   {
-    key: "tiny",
-    file: "ggml-tiny.en.bin",
+    key: TINY_MODEL_KEY,
+    file: TINY_MODEL_FILE,
     label: "Tiny English (fastest)",
-    url: createModelUrl("ggml-tiny.en.bin"),
-    approximateBytes: 78_000_000,
+    url: createModelUrl(TINY_MODEL_FILE),
+    approximateBytes: tinyApproximateBytes,
   },
   {
-    key: "base",
-    file: "ggml-base.en.bin",
+    key: BASE_MODEL_KEY,
+    file: BASE_MODEL_FILE,
     label: "Base English",
-    url: createModelUrl("ggml-base.en.bin"),
-    approximateBytes: 148_000_000,
+    url: createModelUrl(BASE_MODEL_FILE),
+    approximateBytes: baseApproximateBytes,
   },
   {
-    key: "small",
-    file: "ggml-small.en.bin",
+    key: SMALL_MODEL_KEY,
+    file: SMALL_MODEL_FILE,
     label: "Small English",
-    url: createModelUrl("ggml-small.en.bin"),
-    approximateBytes: 488_000_000,
+    url: createModelUrl(SMALL_MODEL_FILE),
+    approximateBytes: smallApproximateBytes,
   },
   {
-    key: "turbo-q5",
-    file: "ggml-large-v3-turbo-q5_0.bin",
+    key: TURBO_Q5_MODEL_KEY,
+    file: TURBO_Q5_MODEL_FILE,
     label: "Turbo V3 small (q5_0)",
-    url: createModelUrl("ggml-large-v3-turbo-q5_0.bin"),
-    approximateBytes: 574_000_000,
+    url: createModelUrl(TURBO_Q5_MODEL_FILE),
+    approximateBytes: turboQ5ApproximateBytes,
   },
   {
-    key: "turbo-q8",
-    file: "ggml-large-v3-turbo-q8_0.bin",
+    key: TURBO_Q8_MODEL_KEY,
+    file: TURBO_Q8_MODEL_FILE,
     label: "Turbo V3 medium (q8_0)",
-    url: createModelUrl("ggml-large-v3-turbo-q8_0.bin"),
-    approximateBytes: 874_000_000,
+    url: createModelUrl(TURBO_Q8_MODEL_FILE),
+    approximateBytes: turboQ8ApproximateBytes,
   },
   {
-    key: "turbo",
-    file: "ggml-large-v3-turbo.bin",
+    key: TURBO_MODEL_KEY,
+    file: TURBO_MODEL_FILE,
     label: "Turbo V3 large",
-    url: createModelUrl("ggml-large-v3-turbo.bin"),
-    approximateBytes: 1_624_000_000,
+    url: createModelUrl(TURBO_MODEL_FILE),
+    approximateBytes: turboApproximateBytes,
   },
   {
-    key: "ivrit",
+    key: IVRIT_MODEL_KEY,
     file: "ggml-ivrit-large-v3-turbo.bin",
     label: "ivrit.ai Hebrew Turbo V3",
     url: "https://huggingface.co/ivrit-ai/whisper-large-v3-turbo-ggml/resolve/main/ggml-model.bin?download=true",
-    approximateBytes: 1_624_555_275,
+    approximateBytes: ivritApproximateBytes,
   },
 ];
 
 export const MODEL_ALIASES: Readonly<Record<string, WhisperModelKey>> = {
-  tiny: "tiny",
-  "tiny.en": "tiny",
-  fast: "tiny",
-  base: "base",
-  "base.en": "base",
-  small: "small",
-  "small.en": "small",
-  turbo: "turbo",
-  large: "turbo",
-  "turbo-full": "turbo",
-  "turbo-q8": "turbo-q8",
-  q8: "turbo-q8",
-  medium: "turbo-q8",
-  "turbo-q5": "turbo-q5",
-  ivrit: "ivrit",
-  "ivrit-ai": "ivrit",
-  hebrew: "ivrit",
-  he: "ivrit",
-  "he-il": "ivrit",
+  tiny: TINY_MODEL_KEY,
+  "tiny.en": TINY_MODEL_KEY,
+  fast: TINY_MODEL_KEY,
+  base: BASE_MODEL_KEY,
+  "base.en": BASE_MODEL_KEY,
+  small: SMALL_MODEL_KEY,
+  "small.en": SMALL_MODEL_KEY,
+  turbo: TURBO_MODEL_KEY,
+  large: TURBO_MODEL_KEY,
+  "turbo-full": TURBO_MODEL_KEY,
+  "turbo-q8": TURBO_Q8_MODEL_KEY,
+  q8: TURBO_Q8_MODEL_KEY,
+  medium: TURBO_Q8_MODEL_KEY,
+  "turbo-q5": TURBO_Q5_MODEL_KEY,
+  ivrit: IVRIT_MODEL_KEY,
+  "ivrit-ai": IVRIT_MODEL_KEY,
+  hebrew: IVRIT_MODEL_KEY,
+  he: IVRIT_MODEL_KEY,
+  "he-il": IVRIT_MODEL_KEY,
 };
 
 const pickWhisperModel = (key: WhisperModelKey): WhisperModel =>
@@ -109,7 +155,7 @@ export const selectWhisperModel = (request: {
 
   const isForced = forced !== "";
   if (isForced) {
-    return pickWhisperModel(MODEL_ALIASES[forced] ?? "turbo-q5");
+    return pickWhisperModel(MODEL_ALIASES[forced] ?? TURBO_Q5_MODEL_KEY);
   }
 
   const chosenKey = request.config.dictationModel;
@@ -121,10 +167,10 @@ export const selectWhisperModel = (request: {
 
   const isDictationLanguageHe = request.config.dictationLanguage === "he";
   if (isDictationLanguageHe) {
-    return pickWhisperModel("ivrit");
+    return pickWhisperModel(IVRIT_MODEL_KEY);
   }
 
-  return pickWhisperModel("turbo-q5");
+  return pickWhisperModel(TURBO_Q5_MODEL_KEY);
 };
 
 export const readWhisperModelPath = (model: WhisperModel): string => {
@@ -147,7 +193,6 @@ export const isWhisperModelDownloaded = (model: WhisperModel): boolean => {
   return isModelSized;
 };
 
-// Returns the model file path, downloading the model first when it is missing.
 export const ensureWhisperModel = async (request: {
   readonly model: WhisperModel;
   readonly onProgress: (receivedBytes: number) => void;

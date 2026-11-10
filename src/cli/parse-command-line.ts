@@ -5,6 +5,20 @@ import { commandSpecs } from "./command-list.js";
 import type { CommandSpec, ExitCode, FlagSpec, ParsedCommand, ParsedFlags, PositionalSpec } from "./command-spec.js";
 import { createCommandHelp, createRootHelp } from "./render-help.js";
 
+const SHORT_HELP_FLAG = "-h";
+
+const HELP_FLAG = "--help";
+
+const RUN_ROUTE_KIND = "run";
+
+const LIST_SEPARATOR = ", ";
+
+const STRING_KIND = "string";
+
+const BOOLEAN_KIND = "boolean";
+
+const HELP_ROUTE_KIND = "help";
+
 export type CommandRoute =
   | { readonly kind: "help"; readonly helpMessage: string }
   | { readonly kind: "version" }
@@ -16,20 +30,20 @@ export type CommandRoute =
       readonly parsedCommand: ParsedCommand;
     };
 
-const createRootHelpRoute = (): CommandRoute => ({ kind: "help", helpMessage: createRootHelp(commandSpecs) });
+const createRootHelpRoute = (): CommandRoute => ({ kind: HELP_ROUTE_KIND, helpMessage: createRootHelp(commandSpecs) });
 
 const createCommandHelpRoute = (commandPath: string, command: CommandSpec): CommandRoute => ({
-  kind: "help",
+  kind: HELP_ROUTE_KIND,
   helpMessage: createCommandHelp(commandPath, command),
 });
 
 const readFlagType = (flag: FlagSpec): "boolean" | "string" => {
-  const isBooleanFlag = flag.kind === "boolean";
+  const isBooleanFlag = flag.kind === BOOLEAN_KIND;
   if (isBooleanFlag) {
-    return "boolean";
+    return BOOLEAN_KIND;
   }
 
-  return "string";
+  return STRING_KIND;
 };
 
 const createParseSettings = (flags: Readonly<Record<string, FlagSpec>>) => {
@@ -42,7 +56,9 @@ const createParseSettings = (flags: Readonly<Record<string, FlagSpec>>) => {
 const checkFlagWord = (flagName: string, flag: FlagSpec, flagWord: string): void => {
   const isOutsideChoices = flag.choices != null && !flag.choices.includes(flagWord);
   if (isOutsideChoices) {
-    throw new Error(`Invalid value "${flagWord}" for --${flagName}. Use one of: ${String(flag.choices?.join(", "))}.`);
+    throw new Error(
+      `Invalid value "${flagWord}" for --${flagName}. Use one of: ${String(flag.choices?.join(LIST_SEPARATOR))}.`,
+    );
   }
 
   const isNotWholeNumber = flag.kind === "integer" && !/^\d+$/u.test(flagWord);
@@ -55,7 +71,7 @@ const checkFlagWords = (flags: Readonly<Record<string, FlagSpec>>, parsedFlags: 
   for (const [flagName, flag] of Object.entries(flags)) {
     const flagWord = parsedFlags[flagName];
 
-    const isWordGiven = typeof flagWord === "string";
+    const isWordGiven = typeof flagWord === STRING_KIND;
     if (isWordGiven) {
       checkFlagWord(flagName, flag, flagWord);
     }
@@ -79,7 +95,7 @@ const checkPositionalWords = (
       positionalWord != null && positionalSpec.choices != null && !positionalSpec.choices.includes(positionalWord);
     if (isOutsideChoices) {
       throw new Error(
-        `Invalid ${positionalSpec.name} "${positionalWord}". Use one of: ${String(positionalSpec.choices?.join(", "))}.`,
+        `Invalid ${positionalSpec.name} "${positionalWord}". Use one of: ${String(positionalSpec.choices?.join(LIST_SEPARATOR))}.`,
       );
     }
   }
@@ -121,10 +137,10 @@ const routeLeaf = (request: {
   const isPassthrough = command.isPassthrough === true;
   if (isPassthrough) {
     const extraArguments = dropLeadingSeparator(restWords);
-    return { kind: "run", run, parsedCommand: { flags: {}, positionals: {}, extraArguments } };
+    return { kind: RUN_ROUTE_KIND, run, parsedCommand: { flags: {}, positionals: {}, extraArguments } };
   }
 
-  const isHelpRequest = restWords.includes("--help") || restWords.includes("-h");
+  const isHelpRequest = restWords.includes(HELP_FLAG) || restWords.includes(SHORT_HELP_FLAG);
   if (isHelpRequest) {
     return createCommandHelpRoute(commandPath, command);
   }
@@ -138,10 +154,13 @@ const routeLeaf = (request: {
   checkFlagWords(command.flags, parsedArguments.values);
   checkPositionalWords(command.positionals, parsedArguments.positionals);
   const positionals = bindPositionals(command.positionals, parsedArguments.positionals);
-  return { kind: "run", run, parsedCommand: { flags: parsedArguments.values, positionals, extraArguments: [] } };
+  return {
+    kind: RUN_ROUTE_KIND,
+    run,
+    parsedCommand: { flags: parsedArguments.values, positionals, extraArguments: [] },
+  };
 };
 
-// Walks the words down the command tree: a group (config) has subcommands, a leaf has flags and a run function.
 const routeWithin = (request: {
   readonly commandWords: ReadonlyArray<string>;
   readonly group: CommandSpec | null;
@@ -150,7 +169,7 @@ const routeWithin = (request: {
   const [wordName, ...restWords] = request.commandWords;
   const isNoWordLeft = wordName == null;
 
-  const isHelpWord = wordName === "--help" || wordName === "-h";
+  const isHelpWord = wordName === HELP_FLAG || wordName === SHORT_HELP_FLAG;
 
   const isGroupHelpRequested = isNoWordLeft || isHelpWord;
   if (isGroupHelpRequested) {
@@ -181,7 +200,7 @@ const routeCommandWords = (commandWords: ReadonlyArray<string>): CommandRoute =>
   const [firstWord] = commandWords;
   const isNoWordGiven = firstWord == null;
 
-  const isHelpWord = firstWord === "--help" || firstWord === "-h";
+  const isHelpWord = firstWord === HELP_FLAG || firstWord === SHORT_HELP_FLAG;
 
   const isRootHelpRequested = isNoWordGiven || isHelpWord;
   if (isRootHelpRequested) {

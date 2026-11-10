@@ -8,6 +8,8 @@ import { ensureSupertonicModels, listMissingSupertonicFiles } from "#src/speech/
 import { type CommandSpec, readRequiredPositional, readStringFlag } from "./command-spec.js";
 import * as TerminalUI from "./terminal-ui.js";
 
+const MARKDOWN_NAME = "markdown";
+
 const readVoice = (settings: Settings) => ({
   voice: settings.speechVoice,
   wordsPerMinute: settings.speechWordsPerMinute,
@@ -36,10 +38,10 @@ export const speakCommand: CommandSpec = {
   flags: {
     output: { kind: "text", description: "Write the speech to this WAV file instead of playing it" },
   },
-  positionals: [{ name: "markdown", description: "A complete reply, in Markdown", isRequired: true }],
+  positionals: [{ name: MARKDOWN_NAME, description: "A complete reply, in Markdown", isRequired: true }],
   run: async (parsedCommand) => {
     const settings = readSettings();
-    const markdown = readRequiredPositional(parsedCommand, "markdown");
+    const markdown = readRequiredPositional(parsedCommand, MARKDOWN_NAME);
     const printoutFile = readStringFlag(parsedCommand, "output");
 
     const isPlaybackOnly = printoutFile == null;

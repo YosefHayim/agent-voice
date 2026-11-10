@@ -58,8 +58,12 @@ const readSupertonicDocument = <Printout>(schema: z.ZodType<Printout>, file: str
 const sampleGaussian = (): number => {
   const first = 1 - Math.random();
   const second = Math.random();
-  const radius = Math.sqrt(-2 * Math.log(first));
-  return radius * Math.cos(2 * Math.PI * second);
+  const boxMullerScale = -2;
+
+  const radius = Math.sqrt(boxMullerScale * Math.log(first));
+  const fullTurnFactor = 2;
+
+  return radius * Math.cos(fullTurnFactor * Math.PI * second);
 };
 
 const listFlatNumbers = (nested: unknown): ReadonlyArray<number> => {
@@ -123,7 +127,6 @@ export const loadSupertonic = async (modelFolder: string): Promise<SupertonicEng
     return { textToLatent: readStyleTensor(style.style_ttl), duration: readStyleTensor(style.style_dp) };
   };
 
-  // Mono samples at `sampleRate` for one chunk of speech text.
   const synthesize = async (request: SynthesizeRequest): Promise<Float32Array> => {
     const supertonicSpeech = readSupertonicSpeech(request.text);
     const ids = listCharacterIds(supertonicSpeech, indexer);

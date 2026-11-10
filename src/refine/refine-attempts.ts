@@ -16,13 +16,30 @@ import { isPickerEnabled, pickRefineTargetWithDialogs, SKIP_REFINE_LABEL } from 
 import { readNamedModel, refineWithProvider } from "./refine-providers.js";
 import { isFailedModelReply, isModelUnavailableError } from "./refine-reply.js";
 
+const REFINED_STATUS = "refined";
+
+const AUTO_CHOICE = "auto";
+
+const FAILED_STATUS = "failed";
+
+const DEFAULT_MODEL_NAME = "default";
+
+const CODEX_PROVIDER_ID = "codex";
+
 // Bounds so a dictation release never hangs on rotation.
 const MAX_MODELS_PER_PROVIDER = 6;
 const MAX_CROSS_PROVIDER_ATTEMPTS = 4;
 const MAX_TOTAL_ATTEMPTS = 12;
 
-// The order for trying other providers after the requested one fails.
-const FALLBACK_ORDER: ReadonlyArray<ProviderId> = ["codex", "opencode", "gemini", "grok", "pi", "ollama", "claude"];
+const FALLBACK_ORDER: ReadonlyArray<ProviderId> = [
+  CODEX_PROVIDER_ID,
+  "opencode",
+  "gemini",
+  "grok",
+  "pi",
+  "ollama",
+  "claude",
+];
 
 const LAST_RESORT_MODEL: Readonly<Record<ProviderId, string>> = {
   codex: DEFAULT_REFINE_MODEL,
@@ -31,13 +48,13 @@ const LAST_RESORT_MODEL: Readonly<Record<ProviderId, string>> = {
   claude: "sonnet",
   gemini: "gemini-3.6-flash-low",
   opencode: "opencode/big-pickle",
-  pi: "default",
+  pi: DEFAULT_MODEL_NAME,
 };
 
 // Generic failures (network, CLI errors) still move on to the next candidate.
-const ROTATE_MARKERS = ["failed", "error", "timeout", "timed out", "connection", "refused", "not found", "empty"];
-
-export const canRotate = (detail: string): boolean => isFailedModelReply(detail) || containsAny(detail, ROTATE_MARKERS);
+export const canRotate = (detail: string): boolean =>
+  isFailedModelReply(detail) ||
+  containsAny(detail, [FAILED_STATUS, "error", "timeout", "timed out", "connection", "refused", "not found", "empty"]);
 
 // Models that already failed for this account go last, so a ChatGPT-account rejection (~3 s) is not paid every time.
 export const listCodexModelCandidates = (request: {
@@ -70,7 +87,7 @@ const pickSavedModel = (saved: SavedChoice | null, provider: ProviderId): string
 };
 
 const listDiscoveredModels = async (provider: ProviderId, preferred: string): Promise<ReadonlyArray<string>> => {
-  const isCodex = provider === "codex";
+  const isCodex = provider === CODEX_PROVIDER_ID;
 
   const isNotCodex = !isCodex;
   if (isNotCodex) {
@@ -82,9 +99,8 @@ const listDiscoveredModels = async (provider: ProviderId, preferred: string): Pr
   return listCodexModelCandidates({ preferred, lastGood, failed });
 };
 
-// The preferred model, the saved pick, then the discovered list.
 const listModelCandidates = async (provider: ProviderId, preferred: string): Promise<ReadonlyArray<string>> => {
-  const chosenModel = readNamedModel(preferred, ["default", "auto"]);
+  const chosenModel = readNamedModel(preferred, [DEFAULT_MODEL_NAME, AUTO_CHOICE]);
   const saved = readSavedChoice();
   const savedModel = pickSavedModel(saved, provider);
   const discovered = await listDiscoveredModels(provider, preferred);
@@ -161,12 +177,11 @@ const listAutoAttempts = async (requestedModel: string): Promise<ReadonlyArray<A
   return [...leadTargets, ...fallbackTargets];
 };
 
-// The preferred provider's models first, then the first model of each other installed provider.
 export const createAttemptQueue = async (request: {
   readonly provider: Settings["refineProvider"];
   readonly model: string;
 }): Promise<ReadonlyArray<AttemptTarget>> => {
-  const isAutoProvider = request.provider === "auto";
+  const isAutoProvider = request.provider === AUTO_CHOICE;
   if (isAutoProvider) {
     return listAutoAttempts(request.model);
   }
@@ -193,11 +208,10 @@ type RefineRequest = {
 
 const readSavedEffort = (): string => readSavedChoice()?.effort ?? "";
 
-// The configured model, else the saved pick for this provider, else Codex's default.
 const pickStartingModel = (request: RefineRequest): string => {
   const configuredModel = request.model.trim();
 
-  const isModelChosen = configuredModel !== "" || request.provider === "auto";
+  const isModelChosen = configuredModel !== "" || request.provider === AUTO_CHOICE;
   if (isModelChosen) {
     return configuredModel;
   }
@@ -209,7 +223,7 @@ const pickStartingModel = (request: RefineRequest): string => {
     return savedModel;
   }
 
-  const isCodex = request.provider === "codex";
+  const isCodex = request.provider === CODEX_PROVIDER_ID;
   if (isCodex) {
     return DEFAULT_REFINE_MODEL;
   }
@@ -230,9 +244,9 @@ const refineWithTarget = async (
       { ...target, effort: request.effort, draft: request.draft },
       request.signal,
     );
-    return { status: "refined", refined };
+    return { status: REFINED_STATUS, refined };
   } catch (error) {
-    return { status: "failed", detail: describeError(error) };
+    return { status: FAILED_STATUS, detail: describeError(error) };
   }
 };
 
@@ -249,16 +263,18 @@ const tryAttempts = async (
     request.log(`refine try ${target.provider}/${target.model}`);
     const verdict = await refineWithTarget(target, request);
 
-    const isRefined = verdict.status === "refined";
+    const isRefined = verdict.status === REFINED_STATUS;
     if (isRefined) {
       saveRefineChoice({ provider: target.provider, model: target.model, effort: request.effort });
       return { refined: verdict.refined, failures };
     }
 
     const detail = verdict.detail;
-    failures.push(`${target.provider}/${target.model}: ${detail.slice(0, 400)}`);
+    const failureDetailCharacters = 400;
 
-    const isUnavailableCodexModel = target.provider === "codex" && isModelUnavailableError(detail);
+    failures.push(`${target.provider}/${target.model}: ${detail.slice(0, failureDetailCharacters)}`);
+
+    const isUnavailableCodexModel = target.provider === CODEX_PROVIDER_ID && isModelUnavailableError(detail);
     if (isUnavailableCodexModel) {
       markCodexModelFailed(target.model);
     }
@@ -272,8 +288,6 @@ const tryAttempts = async (
   return { refined: null, failures };
 };
 
-// Refine with rotation; when every attempt fails, the picker (if allowed) can choose a model or skip refine.
-// Throws an Error with the reason when refine fails and the user does not skip it.
 export const refinePrompt = async (request: RefineRequest): Promise<string> => {
   const draft = request.draft.trim();
 
@@ -299,15 +313,19 @@ export const refinePrompt = async (request: RefineRequest): Promise<string> => {
     return refinedPrompt;
   }
 
-  const joined = (tried.failures.join("; ") || "all refine attempts failed").slice(0, 2_000);
+  const triedFailuresCharacters = 2_000;
+
+  const joined = (tried.failures.join("; ") || "all refine attempts failed").slice(0, triedFailuresCharacters);
 
   const isNotPickerAllowed = !request.allowPicker || !isPickerEnabled();
   if (isNotPickerAllowed) {
     throw new Error(`refine failed after fallbacks: ${joined}`);
   }
 
+  const fallbackReasonCharacters = 500;
+
   const picked = await pickRefineTargetWithDialogs({
-    reason: `Automatic refine fallbacks failed.\n${joined.slice(0, 500)}`,
+    reason: `Automatic refine fallbacks failed.\n${joined.slice(0, fallbackReasonCharacters)}`,
     preferredProvider: request.provider,
     preferredModel: request.model,
     preferredEffort: effort,
