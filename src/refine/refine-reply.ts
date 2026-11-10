@@ -8,8 +8,6 @@ const ANSWER_FIELD = "result";
 
 const PROSE_PART_TYPE = "text";
 
-const STRING_KIND = "string";
-
 const REJECTED_STATUS = "rejected";
 
 const CODE_FENCE = "```";
@@ -255,9 +253,7 @@ const isDocumentObject = (field: unknown): field is DocumentObject =>
 const isNonNullPiece = (string: string | null): string is string => string != null;
 
 const readNonBlankField = (field: unknown): string | null => {
-  const isStringField = typeof field === STRING_KIND;
-
-  const isNotStringField = !isStringField;
+  const isNotStringField = typeof field !== "string";
   if (isNotStringField) {
     return null;
   }
@@ -268,9 +264,7 @@ const readNonBlankField = (field: unknown): string | null => {
 };
 
 const readFieldOrEmpty = (field: unknown): string => {
-  const isStringField = typeof field === STRING_KIND;
-
-  const isNotStringField = !isStringField;
+  const isNotStringField = typeof field !== "string";
   if (isNotStringField) {
     return "";
   }
@@ -283,7 +277,7 @@ const readBlockReply = (block: unknown): string | null => {
   const isBlockDocument = isDocumentObject(block);
   const blockField = isBlockDocument ? block.text : null;
 
-  const isNotStringField = typeof blockField !== STRING_KIND;
+  const isNotStringField = typeof blockField !== "string";
   if (isNotStringField) {
     return null;
   }

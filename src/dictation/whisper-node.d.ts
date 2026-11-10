@@ -9,13 +9,13 @@ export type TranscribeOptions = {
   readonly prompt?: string;
 };
 
-export type TranscribedSpeech = {
+type TranscribedSpeech = {
   readonly result: string;
   readonly segments: ReadonlyArray<{ readonly text: string; readonly t0: number; readonly t1: number }>;
   readonly isAborted: boolean;
 };
 
-export type WhisperContext = {
+type WhisperContext = {
   readonly transcribeData: (
     pcm: ArrayBuffer,
     transcribeOptions?: TranscribeOptions,

@@ -82,7 +82,7 @@ const listCommand: CommandSpec = {
       return 0;
     }
 
-    for (const setting of settings) {
+    for (const setting of settingDefinitions) {
       printSetting(settings, setting);
     }
 
@@ -110,7 +110,7 @@ const describeCommand: CommandSpec = {
   positionals: [],
   run: async () => {
     const settings = readSettings();
-    const describedSettings = settings.map((setting) => describeSettingLine(settings, setting));
+    const describedSettings = settingDefinitions.map((setting) => describeSettingLine(settings, setting));
     TerminalUI.printDocument(describedSettings);
     return 0;
   },

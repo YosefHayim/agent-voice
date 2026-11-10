@@ -65,7 +65,7 @@ const CLAUDE_PROVIDER_ID = "claude";
 
 const CODEX_PROVIDER_ID = "codex";
 
-export const providerIdSchema = z.enum([
+const providerIdSchema = z.enum([
   CODEX_PROVIDER_ID,
   CLAUDE_PROVIDER_ID,
   GEMINI_PROVIDER_ID,

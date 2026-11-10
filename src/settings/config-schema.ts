@@ -70,7 +70,9 @@ const createRangedNumberSchema = (request: {
 
 const dictationModelChoices = [AUTO_CHOICE, ...whisperModelKeys] as const;
 
-const dictationModelSchema = createAliasedChoiceSchema({ ...MODEL_ALIASES, auto: AUTO_CHOICE });
+type DictationModel = (typeof dictationModelChoices)[number];
+
+const dictationModelSchema = createAliasedChoiceSchema<DictationModel>({ ...MODEL_ALIASES, auto: AUTO_CHOICE });
 
 export const speechVoices = ["F1", "F2", "F3", DEFAULT_VOICE_ID, "F5", "M1", "M2", "M3", "M4", "M5"] as const;
 
@@ -88,8 +90,10 @@ export const refineProviders = [
   PI_PROVIDER_ID,
 ] as const;
 
+type RefineProvider = (typeof refineProviders)[number];
+
 // The CLI names agents use for the same tools: Grok Build is `agent`, Antigravity is `agy`, pi is also `pie`.
-const refineProviderSchema = createAliasedChoiceSchema({
+const refineProviderSchema = createAliasedChoiceSchema<RefineProvider>({
   ...readLiteralAliases(refineProviders),
   agent: GROK_PROVIDER_ID,
   agy: GEMINI_PROVIDER_ID,
@@ -144,7 +148,7 @@ const dictationKeepListeningSecondsSchema = createRangedNumberSchema({
   fallback: defaultKeepListeningSeconds,
 });
 
-export const settingsSchema = z.strictObject({
+const settingsSchema = z.strictObject({
   speechMode: z.enum(speechModes).default(AUTO_CHOICE),
   speechMuted: z.boolean().default(true),
   speechVoice: speechVoiceSchema.default(DEFAULT_VOICE_ID),

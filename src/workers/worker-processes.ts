@@ -329,7 +329,7 @@ const listStrayAgentVoiceProcesses = (): ReadonlyArray<number> => {
       return [];
     }
 
-    return [Number(match?.[1])];
+    return [Number(parsedPsLine?.[1])];
   });
 };
 

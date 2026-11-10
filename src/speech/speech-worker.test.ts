@@ -22,14 +22,15 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  const runningServer = server;
   await new Promise((finish) => {
-    const isServerMissing = server == null;
+    const isServerMissing = runningServer == null;
     if (isServerMissing) {
       finish(undefined);
       return;
     }
 
-    server.close(finish);
+    runningServer.close(finish);
   });
   server = undefined;
   vi.unstubAllEnvs();
